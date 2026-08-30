@@ -92,6 +92,18 @@ class Cryptocurrency(str, Enum):
                 Cryptocurrency.USDT_BEP20, Cryptocurrency.USDC_BEP20,
                 Cryptocurrency.USDT_ERC20, Cryptocurrency.USDC_ERC20]
 
+    def get_topup_suffix(self) -> str:
+        """Return the TOPUP_ENABLE_<SUFFIX> config suffix for this coin.
+
+        All USDT networks share the same toggle (USDT), as do USDC networks.
+        """
+        name = self.name
+        if name.startswith("USDT_"):
+            return "USDT"
+        if name.startswith("USDC_"):
+            return "USDC"
+        return name
+
     @staticmethod
     def get_hidden() -> set['Cryptocurrency']:
         return set()

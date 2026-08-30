@@ -1,40 +1,25 @@
 services:
-  caddy:
-    image: caddy
-    ports:
-      - "80:80"
-      - "443:443"
-    networks:
-      - caddy
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      - ./caddy_data:/data
-      - ./caddy_config:/config
-    restart: always
-
   bot:
     build:
       context: .
-    container_name: 'AiogramShopBot'
+    container_name: 'GHstore'
     env_file:
       - .env
-    labels:
-      caddy: YOUR-DOMAIN-GOES-HERE
-      caddy.reverse_proxy: "bot:5000"
-    depends_on:
-      - caddy
-    networks:
-      - caddy
     ports:
       - "127.0.0.1:5000:5000" # ${WEBAPP_PORT}:${WEBAPP_PORT}
+    depends_on:
+      - postgres
+      - redis
     volumes:
       - ./i18n:/bot/i18n
     command: [ "python", "-u", "run.py" ]
     restart: always
+    networks:
+      - ghstore
 
   redis:
     image: redis:latest
-    container_name: redis
+    container_name: GHstore-redis
     command:
       - /bin/sh
       - -c
@@ -47,10 +32,10 @@ services:
       - redis_data:/data
     restart: always
     networks:
-      - caddy
+      - ghstore
 
   postgres:
-    container_name: "postgres"
+    container_name: "GHstore-postgres"
     image: "postgres:18"
     env_file:
       - .env
@@ -58,16 +43,31 @@ services:
       - "127.0.0.1:5432:5432"
     volumes:
       - ./postgres_data:/var/lib/postgresql
-    networks:
-      - caddy
     restart: always
+    networks:
+      - ghstore
 
+  # Cloudflare Tunnel: exposes the bot (port 5000) to the internet at gh-store.me.
+  # In the Cloudflare dashboard, set the public hostname gh-store.me to point at
+  # service: http://bot:5000 (docker-internal DNS on the ghstore network).
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: GHstore-tunnel
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    depends_on:
+      - bot
+    restart: always
+    networks:
+      - ghstore
+
+# Inbound HTTPS to the bot is provided by this Cloudflare Tunnel (cloudflared),
+# mapping gh-store.me -> http://bot:5000. No Caddy/bare ports 80-443 required.
 
 volumes:
-  AiogramShopBot:
-  caddy_data:
   redis_data:
   postgres_data:
 
 networks:
-  caddy:
+  ghstore:

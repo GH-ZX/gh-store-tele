@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import sys
 import traceback
@@ -13,7 +14,8 @@ from aiogram import Dispatcher
 from fastapi import FastAPI, Request, status, HTTPException
 
 from admin import authentication_backend
-from db import create_db_and_tables, engine
+from db import create_db_and_tables, engine, get_db_session
+from processing.processing import processing_router
 import uvicorn
 from fastapi.responses import JSONResponse
 from enums.cryptocurrency import Cryptocurrency
@@ -31,8 +33,16 @@ from models.review import ReviewAdmin
 from models.shipping_option import ShippingOptionAdmin
 from models.subcategory import SubcategoryAdmin
 from models.user import UserAdmin
-from processing.processing import processing_router
+from models.app_config import AppConfigAdmin
+from models.batstore_product import BatStoreProductAdmin
+from models.batstore_order import BatStoreOrderAdmin
+from models.sam_payment import SamPaymentAdmin, SamPaymentDTO
+from repositories.sam_payment import SamPaymentRepository
+from repositories.user import UserRepository
 from repositories.button_media import ButtonMediaRepository
+from services.config import ConfigService
+from services.batstore import BatStoreService
+from services.sam import SamService, SamAPIError
 from services.media import MediaService
 from services.notification import NotificationService
 from services.wallet import WalletService
@@ -45,12 +55,50 @@ bot = create_bot(config.TOKEN, session)
 dp = Dispatcher(storage=RedisStorage(redis))
 
 
+async def _set_webhook_with_retry() -> None:
+    """Register the Telegram webhook, retrying until the hostname resolves.
+
+    The webhook host (e.g. bot.gh-store.me behind a Cloudflare Tunnel) may not be
+    reachable/in-DNS yet when the bot first boots. Rather than crash-loop, retry
+    with a short backoff so startup completes automatically once the tunnel/cname is
+    live.
+    """
+    import asyncio as _asyncio
+    import time as _time
+
+    while True:
+        try:
+            await bot.set_webhook(
+                url=config.WEBHOOK_URL,
+                secret_token=config.WEBHOOK_SECRET_TOKEN
+            )
+            return
+        except Exception as e:  # noqa: BLE001 - webhook may fail while DNS settles
+            logging.error(
+                "Webhook registration failed for %s (%s). Retrying in 15s...",
+                config.WEBHOOK_URL, e,
+            )
+            await _asyncio.sleep(15)
+
+
+async def _sync_batstore_catalog() -> None:
+    """Sync the BatStore catalog from the reseller API on startup (best-effort)."""
+    try:
+        async with get_db_session() as session:
+            created, updated = await BatStoreService.sync_catalog(session)
+        logging.info("BatStore catalog sync complete: %s created, %s updated", created, updated)
+    except Exception as e:  # noqa: BLE001
+        logging.error("BatStore catalog sync failed (continuing): %s", e)
+
+
 async def _startup() -> None:
     await create_db_and_tables()
-    await bot.set_webhook(
-        url=config.WEBHOOK_URL,
-        secret_token=config.WEBHOOK_SECRET_TOKEN
-    )
+    async with get_db_session() as session:
+        await ConfigService.seed_defaults(session)
+        await ConfigService.seed_from_env(session)
+    if config.BATSTORE_SYNC_ENABLED:
+        asyncio.create_task(_sync_batstore_catalog())
+    asyncio.create_task(_set_webhook_with_retry())
     static = Path("static")
     if static.exists() is False:
         static.mkdir()
@@ -67,12 +115,15 @@ async def _startup() -> None:
                 photo_id_list.append(bot_photo_id)
             except Exception as _:
                 pass
-        bot_photo_id = photo_id_list[0]
+        bot_photo_id = photo_id_list[0] if photo_id_list else None
     else:
         bot_photo_id = photos.photos[0][-1].file_id
-    with open("static/no_image.jpeg", "w") as f:
-        f.write(bot_photo_id)
-    await MediaService.update_inaccessible_media(bot)
+    if bot_photo_id is None:
+        logging.warning("No bot/fallback profile photo obtained; skipping media init.")
+    else:
+        with open("static/no_image.jpeg", "w") as f:
+            f.write(bot_photo_id)
+        await MediaService.update_inaccessible_media(bot)
     validate_i18n()
     await ButtonMediaRepository.init_buttons_media()
     if config.CRYPTO_FORWARDING_MODE:
@@ -111,7 +162,21 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
-admin = Admin(app=app, engine=engine, authentication_backend=authentication_backend)
+
+
+@app.middleware("http")
+async def _no_cache_admin(request: Request, call_next):
+    """Never cache admin pages so settings changes always show immediately."""
+    response = await call_next(request)
+    if request.url.path.startswith("/admin"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
+
+admin = Admin(app=app, engine=engine, authentication_backend=authentication_backend,
+              title="GH Store Admin")
 admin.add_model_view(UserAdmin)
 admin.add_model_view(BuyAdmin)
 admin.add_model_view(ShippingOptionAdmin)
@@ -126,6 +191,10 @@ admin.add_model_view(CartAdmin)
 admin.add_model_view(CartItemAdmin)
 admin.add_model_view(ReferralBonusAdmin)
 admin.add_model_view(ReviewAdmin)
+admin.add_model_view(AppConfigAdmin)
+admin.add_model_view(BatStoreProductAdmin)
+admin.add_model_view(BatStoreOrderAdmin)
+admin.add_model_view(SamPaymentAdmin)
 
 app.include_router(processing_router)
 
@@ -143,6 +212,58 @@ async def webhook(request: Request):
     except Exception as e:
         logging.error(f"Error processing webhook: {e}")
         return {"status": "error"}, status.HTTP_500_INTERNAL_SERVER_ERROR
+
+
+@app.post("/samwebhook")
+async def sam_webhook(request: Request):
+    """SAM (sam-api.pro) payment webhook.
+
+    Events: invoice.paid | invoice.expired. On payment we credit the customer's
+    bot balance (usd_amount) and notify them. SAM requires a 2xx answer always.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return {"status": "ok"}
+
+    event = body.get("event")
+    invoice_id = body.get("invoiceId") or body.get("invoice_id")
+    txn_ref = body.get("transactionRef") or body.get("transaction_ref")
+
+    async with get_db_session() as session:
+        try:
+            payment = await SamPaymentRepository.get_by_invoice_id(invoice_id, session)
+            if payment is None:
+                logging.warning("SAM webhook for unknown invoice %s", invoice_id)
+                return {"status": "ok"}
+
+            if event == "invoice.paid" and payment.event != "invoice.paid":
+                user = await UserRepository.get_by_tgid(payment.telegram_id, session)
+                if user is not None:
+                    user.top_up_amount = (user.top_up_amount or 0) + payment.usd_amount
+                    await UserRepository.update(user, session)
+                    await session_commit(session)
+                    sym = config.CURRENCY.get_localized_symbol()
+                    caption = f"✅ Top-up via {payment.method}:\n{payment.usd_amount:.2f}{sym} added to your balance."
+                    try:
+                        await bot.send_message(payment.telegram_id, caption)
+                    except Exception as e:  # noqa: BLE001
+                        logging.error("Failed to notify SAM payer %s: %s", payment.telegram_id, e)
+                else:
+                    logging.error("SAM payer user not found: %s", payment.telegram_id)
+                await NotificationService.send_to_admins(
+                    f"💰 SAM invoice paid: {invoice_id} · tg:{payment.telegram_id} · "
+                    f"{payment.usd_amount:.2f}$ · {txn_ref}", None)
+            elif event == "invoice.expired":
+                await NotificationService.send_to_admins(
+                    f"⏰ SAM invoice expired: {invoice_id} · tg:{payment.telegram_id}", None)
+
+            await SamPaymentRepository.mark_event(invoice_id, event, txn_ref, session)
+            await session_commit(session)
+        except Exception as e:  # noqa: BLE001
+            logging.error("SAM webhook processing error: %s", e, exc_info=True)
+
+    return {"status": "ok"}
 
 
 @app.exception_handler(Exception)

@@ -22,6 +22,7 @@ def __security_check(x_signature_header: str | None, payload: bytes):
 async def fetch_crypto_event(payment_dto: ProcessingPaymentDTO, request: Request):
     request_body = await request.body()
     print(f"EVENT RECEIVED:{request_body}")
+    await CryptoApiWrapper._apply_config()
     is_security_pass = __security_check(request.headers.get("X-Signature"), request_body)
     if is_security_pass is False:
         raise HTTPException(status_code=403, detail="Invalid signature")

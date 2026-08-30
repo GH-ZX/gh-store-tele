@@ -20,6 +20,10 @@ from multibot import main as main_multibot
 from handlers.user.cart import cart_router
 from handlers.admin.admin import admin_router
 from handlers.user.all_categories import all_categories_router
+from handlers.user.batstore import batstore_router
+from handlers.user.batstore_catalog import batstore_catalog_router
+from handlers.user.stars import stars_router
+from handlers.user.sam import sam_router
 from handlers.user.my_profile import my_profile_router
 from repositories.button_media import ButtonMediaRepository
 from services.media import MediaService
@@ -105,7 +109,11 @@ users_routers.include_routers(
     all_categories_router,
     my_profile_router,
     cart_router,
-    review_management_router
+    review_management_router,
+    batstore_router,
+    batstore_catalog_router,
+    stars_router,
+    sam_router
 )
 users_routers.message.middleware(throttling_middleware)
 users_routers.callback_query.middleware(throttling_middleware)

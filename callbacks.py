@@ -312,3 +312,66 @@ class ReviewManagementCallback(BaseCallback, prefix="reviews"):
                                         user_role=user_role,
                                         page=page,
                                         confirmation=confirmation)
+
+
+class BatStoreCallback(BaseCallback, prefix="batstore"):
+    """Navigation for the BatStore (reseller) catalog and checkout.
+
+    Levels:
+      10: category list
+      11: product list inside a category (carries category_name)
+      12: product detail + quantity picker
+      13: confirm purchase
+      14: checkout / result
+    The cart itself lives in aiogram FSM state under key "batstore_cart"
+    (product_id -> quantity) so no extra DB table is needed.
+    """
+    product_id: int | None = None
+    quantity: int | None = None
+    category_name: str | None = None
+    confirmation: bool = False
+
+    @staticmethod
+    def create(level: int,
+               product_id: int | None = None,
+               quantity: int | None = None,
+               category_name: str | None = None,
+               confirmation: bool = False,
+               page: int = 0):
+        return BatStoreCallback(level=level,
+                                product_id=product_id,
+                                quantity=quantity,
+                                category_name=category_name,
+                                confirmation=confirmation,
+                                page=page)
+
+
+class StarsCallback(CallbackData, prefix="stars"):
+    """Telegram Stars top-up flow.
+
+    Levels:
+      0: pick a preset amount (stars)
+      1: confirm -> send_invoice (currency XTR)
+    On successful_payment the buyer's balance is credited (top_up_amount += stars * rate).
+    """
+    level: int
+    stars: int | None = None
+    confirmation: bool = False
+
+    @staticmethod
+    def create(level: int, stars: int | None = None, confirmation: bool = False):
+        return StarsCallback(level=level, stars=stars, confirmation=confirmation)
+
+
+class SamCallback(CallbackData, prefix="sam"):
+    """ShamCash / Syriatel (SAM API) balance top-up flow.
+
+    Level 0: pick provider (shamcash | syriatel).
+    Level 1: FSM amount prompt (massage text) -> create invoice -> show paymentUrl.
+    """
+    level: int
+    provider: str | None = None
+
+    @staticmethod
+    def create(level: int, provider: str | None = None):
+        return SamCallback(level=level, provider=provider)

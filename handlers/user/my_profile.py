@@ -45,9 +45,10 @@ async def top_up_balance(**kwargs):
     callback: CallbackQuery = kwargs.get("callback")
     callback_data: MyProfileCallback = kwargs.get("callback_data")
     state: FSMContext = kwargs.get("state")
+    session: AsyncSession = kwargs.get("session")
     language: Language = kwargs.get("language")
     await state.set_state()
-    msg_text, kb_builder = await UserService.get_top_up_buttons(callback_data, language)
+    msg_text, kb_builder = await UserService.get_top_up_buttons(callback_data, language, session)
     await callback.message.edit_caption(caption=msg_text, reply_markup=kb_builder.as_markup())
 
 

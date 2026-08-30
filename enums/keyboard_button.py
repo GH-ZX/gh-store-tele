@@ -13,6 +13,7 @@ class KeyboardButton(Enum):
     HELP = "HELP"
     REVIEWS = "REVIEWS"
     CART = "CART"
+    BATSTORE = "BATSTORE"
     ADMIN_MENU = "MENU"
 
     def get_localized(self, language: Language):

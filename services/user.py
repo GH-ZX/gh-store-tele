@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 import config
-from callbacks import MyProfileCallback, AdminMenuCallback
+from callbacks import MyProfileCallback, AdminMenuCallback, StarsCallback, SamCallback
 from db import session_commit
 from enums.bot_entity import BotEntity
 from enums.cryptocurrency import Cryptocurrency
@@ -22,6 +22,7 @@ from repositories.buy import BuyRepository
 from repositories.cart import CartRepository
 from repositories.user import UserRepository
 from services.media import MediaService
+from services.config import ConfigService
 from utils.utils import get_text
 
 
@@ -83,15 +84,50 @@ class UserService:
         return media, kb_builder
 
     @staticmethod
+    async def _topup_enabled(session: AsyncSession | None,
+                             env_value: bool,
+                             config_key: str) -> bool:
+        """Resolve a top-up toggle DB-first (admin panel), falling back to env."""
+        if session is None:
+            return env_value
+        raw = await ConfigService.get(session, config_key,
+                                      env_fallback="true" if env_value else "false",
+                                      default="false")
+        return isinstance(raw, str) and raw.strip().lower() in ("1", "true", "yes", "on")
+
+    @staticmethod
     async def get_top_up_buttons(callback_data: MyProfileCallback,
-                                 language: Language) -> tuple[str, InlineKeyboardBuilder]:
+                                 language: Language,
+                                 session: AsyncSession | None = None) -> tuple[str, InlineKeyboardBuilder]:
         kb_builder = InlineKeyboardBuilder()
         for cryptocurrency in Cryptocurrency.get_visible():
+            suffix = cryptocurrency.get_topup_suffix()
+            enabled = await UserService._topup_enabled(
+                session, getattr(config, f"TOPUP_ENABLE_{suffix}", False), f"TOPUP_ENABLE_{suffix}")
+            if not enabled:
+                continue
             kb_builder.button(
                 text=cryptocurrency.get_localized(language),
                 callback_data=MyProfileCallback.create(level=callback_data.level + 1,
                                                        cryptocurrency=cryptocurrency)
             )
+        stars_enabled = await UserService._topup_enabled(
+            session, config.GHSTORE_STARS_ENABLED, "GHSTORE_STARS_ENABLED")
+        if stars_enabled:
+            kb_builder.button(
+                text=get_text(language, BotEntity.COMMON, "stars_button"),
+                callback_data=StarsCallback.create(level=0)
+            )
+        if config.SAM_API_KEY:
+            shamcash_enabled = await UserService._topup_enabled(
+                session, config.TOPUP_ENABLE_SHAMCASH, "TOPUP_ENABLE_SHAMCASH")
+            syriatel_enabled = await UserService._topup_enabled(
+                session, config.TOPUP_ENABLE_SYRIATEL, "TOPUP_ENABLE_SYRIATEL")
+            if shamcash_enabled or syriatel_enabled:
+                kb_builder.button(
+                    text=get_text(language, BotEntity.COMMON, "sam_button"),
+                    callback_data=SamCallback.create(level=0)
+                )
         kb_builder.adjust(1)
         kb_builder.row(callback_data.get_back_button(language))
         msg_text = get_text(language, BotEntity.USER, "choose_top_up_method")

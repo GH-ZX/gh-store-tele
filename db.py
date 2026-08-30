@@ -27,6 +27,10 @@ from models.coupon import Coupon
 from models.shipping_option import ShippingOption
 from models.review import Review
 from models.referral import ReferralBonus
+from models.app_config import AppConfig
+from models.batstore_product import BatStoreProduct
+from models.batstore_order import BatStoreOrder
+from models.sam_payment import SamPayment
 
 url = f"postgresql+asyncpg://{config.DB_USER}:{config.DB_PASS}@{config.DB_HOST}:{config.DB_PORT}/{config.DB_NAME}"
 engine = create_async_engine(url, echo=True)

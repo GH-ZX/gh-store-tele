@@ -1,3 +1,5 @@
+import os
+
 import config
 from kryptoexpress import AsyncKryptoExpressClient, verify_callback_signature
 from kryptoexpress.models import FiatCurrency as KryptoExpressFiatCurrency
@@ -8,9 +10,31 @@ from enums.payment import PaymentType
 from enums.withdraw_type import WithdrawType
 from models.payment import ProcessingPaymentDTO
 from models.withdrawal import WithdrawalDTO
+from services.config import ConfigService
 
 
 class CryptoApiWrapper:
+    @staticmethod
+    async def _apply_config() -> None:
+        """Load live config (DB-first, env fallback) into the config module values.
+
+        Mutating config module attributes lets the existing sync _build_client and
+        verify_callback_signature helpers keep their signatures, while admin-typed
+        keys take effect on the very next call without a restart.
+        """
+        config.KRYPTO_EXPRESS_API_KEY = await ConfigService.resolve(
+            "KRYPTO_EXPRESS_API_KEY",
+            config.KRYPTO_EXPRESS_API_KEY,
+        )
+        config.KRYPTO_EXPRESS_API_URL = await ConfigService.resolve(
+            "KRYPTO_EXPRESS_API_URL",
+            config.KRYPTO_EXPRESS_API_URL,
+            "https://kryptoexpress.pro/api",
+        )
+        config.KRYPTO_EXPRESS_API_SECRET = await ConfigService.resolve(
+            "KRYPTO_EXPRESS_API_SECRET",
+            config.KRYPTO_EXPRESS_API_SECRET,
+        )
     @staticmethod
     def _map_crypto_to_sdk(cryptocurrency: Cryptocurrency) -> KryptoExpressCryptoCurrency:
         return KryptoExpressCryptoCurrency(cryptocurrency.value)
@@ -65,6 +89,7 @@ class CryptoApiWrapper:
 
     @staticmethod
     async def create_invoice(payment_dto: ProcessingPaymentDTO) -> ProcessingPaymentDTO:
+        await CryptoApiWrapper._apply_config()
         async with CryptoApiWrapper._build_client() as client:
             if payment_dto.paymentType == PaymentType.PAYMENT:
                 payment = await client.payments.create_payment(
@@ -85,6 +110,7 @@ class CryptoApiWrapper:
 
     @staticmethod
     async def get_crypto_prices() -> dict:
+        await CryptoApiWrapper._apply_config()
         async with CryptoApiWrapper._build_client() as client:
             prices_response = await client.currencies.get_prices(
                 crypto_currencies=[
@@ -102,6 +128,7 @@ class CryptoApiWrapper:
 
     @staticmethod
     async def get_wallet_balance() -> dict[Cryptocurrency, float]:
+        await CryptoApiWrapper._apply_config()
         async with CryptoApiWrapper._build_client() as client:
             wallet = await client.wallet.get()
         balances: dict[Cryptocurrency, float] = {}
@@ -118,6 +145,7 @@ class CryptoApiWrapper:
                          only_calculate: bool,
                          payment_id: int = None) -> WithdrawalDTO:
         sdk_currency = CryptoApiWrapper._map_crypto_to_sdk(cryptocurrency)
+        await CryptoApiWrapper._apply_config()
         async with CryptoApiWrapper._build_client() as client:
             if payment_id:
                 if only_calculate:
