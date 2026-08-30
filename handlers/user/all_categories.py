@@ -36,11 +36,15 @@ async def all_categories_text_message(message: Message, session: AsyncSession, s
 
 
 async def all_types(**kwargs):
+    """Entry point for 'All Categories' — skip item types, go straight to categories."""
     message: CallbackQuery | Message = kwargs.get("callback")
     callback_data: AllCategoriesCallback = kwargs.get("callback_data")
     session: AsyncSession = kwargs.get("session")
+    state: FSMContext = kwargs.get("state")
     language: Language = kwargs.get("language")
-    media, kb_builder = await ItemService.get_all_types(callback_data, session, language)
+    # Jump directly to the categories view (level 1)
+    new_data = callback_data.model_copy(update={"level": 1, "item_type": None})
+    media, kb_builder = await CategoryService.get_buttons(new_data, state, session, language)
     if isinstance(message, Message):
         await NotificationService.answer_media(message, media, kb_builder.as_markup())
     else:
@@ -85,7 +89,11 @@ async def show_subcategories_in_category(**kwargs):
     state: FSMContext = kwargs.get("state")
     language: Language = kwargs.get("language")
 
-    # --- BatStore product detail ---
+    # --- BatStore: show products in category ---
+    if callback_data.batstore_category_name and not callback_data.batstore_product_id:
+        await _batstore_products_in_category(callback, callback_data, state, session, language)
+        return
+    # --- BatStore: product detail ---
     if callback_data.batstore_product_id:
         await _batstore_product_detail(callback, callback_data, state, session, language)
         return
