@@ -43,6 +43,8 @@ async def all_types(**kwargs):
     state: FSMContext = kwargs.get("state")
     language: Language = kwargs.get("language")
     # Jump directly to the categories view (level 1)
+    if callback_data is None:
+        callback_data = AllCategoriesCallback.create(1)
     new_data = callback_data.model_copy(update={"level": 1, "item_type": None})
     media, kb_builder = await CategoryService.get_buttons(new_data, state, session, language)
     if isinstance(message, Message):
