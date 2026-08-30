@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 import config
-from callbacks import AddType, AllCategoriesCallback, BatStoreCallback
+from callbacks import AddType, AllCategoriesCallback
 from db import session_commit
 from enums.announcement_type import AnnouncementType
 from enums.bot_entity import BotEntity
@@ -198,10 +198,6 @@ class ItemService:
             text=get_text(language, BotEntity.USER, "pick_all_item_types"),
             callback_data=callback_data.model_copy(update={"level": callback_data.level + 1,
                                                            "item_type": None})
-        )
-        kb_builder.button(
-            text=get_text(language, BotEntity.USER, "batstore_button"),
-            callback_data=BatStoreCallback.create(level=10).pack()
         )
         kb_builder.adjust(1)
         caption = get_text(language, BotEntity.USER, "pick_item_type")

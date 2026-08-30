@@ -50,6 +50,8 @@ class AllCategoriesCallback(BaseCallback, SortingCallback, prefix="all_categorie
     subcategory_id: int | None
     quantity: int | None
     confirmation: bool
+    batstore_category_name: str | None = None
+    batstore_product_id: int | None = None
 
     @staticmethod
     def create(level: int,
@@ -61,13 +63,17 @@ class AllCategoriesCallback(BaseCallback, SortingCallback, prefix="all_categorie
                sort_property: SortProperty = SortProperty.NAME,
                is_filter_enabled: bool = False,
                confirmation: bool = False,
-               page: int = 0) -> 'AllCategoriesCallback':
+               page: int = 0,
+               batstore_category_name: str | None = None,
+               batstore_product_id: int | None = None) -> 'AllCategoriesCallback':
         return AllCategoriesCallback(level=level,
                                      item_type=item_type,
                                      category_id=category_id, subcategory_id=subcategory_id,
                                      sort_order=sort_order, sort_property=sort_property,
                                      quantity=quantity, is_filter_enabled=is_filter_enabled,
-                                     confirmation=confirmation, page=page)
+                                     confirmation=confirmation, page=page,
+                                     batstore_category_name=batstore_category_name,
+                                     batstore_product_id=batstore_product_id)
 
 
 class MyProfileCallback(BaseCallback, SortingCallback, prefix="my_profile"):

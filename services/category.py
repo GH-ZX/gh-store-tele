@@ -4,6 +4,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from callbacks import AllCategoriesCallback
+from repositories.batstore_product import BatStoreProductRepository
 from enums.bot_entity import BotEntity
 from enums.entity_type import EntityType
 from enums.keyboard_button import KeyboardButton
@@ -43,7 +44,18 @@ class CategoryService:
                 )
             )
 
-        has_categories = len(categories) > 0
+        # --- BatStore categories (merged into the same view) ---
+        batstore_cats = await BatStoreProductRepository.get_categories(session)
+        for cat_name in batstore_cats:
+            kb_builder.button(
+                text=cat_name,
+                callback_data=AllCategoriesCallback.create(
+                    level=callback_data.level + 1,
+                    batstore_category_name=cat_name
+                )
+            )
+
+        has_categories = (len(categories) + len(batstore_cats)) > 0
         if not has_categories:
             caption = get_text(language, BotEntity.USER, "no_categories")
         else:
