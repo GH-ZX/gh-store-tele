@@ -106,22 +106,22 @@ async def batstore_products_in_category(callback: CallbackQuery,
 
     # Pagination
     if total_pages > 1:
-        row = []
+        nav = []
         if page > 0:
-            row.append(kb.button(
+            nav.append(InlineKeyboardButton(
                 text=get_text(language, BotEntity.COMMON, "pagination_previous"),
                 callback_data=BatStoreCallback.create(
                     level=11, category_name=cat_name, page=page - 1).pack()))
-        row.append(kb.button(
+        nav.append(InlineKeyboardButton(
             text=f"• {page + 1}/{total_pages} •",
             callback_data=BatStoreCallback.create(
                 level=11, category_name=cat_name, page=page).pack()))
         if page < total_pages - 1:
-            row.append(kb.button(
+            nav.append(InlineKeyboardButton(
                 text=get_text(language, BotEntity.COMMON, "pagination_next"),
                 callback_data=BatStoreCallback.create(
                     level=11, category_name=cat_name, page=page + 1).pack()))
-        kb.row(*row)
+        kb.row(*nav)
 
     kb.row(_back_to_categories(language))
 
@@ -176,7 +176,9 @@ async def batstore_product_detail(callback: CallbackQuery,
                 level=13, product_id=product.product_id,
                 category_name=cat_name, quantity=qty).pack())
     kb.adjust(5)
-    kb.row(BatStoreCallback.create(level=11, category_name=cat_name).pack())
+    kb.row(InlineKeyboardButton(
+        text=get_text(language, BotEntity.COMMON, "back_button"),
+        callback_data=BatStoreCallback.create(level=11, category_name=cat_name).pack()))
 
     if product.image_url:
         media = InputMediaPhoto(media=product.image_url, caption=caption)
