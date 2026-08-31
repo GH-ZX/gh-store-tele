@@ -48,11 +48,15 @@ async def all_types(**kwargs):
         callback_data = AllCategoriesCallback.create(1)
     new_data = callback_data.model_copy(update={"level": 1, "item_type": None})
     media, kb_builder = await CategoryService.get_buttons(new_data, state, session, language)
+    caption = media.caption if hasattr(media, 'caption') else str(media)
     if isinstance(message, Message):
-        await NotificationService.answer_media(message, media, kb_builder.as_markup())
+        await message.answer(text=caption, reply_markup=kb_builder.as_markup())
     else:
         callback: CallbackQuery = message
-        await callback.message.edit_media(media=media, reply_markup=kb_builder.as_markup())
+        try:
+            await callback.message.edit_text(text=caption, reply_markup=kb_builder.as_markup())
+        except Exception:
+            await callback.message.edit_media(media=media, reply_markup=kb_builder.as_markup())
 
 
 async def all_categories(**kwargs):
