@@ -224,6 +224,20 @@ def _back_to_categories(language) -> InlineKeyboardButton:
         callback_data=AllCategoriesCallback.create(level=1).pack())
 
 
+async def _safe_edit(message, text, reply_markup):
+    """Try edit_text first, fall back to edit_media."""
+    try:
+        await message.edit_text(text=text, reply_markup=reply_markup)
+    except Exception:
+        try:
+            from utils.utils import get_bot_photo_id
+            await message.edit_media(
+                media=InputMediaPhoto(media=get_bot_photo_id(), caption=text),
+                reply_markup=reply_markup)
+        except Exception:
+            pass
+
+
 async def _batstore_products_in_category(callback, callback_data, state, session, language):
     """Show BatStore products inside a category (level 1 → level 2)."""
     cat_name = callback_data.batstore_category_name
@@ -271,9 +285,12 @@ async def _batstore_products_in_category(callback, callback_data, state, session
     kb.row(_back_to_categories(language))
     caption = get_text(language, BotEntity.USER, "batstore_category_products").format(
         category=cat_name)
-    from utils.utils import get_bot_photo_id
-    media = InputMediaPhoto(media=get_bot_photo_id(), caption=caption)
-    await callback.message.edit_media(media=media, reply_markup=kb.as_markup())
+    try:
+        await callback.message.edit_text(text=caption, reply_markup=kb.as_markup())
+    except Exception:
+        await callback.message.edit_media(
+            media=InputMediaPhoto(media='https://i.postimg.cc/cCPbmkbc/photo-2026-05-09-16-07-18.jpg', caption=caption),
+            reply_markup=kb.as_markup())
 
 
 async def _batstore_product_detail(callback, callback_data, state, session, language):
@@ -333,8 +350,12 @@ async def _batstore_product_detail(callback, callback_data, state, session, lang
 
     if product.image_url:
         try:
-            media = InputMediaPhoto(media=product.image_url, caption=caption)
-            await callback.message.edit_media(media=media, reply_markup=kb.as_markup())
+            await callback.message.edit_text(text=caption, reply_markup=kb.as_markup())
+            # Send product image separately
+            try:
+                await callback.message.answer_photo(photo=product.image_url)
+            except Exception:
+                pass
             return
         except Exception:
             pass
