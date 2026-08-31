@@ -9,6 +9,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InputMed
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 from callbacks import AllCategoriesCallback
+from enums.bot_entity import BotEntity
 from enums.entity_type import EntityType
 from enums.keyboard_button import KeyboardButton as KB
 from enums.language import Language
