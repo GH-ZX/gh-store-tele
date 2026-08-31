@@ -52,7 +52,7 @@ class CategoryService:
                 callback_data=AllCategoriesCallback.create(
                     level=callback_data.level + 1,
                     batstore_category_name=cat_name
-                )
+                ).pack()
             )
 
         has_categories = (len(categories) + len(batstore_cats)) > 0

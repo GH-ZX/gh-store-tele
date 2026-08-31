@@ -221,7 +221,7 @@ def _sym() -> str:
 def _back_to_categories(language) -> InlineKeyboardButton:
     return InlineKeyboardButton(
         text=get_text(language, BotEntity.COMMON, "back_button"),
-        callback_data=AllCategoriesCallback.create(level=1))
+        callback_data=AllCategoriesCallback.create(level=1).pack())
 
 
 async def _batstore_products_in_category(callback, callback_data, state, session, language):
