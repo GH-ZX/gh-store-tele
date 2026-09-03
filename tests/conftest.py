@@ -68,6 +68,16 @@ def _build_config_module() -> ModuleType:
     config.SQLADMIN_RAW_PASSWORD = "admin"
     config.SQLADMIN_HASHED_PASSWORD = "hashed:admin"
     config.WEBHOOK_SECRET_TOKEN = "test_secret"
+    config.TOPUP_ENABLE_BTC = True
+    config.TOPUP_ENABLE_USDT = True
+    config.TOPUP_ENABLE_ETH = True
+    config.TOPUP_ENABLE_BNB = True
+    config.TOPUP_ENABLE_DOGE = True
+    config.TOPUP_ENABLE_LTC = True
+    config.TOPUP_ENABLE_SOL = True
+    config.TOPUP_ENABLE_USDC = True
+    config.TOPUP_ENABLE_SHAMCASH = False
+    config.TOPUP_ENABLE_SYRIATEL = False
     return config
 
 
@@ -132,13 +142,24 @@ sys.modules.setdefault("redis.asyncio", redis_asyncio_module)
 db_module = ModuleType("db")
 
 
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def _noop_session_cm(*args, **kwargs):
+    yield None
+class _FakeResult:
+    def scalars(self):
+        return self
+    def first(self):
+        return None
+    def all(self):
+        return []
+
 async def _noop_async(*args, **kwargs):
-    return None
-
-
+    return _FakeResult()
 db_module.session_execute = _noop_async
 db_module.session_flush = _noop_async
 db_module.session_commit = _noop_async
-db_module.get_db_session = _noop_async
+db_module.get_db_session = _noop_session_cm
 db_module.create_db_and_tables = _noop_async
 sys.modules.setdefault("db", db_module)

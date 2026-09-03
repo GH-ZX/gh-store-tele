@@ -14,7 +14,7 @@ from db import session_commit
 from models.batstore_product import BatStoreProduct, BatStoreProductDTO, MarginType, auto_categorize
 from repositories.batstore_product import BatStoreProductRepository
 from services.config import ConfigService
-
+from services.restock_notification import RestockNotificationService
 API_TEST_PRODUCT_ID = 2147483000
 
 
@@ -215,7 +215,7 @@ class BatStoreService:
         products = await BatStoreService.list_products(session)
         created = 0
         updated = 0
-        kept_ids: list[int] = []
+        restocked_products: list[tuple[int, str]] = []
         for p in products:
             pid = int(p["id"])
             if pid == API_TEST_PRODUCT_ID or p.get("api_test"):
@@ -246,11 +246,20 @@ class BatStoreService:
                 await BatStoreProductRepository.create(dto, session)
                 created += 1
             else:
+                old_stock = existing.stock
+                new_stock = p.get("stock")
+                was_out_of_stock = (
+                    (existing.delivery_type == "stock" and not (old_stock and old_stock > 0)) or
+                    (old_stock is not None and old_stock <= 0)
+                )
+                now_in_stock = new_stock is not None and new_stock > 0
+                if was_out_of_stock and now_in_stock:
+                    restocked_products.append((pid, p.get("name") or existing.name))
+
                 sell = BatStoreService.compute_sell_price(
                     cost, global_percent, global_fixed, existing.margin_type,
                     existing.margin_value if existing.margin_type != MarginType.FIXED_PRICE
                     else existing.margin_value)
-                # Preserve admin-edited category; only auto-assign if still None
                 cat = existing.category if existing.category else auto_categorize(product_name)
                 upd = BatStoreProductDTO(
                     id=existing.id,
@@ -274,4 +283,15 @@ class BatStoreService:
                 updated += 1
         await BatStoreProductRepository.delete_absent(kept_ids, session)
         await session_commit(session)
+        for restocked_pid, restocked_name in restocked_products:
+            try:
+                await RestockNotificationService.notify_batstore_product_restocked(
+                    batstore_product_id=restocked_pid,
+                    product_name=restocked_name,
+                    session=session
+                )
+            except Exception as e:
+                logging.error("Failed to notify restocked product %s: %s", restocked_pid, e)
+        if restocked_products:
+            await session_commit(session)
         return created, updated

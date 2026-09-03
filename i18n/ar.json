@@ -430,6 +430,14 @@
     "batstore_category_products": "🛍️ {category}\n\nاختر منتجاً:",
     "batstore_button": "🛍️ المتجر",
     "batstore_orders_button": "📦 طلباتي",
-    "batstore_orders_empty": "لا توجد طلبات بعد. اشترِ منتجات رقمية من صفحة جميع الفئات!"
+    "batstore_orders_empty": "لا توجد طلبات بعد. اشترِ منتجات رقمية من صفحة جميع الفئات!",
+    "restock_notification_msg": "🎉 <b>بشرى سارة!</b> أصبح منتج <b>{product_name}</b> متوفراً الآن في المتجر! 🛍️\nيمكنك الآن الدخول والطلب مباشرة.",
+    "restock_view_product_btn": "🛒 عرض المنتج",
+    "restock_auto_subscribed_notice": "🔔 <b>تنبيه التوفر:</b> تم تفعيل إشعار التوفر تلقائياً — سنرسل لك رسالة فور إعادة توفر هذا المنتج!",
+    "restock_unsubscribe_btn": "🔕 إلغاء إشعار التوفر",
+    "restock_subscribe_btn": "🔔 إخطاري عند التوفر",
+    "product_out_of_stock_badge": "🔴 [غير متوفر حالياً - نفد المخزون]",
+    "restock_unsubscribed_toast": "تم إلغاء تفعيل إشعار التوفر لهذا المنتج.",
+    "restock_subscribed_toast": "تم التفعيل! سنرسل لك إشعاراً فور توفر هذا المنتج."
   }
 }

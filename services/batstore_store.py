@@ -9,8 +9,9 @@ from sqlalchemy.orm import Session
 
 import config
 from enums.bot_entity import BotEntity
-from callbacks import BatStoreCallback
+from callbacks import BatStoreCallback, RestockCallback
 from db import session_commit
+from services.restock_notification import RestockNotificationService
 from enums.language import Language
 from models.batstore_order import BatStoreOrderDTO
 from models.batstore_product import BatStoreProduct
@@ -48,8 +49,9 @@ class BatStoreStoreService:
             label = p.name
             if p.sell_price_usd is not None:
                 label = f"{label} — {p.sell_price_usd:.2f}{sym}"
-            if p.delivery_type == "stock" and not (p.stock and p.stock > 0):
-                label += get_text(language, BotEntity.USER, "batstore_out_of_stock")
+            is_oos = RestockNotificationService.is_batstore_out_of_stock(p)
+            if is_oos:
+                label = f"🔴 {label}{get_text(language, BotEntity.USER, 'batstore_out_of_stock')}"
             elif p.delivery_type != "stock" and not (p.stock and p.stock > 0):
                 label += f" ({p.stock if p.stock is not None else 0} left)"
             kb_builder.button(
@@ -100,24 +102,54 @@ class BatStoreStoreService:
         user = await UserRepository.get_by_tgid(callback.from_user.id, session)
         balance = round((user.top_up_amount or 0) - (user.consume_records or 0), 2)
         delivery = product.delivery_type or "stock"
+        is_oos = RestockNotificationService.is_batstore_out_of_stock(product)
+        if is_oos:
+            await RestockNotificationService.auto_subscribe_if_out_of_stock(
+                telegram_id=callback.from_user.id,
+                user_id=user.id if user else None,
+                product=product,
+                language=language,
+                session=session
+            )
+            await session_commit(session)
+
         caption = get_text(language, BotEntity.USER, "batstore_detail").format(
-            name=product.name,
+            name=f"🔴 {product.name} {get_text(language, BotEntity.USER, 'product_out_of_stock_badge')}" if is_oos else product.name,
             description=product.description or "",
             price=f"{product.sell_price_usd:.2f}" if product.sell_price_usd is not None else "-",
             sym=sym,
             delivery=delivery,
-            stock=product.stock if product.stock is not None else 0,
+            stock=f"🔴 0 {get_text(language, BotEntity.USER, 'batstore_out_of_stock')}\n\n{get_text(language, BotEntity.USER, 'restock_auto_subscribed_notice')}" if is_oos else (product.stock if product.stock is not None else 0),
             balance=f"{balance:.2f}",
         )
 
         kb_builder = InlineKeyboardBuilder()
-        max_qty = BatStoreStoreService._max_qty(product, balance)
-        for qty in range(1, min(10, max_qty) + 1):
-            kb_builder.button(
-                text=f"{qty}",
-                callback_data=BatStoreCallback.create(level=2, product_id=product.product_id, quantity=qty).pack()
+        if is_oos:
+            is_sub = await RestockNotificationService.is_subscribed(
+                telegram_id=callback.from_user.id,
+                product_id=product.product_id,
+                session=session
             )
-        kb_builder.adjust(5)
+            toggle_btn_text = (
+                get_text(language, BotEntity.USER, "restock_unsubscribe_btn")
+                if is_sub
+                else get_text(language, BotEntity.USER, "restock_subscribe_btn")
+            )
+            kb_builder.button(
+                text=toggle_btn_text,
+                callback_data=RestockCallback.create(
+                    product_id=product.product_id,
+                    action="toggle"
+                ).pack()
+            )
+        else:
+            max_qty = BatStoreStoreService._max_qty(product, balance)
+            for qty in range(1, min(10, max_qty) + 1):
+                kb_builder.button(
+                    text=f"{qty}",
+                    callback_data=BatStoreCallback.create(level=2, product_id=product.product_id, quantity=qty).pack()
+                )
+            kb_builder.adjust(5)
         kb_builder.row(BatStoreCallback.create(level=0).get_back_button(language, 0))
         return caption, kb_builder
 

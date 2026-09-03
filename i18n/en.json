@@ -430,6 +430,14 @@
     "batstore_category_products": "🛍️ {category}\n\nPick a product:",
     "batstore_button": "🛍️ Store",
     "batstore_orders_button": "📦 My Orders",
-    "batstore_orders_empty": "No orders yet. Purchase digital products from the All Categories page!"
+    "batstore_orders_empty": "No orders yet. Purchase digital products from the All Categories page!",
+    "restock_notification_msg": "🎉 <b>Good news!</b> <b>{product_name}</b> is now back in stock! 🛍️\nYou can now place your order directly.",
+    "restock_view_product_btn": "🛒 View Product",
+    "restock_auto_subscribed_notice": "🔔 <b>Restock Alert:</b> You've been automatically subscribed — we'll notify you as soon as this is restocked!",
+    "restock_unsubscribe_btn": "🔕 Unsubscribe Restock Alert",
+    "restock_subscribe_btn": "🔔 Notify Me When Restocked",
+    "product_out_of_stock_badge": "🔴 [OUT OF STOCK]",
+    "restock_unsubscribed_toast": "Unsubscribed from restock alerts for this product.",
+    "restock_subscribed_toast": "Subscribed! We will notify you as soon as this product is restocked."
   }
 }

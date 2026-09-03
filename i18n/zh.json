@@ -431,6 +431,14 @@
     "batstore_category_products": "🛍️ {category}\n\nPick a product:",
     "batstore_button": "🛍️ Store",
     "batstore_orders_button": "📦 我的订单",
-    "batstore_orders_empty": "暂无订单。请从所有分类页面购买数字商品！"
+    "batstore_orders_empty": "暂无订单。请从所有分类页面购买数字商品！",
+    "restock_notification_msg": "🎉 <b>好消息！</b> <b>{product_name}</b> 现已重新到货！ 🛍️\n您现在可以直接下单购买。",
+    "restock_view_product_btn": "🛒 查看商品",
+    "restock_auto_subscribed_notice": "🔔 <b>补货提醒：</b> 已自动为您订阅 — 重新到货时我们将立即通知您！",
+    "restock_unsubscribe_btn": "🔕 取消补货提醒",
+    "restock_subscribe_btn": "🔔 到货时提醒我",
+    "product_out_of_stock_badge": "🔴 [暂无库存]",
+    "restock_unsubscribed_toast": "已取消该商品的补货提醒。",
+    "restock_subscribed_toast": "已订阅！商品重新到货时我们将立即通知您。"
   }
 }

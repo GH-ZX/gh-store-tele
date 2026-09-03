@@ -37,6 +37,7 @@ from models.app_config import AppConfigAdmin
 from models.batstore_product import BatStoreProductAdmin
 from models.batstore_order import BatStoreOrderAdmin
 from models.sam_payment import SamPaymentAdmin, SamPaymentDTO
+from models.restock_subscription import RestockSubscriptionAdmin
 from repositories.sam_payment import SamPaymentRepository
 from repositories.user import UserRepository
 from repositories.button_media import ButtonMediaRepository
@@ -208,7 +209,7 @@ admin.add_model_view(AppConfigAdmin)
 admin.add_model_view(BatStoreProductAdmin)
 admin.add_model_view(BatStoreOrderAdmin)
 admin.add_model_view(SamPaymentAdmin)
-
+admin.add_model_view(RestockSubscriptionAdmin)
 app.include_router(processing_router)
 
 

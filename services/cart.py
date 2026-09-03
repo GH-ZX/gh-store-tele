@@ -293,7 +293,8 @@ class CartService:
                 callback_data=CartCallback.create(level=3,
                                                   shipping_option_id=callback_data.shipping_option_id).pack()
             ))
-        message_text = f"<b>{"\n".join(cart_content)}</b>"
+        cart_content_joined = "\n".join(cart_content)
+        message_text = f"<b>{cart_content_joined}</b>"
         return message_text, kb_builder
 
     @staticmethod

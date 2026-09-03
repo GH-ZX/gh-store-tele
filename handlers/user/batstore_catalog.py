@@ -17,7 +17,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import config
-from callbacks import BatStoreCallback
+from callbacks import BatStoreCallback, RestockCallback
 from db import session_commit
 from enums.bot_entity import BotEntity
 from enums.language import Language
@@ -27,6 +27,7 @@ from repositories.batstore_order import BatStoreOrderRepository
 from repositories.user import UserRepository
 from services.batstore import BatStoreService
 from services.notification import NotificationService
+from services.restock_notification import RestockNotificationService
 from utils.utils import get_text, get_bot_photo_id
 from utils.custom_filters import IsUserExistFilter
 
@@ -94,8 +95,9 @@ async def batstore_products_in_category(callback: CallbackQuery,
         label = p.name
         if p.sell_price_usd is not None:
             label = f"{label} — {p.sell_price_usd:.2f}{sym}"
-        if p.delivery_type == "stock" and not (p.stock and p.stock > 0):
-            label += get_text(language, BotEntity.USER, "batstore_out_of_stock")
+        is_oos = RestockNotificationService.is_batstore_out_of_stock(p)
+        if is_oos:
+            label = f"🔴 {label}{get_text(language, BotEntity.USER, 'batstore_out_of_stock')}"
         elif p.delivery_type != "stock" and not (p.stock and p.stock > 0):
             label += f" ({p.stock if p.stock is not None else 0} left)"
         kb.button(
@@ -158,24 +160,54 @@ async def batstore_product_detail(callback: CallbackQuery,
     user = await UserRepository.get_by_tgid(callback.from_user.id, session)
     balance = round((user.top_up_amount or 0) - (user.consume_records or 0), 2)
     delivery = product.delivery_type or "stock"
+    is_oos = RestockNotificationService.is_batstore_out_of_stock(product)
+    if is_oos:
+        await RestockNotificationService.auto_subscribe_if_out_of_stock(
+            telegram_id=callback.from_user.id,
+            user_id=user.id if user else None,
+            product=product,
+            language=language,
+            session=session
+        )
+        await session_commit(session)
+
     caption = get_text(language, BotEntity.USER, "batstore_detail").format(
-        name=product.name,
+        name=f"🔴 {product.name} {get_text(language, BotEntity.USER, 'product_out_of_stock_badge')}" if is_oos else product.name,
         description=product.description or "",
         price=f"{product.sell_price_usd:.2f}" if product.sell_price_usd is not None else "-",
         sym=sym,
         delivery=delivery,
-        stock=product.stock if product.stock is not None else 0,
+        stock=f"🔴 0 {get_text(language, BotEntity.USER, 'batstore_out_of_stock')}\n\n{get_text(language, BotEntity.USER, 'restock_auto_subscribed_notice')}" if is_oos else (product.stock if product.stock is not None else 0),
         balance=f"{balance:.2f}",
     )
 
-    max_qty = _max_qty(product, balance)
-    for qty in range(1, min(10, max_qty) + 1):
+    if is_oos:
+        is_sub = await RestockNotificationService.is_subscribed(
+            telegram_id=callback.from_user.id,
+            product_id=product.product_id,
+            session=session
+        )
+        toggle_btn_text = (
+            get_text(language, BotEntity.USER, "restock_unsubscribe_btn")
+            if is_sub
+            else get_text(language, BotEntity.USER, "restock_subscribe_btn")
+        )
         kb.button(
-            text=str(qty),
-            callback_data=BatStoreCallback.create(
-                level=13, product_id=product.product_id,
-                category_name=cat_name, quantity=qty).pack())
-    kb.adjust(5)
+            text=toggle_btn_text,
+            callback_data=RestockCallback.create(
+                product_id=product.product_id,
+                action="toggle"
+            ).pack()
+        )
+    else:
+        max_qty = _max_qty(product, balance)
+        for qty in range(1, min(10, max_qty) + 1):
+            kb.button(
+                text=str(qty),
+                callback_data=BatStoreCallback.create(
+                    level=13, product_id=product.product_id,
+                    category_name=cat_name, quantity=qty).pack())
+        kb.adjust(5)
     kb.row(InlineKeyboardButton(
         text=get_text(language, BotEntity.COMMON, "back_button"),
         callback_data=BatStoreCallback.create(level=11, category_name=cat_name).pack()))

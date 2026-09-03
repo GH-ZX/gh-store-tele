@@ -381,3 +381,14 @@ class SamCallback(CallbackData, prefix="sam"):
     @staticmethod
     def create(level: int, provider: str | None = None):
         return SamCallback(level=level, provider=provider)
+
+
+class RestockCallback(CallbackData, prefix="restock"):
+    """Callback for toggling restock notification interest."""
+    product_id: int | None = None
+    subcategory_id: int | None = None
+    action: str = "toggle"
+
+    @staticmethod
+    def create(product_id: int | None = None, subcategory_id: int | None = None, action: str = "toggle"):
+        return RestockCallback(product_id=product_id, subcategory_id=subcategory_id, action=action)

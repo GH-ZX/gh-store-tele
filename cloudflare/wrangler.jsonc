@@ -1,0 +1,18 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "gh-store-bot",
+  "main": "worker.js",
+  "account_id": "d068278103f7547ed926499dcd9b653d",
+  "compatibility_date": "2026-08-11",
+  "observability": {
+    "enabled": true
+  },
+  "routes": [
+    { "pattern": "bot.gh-store.me", "custom_domain": true }
+  ],
+  "vars": {
+    "SERVICE_NAME": "gh-store-bot",
+    "DOMAIN": "bot.gh-store.me",
+    "BACKEND_URL": ""
+  }
+}

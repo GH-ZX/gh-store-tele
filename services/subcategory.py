@@ -5,7 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 import config
-from callbacks import AllCategoriesCallback
+from callbacks import AllCategoriesCallback, RestockCallback
+from repositories.restock_subscription import RestockSubscriptionRepository
 from enums.bot_entity import BotEntity
 from enums.entity_type import EntityType
 from enums.language import Language
@@ -41,11 +42,15 @@ class SubcategoryService:
                                                                    category_id=item.category_id,
                                                                    subcategory_id=item.subcategory_id,
                                                                    session=session)
-            kb_builder.button(text=get_text(language, BotEntity.USER, "subcategory_button").format(
+            btn_text = get_text(language, BotEntity.USER, "subcategory_button").format(
                 subcategory_name=item.subcategory_name,
                 subcategory_price=item.price,
                 available_quantity=available_qty,
-                currency_sym=config.CURRENCY.get_localized_symbol()),
+                currency_sym=config.CURRENCY.get_localized_symbol())
+            if available_qty <= 0:
+                btn_text = f"🔴 {btn_text}"
+            kb_builder.button(
+                text=btn_text,
                 callback_data=AllCategoriesCallback.create(
                     level=callback_data.level + 1,
                     item_type=item.item_type,
@@ -109,15 +114,25 @@ class SubcategoryService:
             currency_sym=config.CURRENCY.get_localized_symbol()
         )
         kb_builder = InlineKeyboardBuilder()
-        for i in range(1, 11):
-            kb_builder.button(text=str(i), callback_data=AllCategoriesCallback.create(
-                level=callback_data.level + 1,
-                item_type=item_dto.item_type,
-                category_id=item_dto.category_id,
-                subcategory_id=item_dto.subcategory_id,
-                quantity=i
-            ))
-        kb_builder.adjust(3)
+        if available_qty <= 0:
+            caption = f"🔴 <b>{subcategory_dto.name}</b>\n{get_text(language, BotEntity.USER, 'product_out_of_stock_badge')}\n\n{caption}\n\n{get_text(language, BotEntity.USER, 'restock_auto_subscribed_notice')}"
+            kb_builder.button(
+                text=get_text(language, BotEntity.USER, "restock_unsubscribe_btn"),
+                callback_data=RestockCallback.create(
+                    subcategory_id=callback_data.subcategory_id,
+                    action="toggle"
+                ).pack()
+            )
+        else:
+            for i in range(1, 11):
+                kb_builder.button(text=str(i), callback_data=AllCategoriesCallback.create(
+                    level=callback_data.level + 1,
+                    item_type=item_dto.item_type,
+                    category_id=item_dto.category_id,
+                    subcategory_id=item_dto.subcategory_id,
+                    quantity=i
+                ))
+            kb_builder.adjust(3)
         kb_builder.row(callback_data.get_back_button(language))
         media = MediaService.convert_to_media(subcategory_dto.media_id, caption)
         return media, kb_builder
