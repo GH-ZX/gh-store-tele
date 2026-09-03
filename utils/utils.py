@@ -22,7 +22,7 @@ pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 def get_sslipio_external_url():
     external_ip = urllib.request.urlopen('https://api.ipify.org').read().decode('utf8')
     sslip_url = "https://" + external_ip + ".sslip.io"
-    print("external URL: " + sslip_url)
+    logging.info("external URL: %s", sslip_url)
     return sslip_url
 
 
@@ -129,12 +129,12 @@ def validate_i18n(reference_file: str = "en.json") -> None:
                     )
 
     if errors:
-        print("❌ Validation errors found:\n")
+        logging.error("i18n validation errors found:")
         for error in errors:
-            print(error)
+            logging.error("  %s", error)
         raise SystemExit(1)
 
-    print("✅ All localization files are valid")
+    logging.info("All localization files are valid")
 
 
 def create_access_token(data: dict) -> str:

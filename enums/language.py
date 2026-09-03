@@ -3,10 +3,12 @@ from enum import Enum
 
 class Language(str, Enum):
     EN = "en"
+    AR = "ar"
+    ES = "es"
+    ZH = "zh"
     FR = "fr"
     DE = "de"
     IT = "it"
-    ZH = "zh"
 
     @staticmethod
     def from_locale(locale: str) -> 'Language':
@@ -19,8 +21,12 @@ class Language(str, Enum):
         match self:
             case Language.EN:
                 return "US"
+            case Language.AR:
+                return "SA"
             case Language.ZH:
                 return "CN"
+            case Language.ES:
+                return "ES"
             case _:
                 return self.name
 

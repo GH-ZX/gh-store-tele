@@ -429,6 +429,8 @@
     "batstore_empty_cart": "Your order is empty.",
     "batstore_categories_title": "🛍️ Browse our store by category:",
     "batstore_category_products": "🛍️ {category}\n\nPick a product:",
-    "batstore_button": "🛍️ Store"
+    "batstore_button": "🛍️ Store",
+    "batstore_orders_button": "📦 Mes commandes",
+    "batstore_orders_empty": "Aucune commande pour le moment. Achetez des produits numériques depuis la page Toutes les catégories !"
   }
 }

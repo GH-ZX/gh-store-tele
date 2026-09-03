@@ -1,5 +1,3 @@
-import os
-
 import config
 from kryptoexpress import AsyncKryptoExpressClient, verify_callback_signature
 from kryptoexpress.models import FiatCurrency as KryptoExpressFiatCurrency

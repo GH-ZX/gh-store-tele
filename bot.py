@@ -91,7 +91,11 @@ async def _sync_batstore_catalog() -> None:
         logging.error("BatStore catalog sync failed (continuing): %s", e)
 
 
+_polling_task: asyncio.Task | None = None
+
+
 async def _startup() -> None:
+    global _polling_task
     await create_db_and_tables()
     async with get_db_session() as session:
         await ConfigService.seed_defaults(session)
@@ -99,6 +103,8 @@ async def _startup() -> None:
     if config.BATSTORE_SYNC_ENABLED:
         asyncio.create_task(_sync_batstore_catalog())
     asyncio.create_task(_set_webhook_with_retry())
+    from services.order_polling import poll_pending_orders
+    _polling_task = asyncio.create_task(poll_pending_orders())
     static = Path("static")
     if static.exists() is False:
         static.mkdir()
@@ -113,8 +119,8 @@ async def _startup() -> None:
                                                               filename="no_image.png"))
                 bot_photo_id = msg.photo[-1].file_id
                 photo_id_list.append(bot_photo_id)
-            except Exception as _:
-                pass
+            except Exception as e:
+                logging.warning("Could not send fallback photo to admin %s: %s", admin_id, e)
         bot_photo_id = photo_id_list[0] if photo_id_list else None
     else:
         bot_photo_id = photos.photos[0][-1].file_id
@@ -145,7 +151,14 @@ async def _startup() -> None:
 
 
 async def _shutdown() -> None:
+    global _polling_task
     logging.warning('Shutting down..')
+    if _polling_task and not _polling_task.done():
+        _polling_task.cancel()
+        try:
+            await _polling_task
+        except asyncio.CancelledError:
+            pass
     await bot.delete_webhook()
     await dp.storage.close()
     await bot.session.close()

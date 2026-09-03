@@ -483,7 +483,9 @@ class CartService:
                 await state.update_data(coupon_id=coupon_dto.id)
                 caption = get_text(language, BotEntity.USER, "coupon_applied")
         else:
-            await state.update_data(shipping_address=message.html_text)
+            import re
+            sanitized = re.sub(r'<[^>]+>', '', message.html_text or message.text or '')
+            await state.update_data(shipping_address=sanitized)
             caption, kb_builder = await CartService.get_shipping_options_paginated(0, session, language)
         media.caption = caption
         return media, kb_builder

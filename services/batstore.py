@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 try:
     import httpx
@@ -36,7 +37,8 @@ class BatStoreService:
                                            default=BatStoreService.BASE_DEFAULT)
             key = await ConfigService.get(session, "BATSTORE_API_KEY",
                                           env_fallback=config.BATSTORE_API_KEY)
-        except Exception:
+        except Exception as e:
+            logging.warning("ConfigService resolution failed, using env fallback: %s", e)
             base = ConfigService.fallback_from_env("BATSTORE_API_URL", BatStoreService.BASE_DEFAULT)
             key = ConfigService.fallback_from_env("BATSTORE_API_KEY")
         return (base or BatStoreService.BASE_DEFAULT), key
@@ -130,6 +132,31 @@ class BatStoreService:
         if not data.get("success"):
             raise BatStoreAPIError(f"GET /orders/{order_id} failed: {resp.text[:200]}")
         return data
+
+    @staticmethod
+    def extract_delivery_goods(order_data: dict) -> list[str]:
+        """Extract delivered goods from a BatStore order response."""
+        order = order_data.get("order") or order_data
+        items = order.get("items") or []
+        goods = []
+        for it in items:
+            value = it.get("value") or it.get("data") or str(it)
+            goods.append(value)
+        return goods
+
+    @staticmethod
+    def get_order_reseller_status(order_data: dict) -> str:
+        """Map reseller order status to our internal status.
+
+        Returns: 'completed', 'failed', or 'pending'.
+        """
+        order = order_data.get("order") or order_data
+        status = (order.get("status") or "").lower()
+        if status in ("completed", "delivered", "fulfilled"):
+            return "completed"
+        if status in ("failed", "cancelled", "expired", "refunded"):
+            return "failed"
+        return "pending"
 
     # ------------------------------------------------------------------ margin
 

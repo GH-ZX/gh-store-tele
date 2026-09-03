@@ -31,3 +31,31 @@ class BatStoreOrderRepository:
                 .limit(limit))
         result = await session.execute(stmt)
         return list(result.scalars().all())
+
+    @staticmethod
+    async def get_pending(session: AsyncSession | Session) -> list[BatStoreOrder]:
+        stmt = (select(BatStoreOrder)
+                .where(BatStoreOrder.status == "pending_fulfillment")
+                .where(BatStoreOrder.external_order_ref.isnot(None))
+                .order_by(BatStoreOrder.created_at.asc()))
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+    @staticmethod
+    async def update_status(order_id: int, new_status: str,
+                            delivery_goods: list | None,
+                            session: AsyncSession | Session) -> BatStoreOrder | None:
+        stmt = select(BatStoreOrder).where(BatStoreOrder.id == order_id)
+        result = await session.execute(stmt)
+        order = result.scalar_one_or_none()
+        if order is None:
+            return None
+        order.status = new_status
+        if delivery_goods and order.details:
+            for detail in order.details:
+                if "delivery_goods" not in detail:
+                    detail["delivery_goods"] = delivery_goods
+        elif delivery_goods and not order.details:
+            order.details = [{"delivery_goods": delivery_goods}]
+        await session.flush()
+        return order

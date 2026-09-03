@@ -1,3 +1,5 @@
+import logging
+
 try:
     import httpx
 except Exception:  # pragma: no cover - httpx optional at import in tests
@@ -26,7 +28,8 @@ class SamService:
                                            default=SamService.DEFAULT_BASE)
             key = await ConfigService.get(session, "SAM_API_KEY",
                                           env_fallback=config.SAM_API_KEY)
-        except Exception:
+        except Exception as e:
+            logging.warning("ConfigService resolution failed, using env fallback: %s", e)
             base = ConfigService.fallback_from_env("SAM_API_BASE", SamService.DEFAULT_BASE)
             key = ConfigService.fallback_from_env("SAM_API_KEY")
         return (base or SamService.DEFAULT_BASE), key

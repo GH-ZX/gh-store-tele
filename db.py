@@ -33,7 +33,7 @@ from models.batstore_order import BatStoreOrder
 from models.sam_payment import SamPayment
 
 url = f"postgresql+asyncpg://{config.DB_USER}:{config.DB_PASS}@{config.DB_HOST}:{config.DB_PORT}/{config.DB_NAME}"
-engine = create_async_engine(url, echo=True)
+engine = create_async_engine(url, echo=False)
 session_maker = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 

@@ -1,5 +1,8 @@
 .env
+.env.*
+!.env.template
 .idea
+.venv
 venv
 __pycache__
 *.py[cod]
@@ -9,3 +12,12 @@ caddy_data
 caddy_config
 static
 .git
+.github
+tests/
+docs/
+*.md
+Dockerfile
+docker-compose.yml
+.dockerignore
+*.log
+.pytest_cache

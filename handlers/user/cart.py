@@ -119,7 +119,9 @@ async def navigate_cart_process(callback: CallbackQuery,
         6: buy_processing
     }
 
-    current_level_function = levels[current_level]
+    current_level_function = levels.get(current_level)
+    if current_level_function is None:
+        return
 
     kwargs = {
         "callback": callback,

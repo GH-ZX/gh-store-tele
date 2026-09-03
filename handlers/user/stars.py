@@ -1,3 +1,5 @@
+import logging
+
 from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery, LabeledPrice, PreCheckoutQuery, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -92,7 +94,8 @@ async def stars_successful_payment(message: Message, session: AsyncSession,
         tg_id = int(tg_id_s)
         stars = int(stars_s)
         usd = round(float(usd_s), 2)
-    except Exception:
+    except Exception as e:
+        logging.warning("Failed to parse Stars payload '%s': %s", sp.invoice_payload, e)
         usd = round((sp.total_amount / 1000000) * rate, 2)
     user = await UserRepository.get_by_tgid(tg_id, session)
     if user is None:

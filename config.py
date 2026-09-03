@@ -6,7 +6,7 @@ from enums.currency import Currency
 from enums.runtime_environment import RuntimeEnvironment
 from utils.utils import get_sslipio_external_url, start_ngrok, hash_password
 
-load_dotenv(".env.bot.dev")
+load_dotenv()
 RUNTIME_ENVIRONMENT = RuntimeEnvironment(os.environ.get("RUNTIME_ENVIRONMENT"))
 # Explicit public base URL (e.g. your Cloudflare-Tunnel-backed domain). When set,
 # it is used as-is; otherwise fall back to ngrok (DEV) or your public IP via

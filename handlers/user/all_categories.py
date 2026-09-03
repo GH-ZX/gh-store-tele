@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 import config
@@ -167,7 +168,9 @@ async def add_to_cart(**kwargs):
 
 @all_categories_router.message(IsUserExistFilter(), F.text, StateFilter(UserStates.filter_items))
 async def receive_filter_message(message: Message, state: FSMContext, session: AsyncSession, language: Language):
-    await state.update_data(filter=message.html_text)
+    import re
+    sanitized = re.sub(r'<[^>]+>', '', message.html_text or message.text or '')
+    await state.update_data(filter=sanitized)
     state_data = await state.get_data()
     entity_type = EntityType(state_data['entity_type'])
     if entity_type == EntityType.CATEGORY:
@@ -238,8 +241,8 @@ async def _safe_edit(message, text, reply_markup):
             await message.edit_media(
                 media=InputMediaPhoto(media=get_bot_photo_id(), caption=text),
                 reply_markup=reply_markup)
-        except Exception:
-            pass
+        except Exception as e:
+            logging.warning("Failed to edit message: %s", e)
 
 
 async def _batstore_products_in_category(callback, callback_data, state, session, language):
@@ -292,9 +295,13 @@ async def _batstore_products_in_category(callback, callback_data, state, session
     try:
         await callback.message.edit_text(text=caption, reply_markup=kb.as_markup())
     except Exception:
-        await callback.message.edit_media(
-            media=InputMediaPhoto(media='https://i.postimg.cc/cCPbmkbc/photo-2026-05-09-16-07-18.jpg', caption=caption),
-            reply_markup=kb.as_markup())
+        from utils.utils import get_bot_photo_id
+        try:
+            await callback.message.edit_media(
+                media=InputMediaPhoto(media=get_bot_photo_id(), caption=caption),
+                reply_markup=kb.as_markup())
+        except Exception as e:
+            logging.warning("Failed to edit batstore products message: %s", e)
 
 
 async def _batstore_product_detail(callback, callback_data, state, session, language):
@@ -355,14 +362,13 @@ async def _batstore_product_detail(callback, callback_data, state, session, lang
     if product.image_url:
         try:
             await callback.message.edit_text(text=caption, reply_markup=kb.as_markup())
-            # Send product image separately
             try:
                 await callback.message.answer_photo(photo=product.image_url)
-            except Exception:
-                pass
+            except Exception as e:
+                logging.warning("Failed to send product image: %s", e)
             return
-        except Exception:
-            pass
+        except Exception as e:
+            logging.warning("Failed to edit product detail message: %s", e)
     await callback.message.edit_text(text=caption, reply_markup=kb.as_markup())
 
 
@@ -449,7 +455,8 @@ async def _batstore_checkout(callback, callback_data, state, session, language):
     # Quote
     try:
         await BatStoreService.quote(session, product.product_id, qty)
-    except Exception:
+    except Exception as e:
+        logging.error("BatStore quote failed for product %s: %s", product.product_id, e)
         await callback.message.edit_text(
             get_text(language, BotEntity.USER, "batstore_failed"),
             reply_markup=kb.as_markup())
@@ -463,7 +470,8 @@ async def _batstore_checkout(callback, callback_data, state, session, language):
             customer_reference=customer_reference,
             idempotency_key=customer_reference)
         external_ref = placed.get("order", {}).get("id") or placed.get("order_id")
-    except Exception:
+    except Exception as e:
+        logging.error("BatStore place_order failed for product %s: %s", product.product_id, e)
         await callback.message.edit_text(
             get_text(language, BotEntity.USER, "batstore_failed"),
             reply_markup=kb.as_markup())
@@ -474,11 +482,14 @@ async def _batstore_checkout(callback, callback_data, state, session, language):
     await UserRepository.update(user, session)
 
     from models.batstore_order import BatStoreOrderDTO
+    order_status = "completed"
+    if product.delivery_type in ("activation",):
+        order_status = "pending_fulfillment"
     await BatStoreOrderRepository.create(
         BatStoreOrderDTO(
             telegram_id=callback.from_user.id,
             total_sell=total,
-            status="completed",
+            status=order_status,
             external_order_ref=str(external_ref) if external_ref else None,
             customer_reference=customer_reference,
             details=[{

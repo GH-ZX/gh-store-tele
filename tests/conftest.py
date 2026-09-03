@@ -51,6 +51,23 @@ def _build_config_module() -> ModuleType:
     config.JWT_EXPIRE_MINUTES = 30
     config.JWT_SECRET_KEY = "secret"
     config.JWT_ALGORITHM = "HS256"
+    config.BATSTORE_WEBHOOK_URL = "https://example.com/webhook"
+    config.SAM_API_BASE = "https://www.sam-api.pro/api"
+    config.SAM_API_KEY = "sk_test"
+    config.SAM_RECEIVING_WALLET = "test_wallet"
+    config.SAM_CURRENCY = "USD"
+    config.SAM_SYP_USD_RATE = "0.002551"
+    config.MARGIN_PERCENT = "0"
+    config.MARGIN_FIXED = "0"
+    config.DEFAULT_MARGIN_TYPE = "percent"
+    config.GHSTORE_STARS_ENABLED = False
+    config.GHSTORE_STARS_TO_USD = "0.01"
+    config.BATSTORE_API_URL = ""
+    config.BATSTORE_API_KEY = ""
+    config.BATSTORE_SYNC_ENABLED = False
+    config.SQLADMIN_RAW_PASSWORD = "admin"
+    config.SQLADMIN_HASHED_PASSWORD = "hashed:admin"
+    config.WEBHOOK_SECRET_TOKEN = "test_secret"
     return config
 
 

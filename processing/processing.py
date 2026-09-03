@@ -1,4 +1,5 @@
 import datetime
+import logging
 from fastapi import APIRouter, Request, HTTPException
 
 import config
@@ -21,7 +22,7 @@ def __security_check(x_signature_header: str | None, payload: bytes):
 @processing_router.post("/event")
 async def fetch_crypto_event(payment_dto: ProcessingPaymentDTO, request: Request):
     request_body = await request.body()
-    print(f"EVENT RECEIVED:{request_body}")
+    logging.info("Crypto webhook event received")
     await CryptoApiWrapper._apply_config()
     is_security_pass = __security_check(request.headers.get("X-Signature"), request_body)
     if is_security_pass is False:
@@ -53,6 +54,4 @@ async def fetch_crypto_event(payment_dto: ProcessingPaymentDTO, request: Request
                     await NotificationService.withdrawal(withdraw_dto)
             elif payment_dto.isPaid is False:
                 await NotificationService.payment_expired(user, payment_dto, table_payment_dto)
-            else:
-                pass
             return "200"

@@ -139,9 +139,57 @@ async def referral_system(**kwargs):
     await callback.message.edit_caption(caption=msg, reply_markup=kb_builder.as_markup())
 
 
+async def batstore_orders(**kwargs):
+    callback: CallbackQuery = kwargs.get("callback")
+    session: AsyncSession = kwargs.get("session")
+    language: Language = kwargs.get("language")
+    from repositories.batstore_order import BatStoreOrderRepository
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from callbacks import MyProfileCallback
+
+    orders = await BatStoreOrderRepository.get_by_telegram_id(
+        callback.from_user.id, session, limit=10)
+
+    kb_builder = InlineKeyboardBuilder()
+    if not orders:
+        caption = get_text(language, BotEntity.USER, "batstore_orders_empty")
+    else:
+        lines = []
+        for o in orders:
+            sym = config.CURRENCY.get_localized_symbol()
+            status_emoji = "✅" if o.status == "completed" else "⏳" if o.status == "pending_fulfillment" else "❌"
+            details = o.details or []
+            product_names = ", ".join(d.get("name", "?") for d in details[:3])
+            if len(details) > 3:
+                product_names += f" +{len(details) - 3} more"
+            lines.append(
+                f"{status_emoji} #{o.id} · {product_names} · {o.total_sell:.2f}{sym}"
+            )
+            if o.status == "completed" and o.details:
+                for d in o.details:
+                    goods = d.get("delivery_goods", [])
+                    if goods:
+                        for g in goods[:5]:
+                            lines.append(f"  📦 {g}")
+                        if len(goods) > 5:
+                            lines.append(f"  ... +{len(goods) - 5} more")
+        caption = "\n\n".join(lines)
+
+    kb_builder.button(
+        text=get_text(language, BotEntity.COMMON, "back_button"),
+        callback_data=MyProfileCallback.create(level=0))
+    kb_builder.adjust(1)
+    if callback.message.caption:
+        await callback.message.edit_caption(caption=caption, reply_markup=kb_builder.as_markup())
+    else:
+        await callback.message.edit_text(text=caption, reply_markup=kb_builder.as_markup())
+
+
 @my_profile_router.message(IsUserExistFilter(), F.text, StateFilter(UserStates.filter_purchase_history))
 async def receive_filter_message(message: Message, state: FSMContext, session: AsyncSession, language: Language):
-    await state.update_data(filter=message.html_text)
+    import re
+    sanitized = re.sub(r'<[^>]+>', '', message.html_text or message.text or '')
+    await state.update_data(filter=sanitized)
     media, kb_builder = await BuyService.get_purchased_item(None, state, session, language)
     await NotificationService.answer_media(message, media, kb_builder.as_markup())
 
@@ -182,10 +230,13 @@ async def navigate(callback: CallbackQuery,
         4: get_purchased_item,
         5: get_purchase,
         6: edit_language,
-        7: referral_system
+        7: referral_system,
+        8: batstore_orders,
     }
 
-    current_level_function = levels[current_level]
+    current_level_function = levels.get(current_level)
+    if current_level_function is None:
+        return
 
     kwargs = {
         "callback": callback,

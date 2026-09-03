@@ -6,7 +6,12 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 import config
 from config import SUPPORT_LINK
+import os
 import logging
+
+log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(level=getattr(logging, log_level, logging.INFO))
+
 from bot import dp, main, redis
 from enums.bot_entity import BotEntity
 from enums.keyboard_button import KeyboardButton
@@ -20,8 +25,7 @@ from multibot import main as main_multibot
 from handlers.user.cart import cart_router
 from handlers.admin.admin import admin_router
 from handlers.user.all_categories import all_categories_router
-from handlers.user.batstore import batstore_router
-from handlers.user.batstore_catalog import batstore_catalog_router
+
 from handlers.user.stars import stars_router
 from handlers.user.sam import sam_router
 from handlers.user.my_profile import my_profile_router
@@ -33,7 +37,6 @@ from services.user import UserService
 from utils.custom_filters import IsUserExistFilter, IsUserBannedFilter
 from utils.utils import get_bot_photo_id, get_text
 
-logging.basicConfig(level=logging.INFO)
 main_router = Router()
 
 
@@ -84,7 +87,7 @@ async def support(message: Message, session: AsyncSession, language: Language):
 
 
 @main_router.message(F.text.in_(KeyboardButton.get_localized_set(KeyboardButton.REVIEWS)), IsUserExistFilter())
-async def support(message: Message, session: AsyncSession, language: Language):
+async def reviews(message: Message, session: AsyncSession, language: Language):
     media, kb_builder = await ReviewService.get_reviews_paginated(None, session, language)
     await NotificationService.answer_media(message, media, reply_markup=kb_builder.as_markup())
 
@@ -110,8 +113,7 @@ users_routers.include_routers(
     my_profile_router,
     cart_router,
     review_management_router,
-    batstore_router,
-    batstore_catalog_router,
+
     stars_router,
     sam_router
 )

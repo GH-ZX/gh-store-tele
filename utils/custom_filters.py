@@ -23,9 +23,12 @@ class IsUserExistFilter(BaseFilter):
 
 
 class IsUserBannedFilter(BaseFilter):
-    async def __call__(self, message: Message):
+    async def __call__(self, event):
+        from_user = getattr(event, 'from_user', None)
+        if from_user is None:
+            return False
         async with get_db_session() as session:
-            user = await UserRepository.get_by_tgid(message.from_user.id, session)
+            user = await UserRepository.get_by_tgid(from_user.id, session)
             if user:
                 return user.is_banned and user.is_admin is False
             else:

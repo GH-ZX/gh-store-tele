@@ -429,6 +429,8 @@
     "batstore_empty_cart": "Your order is empty.",
     "batstore_categories_title": "🛍️ Browse our store by category:",
     "batstore_category_products": "🛍️ {category}\n\nPick a product:",
-    "batstore_button": "🛍️ Store"
+    "batstore_button": "🛍️ Store",
+    "batstore_orders_button": "📦 我的订单",
+    "batstore_orders_empty": "暂无订单。请从所有分类页面购买数字商品！"
   }
 }

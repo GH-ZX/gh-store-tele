@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 from aiogram.fsm.context import FSMContext
@@ -207,7 +208,8 @@ class BatStoreStoreService:
         customer_reference = f"ghstore-{callback.from_user.id}-{uuid.uuid4().hex[:8]}"
         try:
             quote = await BatStoreService.quote(session, product.product_id, qty)
-        except Exception:
+        except Exception as e:
+            logging.error("BatStore quote failed: %s", e)
             return get_text(language, BotEntity.USER, "batstore_failed"), kb_builder
 
         order_payload = {}
@@ -227,17 +229,22 @@ class BatStoreStoreService:
                 idempotency_key=customer_reference,
             )
             external_ref = placed.get("order", {}).get("id") or placed.get("order_id")
-        except Exception:
+        except Exception as e:
+            logging.error("BatStore place_order failed: %s", e)
             return get_text(language, BotEntity.USER, "batstore_failed"), kb_builder
 
         # charge the customer balance only after the upstream order succeeded
         user.consume_records = (user.consume_records or 0) + total
         await UserRepository.update(user, session)
 
+        order_status = "completed"
+        if product.delivery_type in ("activation",):
+            order_status = "pending_fulfillment"
+
         await BatStoreOrderRepository.create(BatStoreOrderDTO(
             telegram_id=callback.from_user.id,
             total_sell=total,
-            status="completed",
+            status=order_status,
             external_order_ref=str(external_ref) if external_ref else None,
             customer_reference=customer_reference,
             details=order_payload["details"],
