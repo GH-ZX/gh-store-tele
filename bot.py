@@ -117,6 +117,20 @@ async def _startup() -> None:
     if config.BATSTORE_SYNC_ENABLED:
         asyncio.create_task(_sync_batstore_catalog())
     asyncio.create_task(_set_webhook_with_retry())
+    try:
+        tma_host = (config.WEBHOOK_HOST or "").strip().rstrip('/')
+        if tma_host and tma_host.startswith("https://"):
+            from aiogram.types import MenuButtonWebApp, WebAppInfo
+            tma_url = f"{tma_host}/app"
+            await bot.set_chat_menu_button(
+                menu_button=MenuButtonWebApp(
+                    text="🛍️ Store",
+                    web_app=WebAppInfo(url=tma_url)
+                )
+            )
+            logging.info("Telegram Mini App menu button configured: %s", tma_url)
+    except Exception as e:
+        logging.warning("Could not set chat menu button: %s", e)
     from services.order_polling import poll_pending_orders, periodic_catalog_sync, periodic_balance_monitor
     _polling_task = asyncio.create_task(poll_pending_orders())
     _sync_loop_task = asyncio.create_task(periodic_catalog_sync())

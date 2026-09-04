@@ -1,5 +1,6 @@
 import traceback
 from aiogram import types, F, Router
+from aiogram.fsm.context import FSMContext
 from aiogram.filters import Command, CommandStart, CommandObject
 from aiogram.types import ErrorEvent, Message, BufferedInputFile, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -57,16 +58,70 @@ async def start(message: Message, command: CommandObject, session: AsyncSession,
         telegram_id=telegram_id,
         language=language
     ), command.args, session)
-    keyboard = [[all_categories_button, my_profile_button], [faq_button, help_button],
-                [reviews_button],
-                [cart_button]]
+
+    tma_host = (config.WEBHOOK_HOST or "").strip().rstrip('/')
+    keyboard = []
+    if tma_host and tma_host.startswith("https://"):
+        tma_url = f"{tma_host}/app"
+        keyboard.append([types.KeyboardButton(text="🛍️ Open Store WebApp", web_app=types.WebAppInfo(url=tma_url))])
+
+    keyboard.extend([
+        [all_categories_button, my_profile_button],
+        [faq_button, help_button],
+        [reviews_button, cart_button]
+    ])
     if telegram_id in config.ADMIN_ID_LIST:
         keyboard.append([admin_menu_button])
     start_markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2, keyboard=keyboard)
     bot_photo_id = get_bot_photo_id()
+
+    # Inline launcher button directly under the photo
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    inline_kb = InlineKeyboardBuilder()
+    if tma_host and tma_host.startswith("https://"):
+        inline_kb.button(text="🛍️ Launch Store WebApp", web_app=types.WebAppInfo(url=f"{tma_host}/app"))
+    inline_kb.button(text="🔍 Search Products", callback_data="trigger_search")
+    inline_kb.adjust(1)
+
     await message.answer_photo(photo=bot_photo_id,
                                caption=get_text(language, BotEntity.COMMON, "start_message"),
-                               reply_markup=start_markup)
+                               reply_markup=inline_kb.as_markup())
+    # Also update persistent reply keyboard
+    await message.answer("👇 Use the menu below or tap <b>Store</b> to explore products:", reply_markup=start_markup)
+
+
+@main_router.callback_query(F.data == "trigger_search", IsUserExistFilter())
+async def trigger_search_cb(callback: types.CallbackQuery, state: FSMContext):
+    try:
+        await callback.answer()
+    except Exception:
+        pass
+    from handlers.user.constants import UserStates
+    await state.set_state(UserStates.search_query)
+    await callback.message.answer(
+        "🔍 <b>Search Digital Products & Services</b>\n\n"
+        "Please send the product name or keyword you are looking for\n"
+        "(e.g. <code>ChatGPT</code>, <code>Gemini</code>, <code>Claude</code>, <code>Netflix</code>, <code>VPN</code>):"
+    )
+
+
+@main_router.message(F.web_app_data)
+async def handle_web_app_data(message: Message, session: AsyncSession, language: Language, state: FSMContext):
+    """Process orders initiated from the Telegram Mini App."""
+    import json
+    raw = message.web_app_data.data if message.web_app_data else "{}"
+    try:
+        data = json.loads(raw)
+        action = data.get("action")
+        pid = int(data.get("product_id") or 0)
+        if action == "buy_batstore" and pid:
+            from callbacks import BatStoreCallback
+            from services.batstore_store import BatStoreStoreService
+            cb_data = BatStoreCallback.create(level=1, product_id=pid)
+            caption, kb = await BatStoreStoreService.detail(message, cb_data, state, session, language)
+            await message.answer(caption, reply_markup=kb.as_markup())
+    except Exception as e:
+        logging.warning("Error processing web_app_data: %s", e)
 
 
 @main_router.message(F.text.in_(KeyboardButton.get_localized_set(KeyboardButton.FAQ)), IsUserExistFilter())

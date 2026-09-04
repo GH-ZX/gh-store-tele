@@ -74,6 +74,15 @@ class CategoryService:
                                                                item_type=callback_data.item_type).pack()
                 )
             )
+        tma_host = (config.WEBHOOK_HOST or "").strip().rstrip('/')
+        if tma_host and tma_host.startswith("https://"):
+            from aiogram.types import WebAppInfo
+            kb_builder.row(
+                InlineKeyboardButton(
+                    text="🛍️ Open Web Store App",
+                    web_app=WebAppInfo(url=f"{tma_host}/app")
+                )
+            )
         kb_builder = await add_search_button(kb_builder, EntityType.CATEGORY, callback_data, filters, language)
         kb_builder = await add_sorting_buttons(
             kb_builder, [SortProperty.NAME], callback_data, sort_pairs, language
