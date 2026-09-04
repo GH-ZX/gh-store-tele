@@ -1795,13 +1795,13 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       });
     }
 
-    // Bilingual Collections Config with Curated HD Visual Pictures
+    // Bilingual Collections Config with Curated HD Cyber & 3D Visual Pictures
     const CATALOG_META = {
       "AI & Chatbots": {
         arTitle: "🤖 الذكاء الاصطناعي",
         enTitle: "🤖 AI & Chatbots",
         icon: "🤖",
-        image: "https://images.unsplash.com/photo-1677442136019-21780efad99a?w=600&auto=format&fit=crop&q=80",
+        image: "https://images.unsplash.com/photo-1620712943543-bcc4688e7485?w=800&auto=format&fit=crop&q=85",
         arPreview: "كلود · شات جي بي تي · جيميني · جروك",
         enPreview: "Claude · ChatGPT · Gemini · Grok"
       },
@@ -1809,7 +1809,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         arTitle: "🎬 البث والترفيه",
         enTitle: "🎬 Streaming & Media",
         icon: "🎬",
-        image: "https://images.unsplash.com/photo-1574375927938-d5a98e8ffe85?w=600&auto=format&fit=crop&q=80",
+        image: "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=800&auto=format&fit=crop&q=85",
         arPreview: "نتفلكس · بيكوك · شاهد · أبل تي في",
         enPreview: "Netflix · Peacock · Shahid · Apple TV"
       },
@@ -1817,7 +1817,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         arTitle: "🛡️ الحماية والـ VPN",
         enTitle: "🛡️ VPN & Security",
         icon: "🛡️",
-        image: "https://images.unsplash.com/photo-1563986768609-322da13575f3?w=600&auto=format&fit=crop&q=80",
+        image: "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=800&auto=format&fit=crop&q=85",
         arPreview: "نورد في بي ان · سيرف شارك · بروتون",
         enPreview: "NordVPN · Surfshark · Proton VPN"
       },
@@ -1825,7 +1825,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         arTitle: "🎨 التصميم والإبداع",
         enTitle: "🎨 Design & Creative",
         icon: "🎨",
-        image: "https://images.unsplash.com/photo-1626785774573-4b799315345d?w=600&auto=format&fit=crop&q=80",
+        image: "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=800&auto=format&fit=crop&q=85",
         arPreview: "كانفا · أدوبي · فيجما · فريمر",
         enPreview: "Canva · Adobe · Figma · Framer"
       },
@@ -1833,15 +1833,63 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         arTitle: "📝 الإنتاجية والأدوات",
         enTitle: "📝 Productivity & Tools",
         icon: "📝",
-        image: "https://images.unsplash.com/photo-1499750310107-5fef28a66643?w=600&auto=format&fit=crop&q=80",
+        image: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=800&auto=format&fit=crop&q=85",
         arPreview: "نوشن · كاب كات · أوفيس",
         enPreview: "Notion · CapCut · MS Office 365"
+      },
+      "Office & Productivity": {
+        arTitle: "💼 برامج الأوفيس والأعمال",
+        enTitle: "💼 Office & Business",
+        icon: "💼",
+        image: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&auto=format&fit=crop&q=85",
+        arPreview: "مايكروسوفت 365 · إكسيل · وورد",
+        enPreview: "Microsoft 365 · Word · Excel"
+      },
+      "Accounts & Email": {
+        arTitle: "📧 الحسابات والبريد الإلكتروني",
+        enTitle: "📧 Accounts & Email",
+        icon: "📧",
+        image: "https://images.unsplash.com/photo-1596526131083-e8c633c948d2?w=800&auto=format&fit=crop&q=85",
+        arPreview: "جي ميل قديم · بريد أعمال موثق",
+        enPreview: "Aged Gmail · Business Mail"
+      },
+      "Education": {
+        arTitle: "🎓 التعليم والمنصات الدراسية",
+        enTitle: "🎓 Education & Learning",
+        icon: "🎓",
+        image: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&auto=format&fit=crop&q=85",
+        arPreview: "كورسيرا · كويزلت · أوتوديسك",
+        enPreview: "Coursera · Quizlet · Autodesk"
+      },
+      "Communication": {
+        arTitle: "💬 برامج التواصل والمحادثات",
+        enTitle: "💬 Communication",
+        icon: "💬",
+        image: "https://images.unsplash.com/photo-1516251193007-45ef944ab0c6?w=800&auto=format&fit=crop&q=85",
+        arPreview: "زوم برو · ميرو · مكالمات فيديو",
+        enPreview: "Zoom Pro · Miro · Team Chats"
+      },
+      "Social Media": {
+        arTitle: "📱 وسائل التواصل الاجتماعي",
+        enTitle: "📱 Social Media",
+        icon: "📱",
+        image: "https://images.unsplash.com/photo-1611162617474-5b21e879e113?w=800&auto=format&fit=crop&q=85",
+        arPreview: "سناب شات بلس · قنوات موثقة",
+        enPreview: "Snapchat+ · Social Boost"
+      },
+      "Software Keys": {
+        arTitle: "🔑 مفاتيح وتراخيص البرامج",
+        enTitle: "🔑 Software Licenses",
+        icon: "🔑",
+        image: "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=800&auto=format&fit=crop&q=85",
+        arPreview: "ويندوز 10/11 برو · جيت برينز",
+        enPreview: "Windows 10/11 Pro · JetBrains"
       },
       "Other": {
         arTitle: "📦 منتجات رقمية متنوعة",
         enTitle: "📦 Digital Subscriptions",
         icon: "📦",
-        image: "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=600&auto=format&fit=crop&q=80",
+        image: "https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?w=800&auto=format&fit=crop&q=85",
         arPreview: "تراخيص، مفاتيح واشتراكات",
         enPreview: "Licenses, activations and keys"
       }
