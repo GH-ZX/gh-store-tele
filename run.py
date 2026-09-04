@@ -107,22 +107,69 @@ async def trigger_search_cb(callback: types.CallbackQuery, state: FSMContext):
 
 @main_router.message(F.web_app_data)
 async def handle_web_app_data(message: Message, session: AsyncSession, language: Language, state: FSMContext):
-    """Process orders initiated from the Telegram Mini App."""
+    """Process user interactions from the Telegram Mini App."""
     import json
     raw = message.web_app_data.data if message.web_app_data else "{}"
     try:
         data = json.loads(raw)
         action = data.get("action")
-        pid = int(data.get("product_id") or 0)
-        if action == "buy_batstore" and pid:
-            from callbacks import BatStoreCallback
-            from services.batstore_store import BatStoreStoreService
-            cb_data = BatStoreCallback.create(level=1, product_id=pid)
-            caption, kb = await BatStoreStoreService.detail(message, cb_data, state, session, language)
-            await message.answer(caption, reply_markup=kb.as_markup())
+
+        if action == "buy_batstore":
+            pid = int(data.get("product_id") or 0)
+            qty = int(data.get("quantity") or 1)
+            if pid:
+                from callbacks import BatStoreCallback
+                from services.batstore_store import BatStoreStoreService
+                cb_data = BatStoreCallback.create(level=2, product_id=pid, quantity=qty)
+                caption, kb = await BatStoreStoreService.confirm_one(message, cb_data, state, session, language)
+                await message.answer(caption, reply_markup=kb.as_markup())
+
+        elif action == "topup_prompt":
+            from callbacks import MyProfileCallback
+            from services.user import UserService
+            cb_profile = MyProfileCallback.create(level=1)
+            msg_text, kb = await UserService.get_top_up_buttons(cb_profile, language, session)
+            await message.answer(msg_text, reply_markup=kb.as_markup())
+
+        elif action == "open_rail":
+            rail = data.get("rail")
+            if rail == "stars":
+                from callbacks import StarsCallback
+                from handlers.user.stars import stars_pick
+                dummy_cb = types.CallbackQuery(id="tma", from_user=message.from_user, chat_instance="", message=message)
+                await stars_pick(dummy_cb, StarsCallback.create(level=0), language)
+            elif rail == "sam":
+                from callbacks import SamCallback
+                from handlers.user.sam import sam_pick_provider
+                dummy_cb = types.CallbackQuery(id="tma", from_user=message.from_user, chat_instance="", message=message)
+                await sam_pick_provider(dummy_cb, SamCallback.create(level=0), session, language)
+            else:
+                from callbacks import MyProfileCallback
+                from services.user import UserService
+                cb_profile = MyProfileCallback.create(level=1)
+                msg_text, kb = await UserService.get_top_up_buttons(cb_profile, language, session)
+                await message.answer(msg_text, reply_markup=kb.as_markup())
+
+        elif action == "claim_warranty":
+            order_id = int(data.get("order_id") or 0)
+            if order_id:
+                from repositories.batstore_order import BatStoreOrderRepository
+                order = await BatStoreOrderRepository.get_by_id(order_id, session)
+                if order and order.telegram_id == message.from_user.id:
+                    from handlers.user.my_profile import claim_warranty_handler
+                    dummy_cb = types.CallbackQuery(id="tma", from_user=message.from_user, chat_instance="", message=message, data=f"claim_warranty_{order_id}")
+                    await claim_warranty_handler(dummy_cb, session, language)
+
+        elif action == "report_issue":
+            order_id = int(data.get("order_id") or 0)
+            from handlers.user.constants import UserStates
+            await state.set_state(UserStates.order_issue)
+            await message.answer(
+                f"📝 <b>Report an Issue with Order #{order_id}</b>\n\n"
+                "Please send a message describing what went wrong. Our team will review it immediately:"
+            )
     except Exception as e:
         logging.warning("Error processing web_app_data: %s", e)
-
 
 @main_router.message(F.text.in_(KeyboardButton.get_localized_set(KeyboardButton.FAQ)), IsUserExistFilter())
 async def faq(message: Message, session: AsyncSession, language: Language):
