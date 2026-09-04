@@ -20,15 +20,17 @@ from models.user import User, UserDTO
 from repositories.button_media import ButtonMediaRepository
 from repositories.buy import BuyRepository
 from repositories.cart import CartRepository
-def get_vip_tier_info(consume_records: float | None) -> tuple[str, float]:
-    """Return (tier_label, discount_percent) based on lifetime spend."""
+def get_vip_tier_info(consume_records: float | None, custom_discount_pct: float | None = None) -> tuple[str, float]:
+    """Return (tier_label, discount_percent) based on lifetime spend or custom override."""
+    if custom_discount_pct is not None and custom_discount_pct > 0:
+        return f"VIP ({custom_discount_pct:.0f}%)", float(custom_discount_pct)
     spent = float(consume_records or 0.0)
     if spent >= 1000.0:
-        return "💎 Platinum VIP", 10.0
+        return "Platinum VIP", 10.0
     elif spent >= 500.0:
-        return "🥇 Gold VIP", 7.0
+        return "Gold VIP", 7.0
     elif spent >= 100.0:
-        return "🥈 Silver VIP", 3.0
+        return "Silver VIP", 3.0
     return "Standard", 0.0
 
 

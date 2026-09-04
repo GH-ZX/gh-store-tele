@@ -1,4 +1,5 @@
 import asyncio
+import os
 import logging
 import sys
 import traceback
@@ -12,9 +13,10 @@ from sqladmin import Admin
 import config
 from aiogram import Dispatcher
 from fastapi import FastAPI, Request, status, HTTPException
+from sqlalchemy import select, func, text
 
 from admin import authentication_backend
-from db import create_db_and_tables, engine, get_db_session, session_commit
+from db import create_db_and_tables, engine, get_db_session, session_commit, session_execute
 from processing.processing import processing_router
 import uvicorn
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
@@ -478,6 +480,37 @@ async def get_tma_user_data(tg_id: int):
                 photo_url = f"https://api.telegram.org/file/bot{config.TOKEN}/{file_obj.file_path}"
         except Exception as e:
             logging.debug("Could not fetch profile photo: %s", e)
+        is_admin = bool(user.telegram_id in config.ADMIN_ID_LIST)
+        admin_stats = None
+        if is_admin:
+            try:
+                from models.batstore_order import BatStoreOrder
+                from models.user import User
+                stmt_rev = select(func.coalesce(func.sum(BatStoreOrder.total_sell), 0.0)).where(BatStoreOrder.status == "completed")
+                tot_rev = (await session_execute(stmt_rev, session)).scalar_one()
+                stmt_ord = select(func.count(BatStoreOrder.id))
+                tot_ord = (await session_execute(stmt_ord, session)).scalar_one()
+                stmt_usr = select(func.count(User.id))
+                tot_usr = (await session_execute(stmt_usr, session)).scalar_one()
+                stmt_bal = select(func.coalesce(func.sum(func.coalesce(User.top_up_amount, 0.0) - func.coalesce(User.consume_records, 0.0)), 0.0))
+                tot_bal = (await session_execute(stmt_bal, session)).scalar_one()
+
+                syp_cfg = await ConfigService.get(session, "SAM_SYP_USD_RATE", env_fallback=os.environ.get("SAM_SYP_USD_RATE"))
+                syp_val = float(syp_cfg or 0.002551)
+                syp_market = int(round(1.0 / syp_val)) if syp_val < 1.0 else int(round(syp_val))
+
+                ref_cfg = await ConfigService.get(session, "REFERRAL_MARGIN_COMMISSION_PERCENT", env_fallback="0.2")
+                ref_val = float(ref_cfg or 0.2)
+                admin_stats = {
+                    "total_revenue": round(float(tot_rev), 2),
+                    "total_orders_count": int(tot_ord),
+                    "total_users_count": int(tot_usr),
+                    "total_users_balance": round(float(tot_bal), 2),
+                    "syp_usd_rate": syp_market,
+                    "referral_commission_percent": ref_val,
+                }
+            except Exception as e:
+                logging.error("Failed to compile admin stats: %s", e)
 
         return {
             "telegram_id": user.telegram_id,
@@ -496,6 +529,8 @@ async def get_tma_user_data(tg_id: int):
             "referrals_total_earned": round(float(referrals_total_earned or 0.0), 2),
             "referrals_breakdown": referrals_breakdown,
             "referral_commission_rate": 0.2,
+            "is_admin": is_admin,
+            "admin_stats": admin_stats,
             "orders": orders_data,
         }
 
@@ -1029,6 +1064,385 @@ async def tma_redeem_voucher(request: Request):
     }
 
 
+
+def _verify_admin(tg_id: int | None) -> bool:
+    if not tg_id:
+        return False
+    return int(tg_id) in config.ADMIN_ID_LIST
+
+
+@app.post("/api/admin/rate/update")
+async def admin_update_rate(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not _verify_admin(admin_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    rate_raw = float(body.get("syp_rate") or 0.0)
+    if rate_raw <= 0:
+        return JSONResponse({"error": "invalid_rate"}, status_code=400)
+    usd_rate = (1.0 / rate_raw) if rate_raw > 100.0 else rate_raw
+    async with get_db_session() as session:
+        await ConfigService.set(session, "SAM_SYP_USD_RATE", f"{usd_rate:.8f}")
+        await session_commit(session)
+    from services.currency_rates import CurrencyRateService
+    CurrencyRateService._rates["SYP"] = float(rate_raw if rate_raw > 100.0 else round(1.0 / rate_raw, 2))
+    return {"status": "ok", "syp_rate": int(round(rate_raw if rate_raw > 100.0 else 1.0 / rate_raw))}
+
+
+@app.post("/api/admin/referral-rate/update")
+async def admin_update_referral_rate(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not _verify_admin(admin_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    ref_rate = float(body.get("referral_rate") or 0.2)
+    async with get_db_session() as session:
+        await ConfigService.set(session, "REFERRAL_MARGIN_COMMISSION_PERCENT", str(ref_rate))
+        await session_commit(session)
+    return {"status": "ok", "referral_rate": ref_rate}
+
+
+@app.get("/api/admin/users")
+async def admin_get_users(tg_id: int, query: str = ""):
+    if not _verify_admin(tg_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    async with get_db_session() as session:
+        from models.user import User
+        stmt = select(User)
+        q = (query or "").strip().lower()
+        if q:
+            if q.isdigit():
+                stmt = stmt.where((User.telegram_id == int(q)) | (User.id == int(q)))
+            else:
+                uname = q.lstrip("@")
+                stmt = stmt.where(User.telegram_username.ilike(f"%{uname}%"))
+        else:
+            stmt = stmt.order_by(User.id.desc()).limit(25)
+        rows = await session_execute(stmt, session)
+        users = rows.scalars().all()
+        result = []
+        from services.user import get_vip_tier_info
+        for u in users:
+            bal = round((u.top_up_amount or 0.0) - (u.consume_records or 0.0), 2)
+            tier_label, disc_pct = get_vip_tier_info(u.consume_records, getattr(u, "custom_discount_pct", None))
+            ref_qty = await UserRepository.get_referrals_qty_by_referrer_id(u.id, session)
+            result.append({
+                "id": u.id,
+                "telegram_id": u.telegram_id,
+                "username": u.telegram_username or "",
+                "balance": bal,
+                "total_spent": round(u.consume_records or 0.0, 2),
+                "vip_tier": tier_label,
+                "vip_discount": disc_pct,
+                "is_banned": bool(u.is_banned),
+                "referrals_count": ref_qty,
+                "custom_discount_pct": getattr(u, "custom_discount_pct", None)
+            })
+    return {"users": result}
+
+
+@app.post("/api/admin/users/adjust-balance")
+async def admin_adjust_balance(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not _verify_admin(admin_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    target_tg_id = int(body.get("target_tg_id") or 0)
+    amount = float(body.get("amount") or 0.0)
+    action_type = body.get("action", "add")
+    if not target_tg_id or amount <= 0:
+        return JSONResponse({"error": "invalid_params"}, status_code=400)
+    async with get_db_session() as session:
+        user = await UserRepository.get_by_tgid(target_tg_id, session)
+        if not user:
+            return JSONResponse({"error": "user_not_found"}, status_code=404)
+        if action_type == "add":
+            user.top_up_amount = (user.top_up_amount or 0.0) + amount
+        else:
+            user.consume_records = (user.consume_records or 0.0) + amount
+        await UserRepository.update(user, session)
+        from models.admin_audit_log import AdminAuditLog
+        session.add(AdminAuditLog(
+            admin_tg_id=int(admin_id),
+            action="adjust_balance",
+            details={"target_tg_id": target_tg_id, "amount": amount, "type": action_type},
+            created_at=datetime.datetime.now(datetime.timezone.utc)
+        ))
+        await session_commit(session)
+        try:
+            sign = "+" if action_type == "add" else "-"
+            await bot.send_message(
+                target_tg_id,
+                f"💳 <b>إشعار تعديل الرصيد من الإدارة:</b>\n"
+                f"تم { 'إضافة' if action_type == 'add' else 'خصم' } <b>{sign}${amount:.2f}</b> إلى رصيدك."
+            )
+        except Exception:
+            pass
+        new_bal = round((user.top_up_amount or 0.0) - (user.consume_records or 0.0), 2)
+    return {"status": "ok", "new_balance": new_bal}
+
+
+@app.post("/api/admin/users/toggle-ban")
+async def admin_toggle_ban(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not _verify_admin(admin_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    target_tg_id = int(body.get("target_tg_id") or 0)
+    async with get_db_session() as session:
+        user = await UserRepository.get_by_tgid(target_tg_id, session)
+        if not user:
+            return JSONResponse({"error": "user_not_found"}, status_code=404)
+        user.is_banned = not user.is_banned
+        await UserRepository.update(user, session)
+        await session_commit(session)
+    return {"status": "ok", "is_banned": user.is_banned}
+
+
+@app.post("/api/admin/users/set-discount")
+async def admin_set_discount(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not _verify_admin(admin_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    target_tg_id = int(body.get("target_tg_id") or 0)
+    disc_val = body.get("discount_pct")
+    async with get_db_session() as session:
+        from models.user import User
+        stmt = select(User).where(User.telegram_id == target_tg_id)
+        user_row = (await session_execute(stmt, session)).scalar_one_or_none()
+        if not user_row:
+            return JSONResponse({"error": "user_not_found"}, status_code=404)
+        user_row.custom_discount_pct = float(disc_val) if (disc_val is not None and str(disc_val).strip() != "") else None
+        await session_commit(session)
+    return {"status": "ok", "custom_discount_pct": user_row.custom_discount_pct}
+
+
+@app.get("/api/admin/orders")
+async def admin_get_orders(tg_id: int, status: str = "all"):
+    if not _verify_admin(tg_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    async with get_db_session() as session:
+        from models.batstore_order import BatStoreOrder
+        from models.user import User
+        stmt = (
+            select(BatStoreOrder, User.telegram_username)
+            .outerjoin(User, User.telegram_id == BatStoreOrder.telegram_id)
+            .order_by(BatStoreOrder.id.desc())
+            .limit(30)
+        )
+        if status != "all":
+            stmt = stmt.where(BatStoreOrder.status == status)
+        rows = (await session_execute(stmt, session)).all()
+        orders_out = []
+        for o, uname in rows:
+            items_names = [d.get("name") or "Product" for d in (o.details or [])]
+            goods = [str(g) for d in (o.details or []) for g in (d.get("delivery_goods") or [])]
+            cost = sum(float(d.get("cost_usd") or 0.0) * float(d.get("quantity") or 1) for d in (o.details or []))
+            margin = max(0.0, float(o.total_sell or 0.0) - cost)
+            orders_out.append({
+                "id": o.id,
+                "telegram_id": o.telegram_id,
+                "username": f"@{uname}" if uname else "",
+                "status": o.status,
+                "total_sell": round(float(o.total_sell or 0.0), 2),
+                "cost_usd": round(cost, 2),
+                "margin": round(margin, 2),
+                "products": ", ".join(items_names) if items_names else "Order",
+                "goods": goods,
+                "created_at": o.created_at.strftime("%b %d, %H:%M") if o.created_at else "",
+                "external_order_ref": o.external_order_ref or ""
+            })
+    return {"orders": orders_out}
+
+
+@app.post("/api/admin/orders/update-status")
+async def admin_update_order_status(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not _verify_admin(admin_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    order_id = int(body.get("order_id") or 0)
+    new_status = body.get("new_status")
+    async with get_db_session() as session:
+        from models.batstore_order import BatStoreOrder
+        stmt = select(BatStoreOrder).where(BatStoreOrder.id == order_id)
+        order = (await session_execute(stmt, session)).scalar_one_or_none()
+        if not order:
+            return JSONResponse({"error": "order_not_found"}, status_code=404)
+        if new_status == "refunded" and order.status != "refunded":
+            await UserRepository.refund_balance(order.telegram_id, float(order.total_sell or 0.0), session)
+            try:
+                await bot.send_message(
+                    order.telegram_id,
+                    f"↩️ <b>تم استرداد قيمة الطلب #{order.id}:</b>\n"
+                    f"تمت إعادة <b>+${order.total_sell:.2f}</b> إلى رصيدك في المتجر."
+                )
+            except Exception:
+                pass
+        order.status = new_status
+        await session_commit(session)
+    return {"status": "ok", "new_status": new_status}
+
+
+@app.get("/api/admin/coupons")
+async def admin_get_coupons(tg_id: int):
+    if not _verify_admin(tg_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    async with get_db_session() as session:
+        from models.coupon import Coupon
+        stmt = select(Coupon).order_by(Coupon.id.desc()).limit(30)
+        coupons = (await session_execute(stmt, session)).scalars().all()
+        res = []
+        for c in coupons:
+            res.append({
+                "id": c.id,
+                "code": c.code,
+                "type": c.type.value if hasattr(c.type, "value") else str(c.type),
+                "value": float(c.value),
+                "usage_limit": c.usage_limit,
+                "usage_count": c.usage_count,
+                "is_active": c.is_active,
+                "expires_at": c.expire_datetime.strftime("%Y-%m-%d") if c.expire_datetime else ""
+            })
+    return {"coupons": res}
+
+
+@app.post("/api/admin/coupons/create")
+async def admin_create_coupon(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not _verify_admin(admin_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    code = (body.get("code") or "").strip().upper()
+    val = float(body.get("value") or 10.0)
+    c_type_str = body.get("type", "percent").lower()
+    usage_limit = int(body.get("usage_limit") or 100)
+    from enums.coupon_type import CouponType
+    from models.coupon import CouponDTO
+    c_type = CouponType.PERCENT if "percent" in c_type_str else CouponType.CURRENCY
+    async with get_db_session() as session:
+        from repositories.coupon import CouponRepository
+        now_dt = datetime.datetime.now(datetime.timezone.utc)
+        exp_dt = now_dt + datetime.timedelta(days=90)
+        c_dto = await CouponRepository.create(CouponDTO(
+            code=code,
+            type=c_type,
+            value=val,
+            create_datetime=now_dt,
+            expire_datetime=exp_dt,
+            is_active=True,
+            usage_limit=usage_limit,
+            usage_count=0
+        ), session)
+        await session_commit(session)
+    return {"status": "ok", "coupon": {"id": c_dto.id, "code": c_dto.code}}
+
+
+@app.post("/api/admin/coupons/toggle")
+async def admin_toggle_coupon(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not _verify_admin(admin_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    coupon_id = int(body.get("coupon_id") or 0)
+    async with get_db_session() as session:
+        from models.coupon import Coupon
+        stmt = select(Coupon).where(Coupon.id == coupon_id)
+        coupon = (await session_execute(stmt, session)).scalar_one_or_none()
+        if not coupon:
+            return JSONResponse({"error": "coupon_not_found"}, status_code=404)
+        coupon.is_active = not coupon.is_active
+        await session_commit(session)
+    return {"status": "ok", "is_active": coupon.is_active}
+
+
+@app.post("/api/admin/product/update")
+async def admin_update_product(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not _verify_admin(admin_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    product_id = int(body.get("product_id") or 0)
+    async with get_db_session() as session:
+        from models.batstore_product import BatStoreProduct
+        stmt = select(BatStoreProduct).where(BatStoreProduct.product_id == product_id)
+        prod = (await session_execute(stmt, session)).scalar_one_or_none()
+        if not prod:
+            return JSONResponse({"error": "product_not_found"}, status_code=404)
+        if "custom_name" in body:
+            prod.custom_name = (body["custom_name"] or "").strip() or None
+        if "category" in body:
+            prod.category = (body["category"] or "").strip() or prod.category
+        if "sell_price_usd" in body and body["sell_price_usd"] is not None:
+            prod.sell_price_usd = float(body["sell_price_usd"])
+        if "stock" in body:
+            prod.stock = int(body["stock"]) if body["stock"] is not None and str(body["stock"]).strip() != "" else None
+        if "hidden" in body:
+            prod.hidden = bool(body["hidden"])
+        await session_commit(session)
+    return {"status": "ok", "product_id": product_id}
+
+
+@app.post("/api/admin/category/update")
+async def admin_update_category(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not _verify_admin(admin_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    category_id = int(body.get("category_id") or 0)
+    async with get_db_session() as session:
+        from models.storefront_category import StorefrontCategory
+        stmt = select(StorefrontCategory).where(StorefrontCategory.id == category_id)
+        cat = (await session_execute(stmt, session)).scalar_one_or_none()
+        if not cat:
+            return JSONResponse({"error": "category_not_found"}, status_code=404)
+        if "name_ar" in body:
+            cat.name_ar = str(body["name_ar"]).strip()
+        if "name_en" in body:
+            cat.name_en = str(body["name_en"]).strip()
+        if "image_url" in body:
+            cat.image_url = str(body["image_url"]).strip()
+        if "preview_ar" in body:
+            cat.preview_ar = str(body["preview_ar"]).strip()
+        if "preview_en" in body:
+            cat.preview_en = str(body["preview_en"]).strip()
+        if "sort_order" in body:
+            cat.sort_order = int(body["sort_order"])
+        if "hidden" in body:
+            cat.hidden = bool(body["hidden"])
+        await session_commit(session)
+    return {"status": "ok", "category_id": category_id}
 
 @app.post("/api/reviews/submit")
 async def tma_submit_review(request: Request):

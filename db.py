@@ -120,6 +120,7 @@ async def create_db_and_tables():
         try:
             await session.execute(text("ALTER TABLE batstore_products ADD COLUMN IF NOT EXISTS description_ar TEXT;"))
             await session.execute(text("ALTER TABLE batstore_products ADD COLUMN IF NOT EXISTS custom_name TEXT;"))
+            await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS custom_discount_pct FLOAT;"))
             await session_commit(session)
         except Exception:
             pass

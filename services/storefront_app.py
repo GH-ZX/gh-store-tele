@@ -1,18 +1,17 @@
 """Telegram Mini App (TMA) Mobile-First Storefront.
 
 Features:
-- Completely Removed Emojis from Product Cards: Eliminated the box/emoji icon container entirely, stripped emojis from titles, and styled spec badges with pure, clean text.
-- Dynamic Database Storefront Categories: Consumes categories, 3D images, bilingual titles, and previews from database via /api/catalog (editable in SQLAdmin).
-- Clean Product Names & Structured Spec Badges: Cleans raw supplier titles into standardized brand names and renders Duration, Warranty, and Account Type badges.
-- Stock Priority Sorting: In-stock products always appear first in every catalog and filtered view, with out-of-stock items sinking to the bottom.
-- Vector SVG Favorites: Replaced emoji hearts with sleek, animated vector SVG outline/fill heart icons with drop-shadow glow.
-- Syriatel Cash SYP Denomination: Highlights that Syriatel Cash receives Syrian Pounds (SYP only) and displays converted live approximate SYP amounts on recharge controls.
+- Admin Control Center: Financial overview, live exchange rate manager (SYP to USD), referral commission manager, user search with live balance adjustment & ban controls, live orders manager with refunds, and coupon manager.
+- Live Inline Product & Category Editing: Admins can edit product names, prices, categories, stock, and category visuals/titles live directly in the storefront with instant DB sync.
+- Clean Product Rows: Completely removed emojis and repetitive 'Instant Delivery' labels from product cards.
+- Stock Priority Sorting: In-stock products always appear first in every catalog and filtered view.
+- Vector SVG Favorites: Replaced emoji hearts with sleek, animated vector SVG outline/fill heart icons.
+- Syriatel Cash SYP Denomination: Highlights that Syriatel Cash receives Syrian Pounds (SYP only) and displays converted live approximate SYP amounts.
 - Fixed Product Exploration Navigation: Preserves stable DOM structure in buy buttons, eliminates null reference crashes, and enables native Telegram BackButton support.
 - Separated Customer-Facing Payment Methods: Sham Cash, Syriatel Cash, Crypto, and Telegram Stars with ZERO backend/API names exposed.
 - External Browser Payment Sheet: Allows customers to open invoice URLs directly in their mobile browser or copy direct payment links.
 - Category Cards: Picture & Title Visual Grid by default, with instant toggle to List view.
 - Profile & Settings: Hides VIP badge if Standard (0%), shows only if real discount applied; prominently displays @username.
-- Referral Program: 0.2% profit margin commission on referred purchases, stat cards, and referred friends breakdown list in Settings.
 - SWR (Stale-While-Revalidate) instant 0ms launch cache via localStorage.
 - Dark & Light Mode Appearance Toggle with persistent storage and Telegram theme syncing.
 - Full Bidirectional Arabic & English i18n Overhaul (RTL/LTR, dynamic catalog & product re-rendering, directional arrows).
@@ -316,6 +315,21 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       color: #c084fc;
       border: 1px solid rgba(168, 85, 247, 0.28);
     }
+
+    /* Admin Inline Edit Badge Buttons */
+    .admin-edit-badge-btn {
+      background: rgba(56, 189, 248, 0.18);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      color: var(--accent);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-inline-start: 6px;
+      transition: background 0.15s;
+    }
+    .admin-edit-badge-btn:active { background: rgba(56, 189, 248, 0.35); }
 
     /* Promotional Hero Banner */
     .hero-banner {
@@ -1130,11 +1144,216 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       justify-content: space-between;
       gap: 10px;
     }
+
+    /* Admin Management Drawers & Styles */
+    .admin-stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .admin-stat-card {
+      background: var(--input-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px;
+      text-align: center;
+    }
+    .admin-stat-num {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--accent);
+      margin-top: 2px;
+    }
+    .admin-stat-label {
+      font-size: 11px;
+      color: var(--hint);
+      font-weight: 600;
+    }
+    .admin-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.78);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      z-index: 220;
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    .admin-modal-sheet {
+      width: 100%;
+      max-width: 500px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 24px 24px 0 0;
+      padding: 20px;
+      max-height: 85vh;
+      overflow-y: auto;
+      box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.6);
+      animation: slideUp 0.22s ease-out;
+    }
+    .admin-input-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-bottom: 12px;
+    }
+    .admin-input-label {
+      font-size: 11px;
+      color: var(--hint);
+      font-weight: 700;
+    }
+    .admin-text-input {
+      background: var(--input-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 9px 12px;
+      font-size: 13px;
+      color: var(--text);
+      outline: none;
+    }
+    .admin-text-input:focus { border-color: var(--accent); }
   </style>
 </head>
 <body>
   <canvas id="confetti-canvas"></canvas>
   <div class="toast-pill" id="toast">تم النسخ!</div>
+
+  <!-- ADMIN PRODUCT EDITOR MODAL SHEET -->
+  <div class="admin-modal-overlay" id="admin-product-modal">
+    <div class="admin-modal-sheet">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <h3 style="font-size: 17px; font-weight: 800;">تعديل بيانات المنتج كمسؤول</h3>
+        <button class="circle-icon-btn" onclick="closeAdminProductModal()">✕</button>
+      </div>
+      <input type="hidden" id="admin-edit-prod-id">
+      <div class="admin-input-row">
+        <label class="admin-input-label">الاسم المخصص المعروض (Custom Display Title)</label>
+        <input type="text" class="admin-text-input" id="admin-edit-prod-name" placeholder="e.g. Gemini Activation">
+      </div>
+      <div class="admin-input-row">
+        <label class="admin-input-label">التصنيف (Category)</label>
+        <input type="text" class="admin-text-input" id="admin-edit-prod-cat" placeholder="AI & Chatbots">
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+        <div class="admin-input-row">
+          <label class="admin-input-label">سعر البيع بالدولار (Sell Price USD)</label>
+          <input type="number" step="any" class="admin-text-input" id="admin-edit-prod-price">
+        </div>
+        <div class="admin-input-row">
+          <label class="admin-input-label">المخزون (Stock - فارغ للتسليم الآلي)</label>
+          <input type="number" class="admin-text-input" id="admin-edit-prod-stock" placeholder="فارغ = آلي">
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; margin: 10px 0 16px 0; background: var(--input-bg); padding: 10px 14px; border-radius: 10px;">
+        <span style="font-size: 13px; font-weight: 700;">إخفاء المنتج من المتجر (Hidden)</span>
+        <input type="checkbox" id="admin-edit-prod-hidden" style="width: 18px; height: 18px; accent-color: var(--accent);">
+      </div>
+      <button class="btn-action-primary" onclick="submitAdminProductUpdate()">حفظ التعديلات في قاعدة البيانات</button>
+    </div>
+  </div>
+
+  <!-- ADMIN CATEGORY EDITOR MODAL SHEET -->
+  <div class="admin-modal-overlay" id="admin-category-modal">
+    <div class="admin-modal-sheet">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <h3 style="font-size: 17px; font-weight: 800;">تعديل التصنيف كمسؤول</h3>
+        <button class="circle-icon-btn" onclick="closeAdminCategoryModal()">✕</button>
+      </div>
+      <input type="hidden" id="admin-edit-cat-id">
+      <div class="admin-input-row">
+        <label class="admin-input-label">الاسم بالعربية (Arabic Title)</label>
+        <input type="text" class="admin-text-input" id="admin-edit-cat-ar" placeholder="الذكاء الاصطناعي">
+      </div>
+      <div class="admin-input-row">
+        <label class="admin-input-label">الاسم بالإنجليزية (English Title)</label>
+        <input type="text" class="admin-text-input" id="admin-edit-cat-en" placeholder="AI & Chatbots">
+      </div>
+      <div class="admin-input-row">
+        <label class="admin-input-label">رابط صورة التصنيف (Image URL)</label>
+        <input type="text" class="admin-text-input" id="admin-edit-cat-img" placeholder="https://...">
+      </div>
+      <div class="admin-input-row">
+        <label class="admin-input-label">الوصف المختصر بالعربية</label>
+        <input type="text" class="admin-text-input" id="admin-edit-cat-prev-ar" placeholder="كلود · شات جي بي تي">
+      </div>
+      <div class="admin-input-row">
+        <label class="admin-input-label">الوصف المختصر بالإنجليزية</label>
+        <input type="text" class="admin-text-input" id="admin-edit-cat-prev-en" placeholder="Claude · ChatGPT">
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+        <div class="admin-input-row">
+          <label class="admin-input-label">ترتيب العرض (Sort Order)</label>
+          <input type="number" class="admin-text-input" id="admin-edit-cat-sort" value="1">
+        </div>
+        <div style="display: flex; align-items: center; justify-content: space-between; background: var(--input-bg); padding: 6px 12px; border-radius: 10px; margin-top: 18px;">
+          <span style="font-size: 11px; font-weight: 700;">إخفاء التصنيف</span>
+          <input type="checkbox" id="admin-edit-cat-hidden" style="width: 16px; height: 16px; accent-color: var(--accent);">
+        </div>
+      </div>
+      <button class="btn-action-primary" onclick="submitAdminCategoryUpdate()" style="margin-top: 10px;">حفظ بيانات التصنيف في قاعدة البيانات</button>
+    </div>
+  </div>
+
+  <!-- ADMIN USERS & MONEY ADJUSTMENT MODAL SHEET -->
+  <div class="admin-modal-overlay" id="admin-users-modal">
+    <div class="admin-modal-sheet">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <h3 style="font-size: 17px; font-weight: 800;">إدارة المستخدمين والأرصدة</h3>
+        <button class="circle-icon-btn" onclick="closeAdminUsersModal()">✕</button>
+      </div>
+      <div style="display: flex; gap: 6px; margin-bottom: 12px;">
+        <input type="text" class="admin-text-input" id="admin-user-search-input" placeholder="ابحث برقم ID أو @username..." style="flex: 1;">
+        <button class="btn-action-secondary" onclick="executeAdminUserSearch()" style="padding: 0 14px;">بحث</button>
+      </div>
+      <div id="admin-users-results-list" style="display: flex; flex-direction: column; gap: 8px; max-height: 55vh; overflow-y: auto;"></div>
+    </div>
+  </div>
+
+  <!-- ADMIN ORDERS MONITOR MODAL SHEET -->
+  <div class="admin-modal-overlay" id="admin-orders-modal">
+    <div class="admin-modal-sheet">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <h3 style="font-size: 17px; font-weight: 800;">مراقبة طلبات المتجر المباشرة</h3>
+        <button class="circle-icon-btn" onclick="closeAdminOrdersModal()">✕</button>
+      </div>
+      <div style="display: flex; gap: 6px; margin-bottom: 12px; overflow-x: auto;">
+        <button class="filter-chip active" id="admin-ord-tab-all" onclick="loadAdminOrders('all')">الكل</button>
+        <button class="filter-chip" id="admin-ord-tab-pending" onclick="loadAdminOrders('pending_fulfillment')">قيد التنفيذ</button>
+        <button class="filter-chip" id="admin-ord-tab-completed" onclick="loadAdminOrders('completed')">مكتمل</button>
+        <button class="filter-chip" id="admin-ord-tab-refunded" onclick="loadAdminOrders('refunded')">مسترد</button>
+      </div>
+      <div id="admin-orders-results-list" style="display: flex; flex-direction: column; gap: 8px; max-height: 55vh; overflow-y: auto;"></div>
+    </div>
+  </div>
+
+  <!-- ADMIN COUPONS MANAGER MODAL SHEET -->
+  <div class="admin-modal-overlay" id="admin-coupons-modal">
+    <div class="admin-modal-sheet">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <h3 style="font-size: 17px; font-weight: 800;">إدارة كوبونات الخصم</h3>
+        <button class="circle-icon-btn" onclick="closeAdminCouponsModal()">✕</button>
+      </div>
+      <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 14px;">
+        <div style="font-size: 12px; font-weight: 700; margin-bottom: 8px;">إنشاء كود خصم جديد</div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px;">
+          <input type="text" class="admin-text-input" id="admin-new-coupon-code" placeholder="CODE (e.g. VIP20)" style="text-transform: uppercase;">
+          <input type="number" step="any" class="admin-text-input" id="admin-new-coupon-val" placeholder="القيمة (e.g. 20)">
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px;">
+          <select class="admin-text-input" id="admin-new-coupon-type">
+            <option value="percent">نسبة مئوية (%)</option>
+            <option value="currency">مبلغ ثابت ($)</option>
+          </select>
+          <input type="number" class="admin-text-input" id="admin-new-coupon-limit" placeholder="حد الاستخدام (100)">
+        </div>
+        <button class="btn-action-primary" onclick="submitAdminCreateCoupon()" style="height: 40px; font-size: 13px;">حفظ وتفعيل الكود</button>
+      </div>
+      <div style="font-size: 12px; font-weight: 700; margin-bottom: 6px;">الكوبونات الحالية في النظام</div>
+      <div id="admin-coupons-list" style="display: flex; flex-direction: column; gap: 6px; max-height: 35vh; overflow-y: auto;"></div>
+    </div>
+  </div>
 
   <!-- External Browser Payment Link Modal / Sheet -->
   <div id="payment-link-sheet" style="position: fixed; inset: 0; background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); z-index: 200; display: none; align-items: flex-end; justify-content: center;">
@@ -1181,7 +1400,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     <!-- Home Screen Pin Banner (Bot API 8.0) -->
     <div class="pwa-banner" id="home-screen-banner" style="display: none;">
       <div style="font-size: 13px;">
-        <strong id="pwa-banner-title">📲 أضف التطبيق للشاشة الرئيسية</strong>
+        <strong id="pwa-banner-title">أضف التطبيق للشاشة الرئيسية</strong>
         <div style="font-size: 11px; color: var(--hint);" id="pwa-banner-sub">لوصول فوري ومباشر دون فتح تيليجرام</div>
       </div>
       <button class="btn-copy-mini" id="pwa-banner-btn" onclick="promptAddToHomeScreen()">إضافة الآن</button>
@@ -1273,6 +1492,13 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       <div class="pill-badge" id="prod-dur-badge" style="display: none;"></div>
       <div class="pill-badge" id="prod-war-badge" style="display: none;"></div>
       <div class="pill-badge" id="prod-typ-badge" style="display: none;"></div>
+    </div>
+
+    <!-- Admin Quick Edit Button on Product Detail (Only for Admins) -->
+    <div id="admin-detail-edit-container" style="display: none; margin-bottom: 10px;">
+      <button class="btn-action-secondary" onclick="openAdminProductEditor(selectedProduct?.id)" style="width: 100%; height: 40px;">
+        تعديل بيانات المنتج كمسؤول (Admin Edit)
+      </button>
     </div>
 
     <div class="inset-card">
@@ -1460,7 +1686,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     </div>
   </main>
 
-  <!-- TAB 4: SETTINGS VIEW (PROFILE, THEME, LANGUAGE, REFERRALS) -->
+  <!-- TAB 4: SETTINGS VIEW (PROFILE, ADMIN CONTROL CENTER, THEME, LANGUAGE, REFERRALS) -->
   <main id="view-settings" class="tab-view">
     <!-- User Profile Header -->
     <div class="inset-card" style="display: flex; align-items: center; gap: 14px;">
@@ -1473,6 +1699,71 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         <div style="font-size: 11px; color: var(--hint); font-family: monospace; margin-top: 2px;" id="user-tg-num">ID: 000000000</div>
         <!-- VIP badge is displayed ONLY if user has a real discount applied (>0%) -->
         <div style="margin-top: 5px; display: none;" id="user-vip-pill-box"></div>
+      </div>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- 👑 ADMIN CONTROL CENTER (Visible ONLY to Admins) -->
+    <!-- ============================================== -->
+    <div class="inset-card" id="admin-control-center-card" style="display: none; border-color: rgba(56, 189, 248, 0.4); background: linear-gradient(135deg, rgba(56, 189, 248, 0.08), rgba(99, 102, 241, 0.08));">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <div style="font-size: 15px; font-weight: 800; color: var(--accent);">👑 لوحة تحكم المشرف (Admin Center)</div>
+        <span class="pill-badge" style="background: rgba(16, 185, 129, 0.2); color: var(--success); font-size: 10px;">مسؤول معتمد</span>
+      </div>
+
+      <!-- Financial Store Health Overview -->
+      <div class="admin-stats-grid">
+        <div class="admin-stat-card">
+          <div class="admin-stat-label">إجمالي المبيعات</div>
+          <div class="admin-stat-num" id="admin-stat-revenue">$0.00</div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-label">أرصدة العملاء الحالية</div>
+          <div class="admin-stat-num" id="admin-stat-balances" style="color: #38bdf8;">$0.00</div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-label">عدد المستخدمين</div>
+          <div class="admin-stat-num" id="admin-stat-users" style="color: #f59e0b;">0</div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-label">إجمالي الطلبات</div>
+          <div class="admin-stat-num" id="admin-stat-orders" style="color: #c084fc;">0</div>
+        </div>
+      </div>
+
+      <!-- Live Exchange Rate & Currency Manager -->
+      <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 12px;">
+        <div style="font-size: 12px; font-weight: 700; margin-bottom: 6px;">💱 سعر صرف الليرة السورية مقابل الدولار (SYP / USD)</div>
+        <div style="font-size: 11px; color: var(--hint); margin-bottom: 8px;">مربوط بقاعدة البيانات ويتم تطبيقه فورياً على الشحن بالليرة السورية</div>
+        <div style="display: flex; gap: 8px;">
+          <input type="number" class="admin-text-input" id="admin-syp-rate-input" placeholder="e.g. 15000" style="flex: 1; font-family: monospace; font-weight: 700;">
+          <button class="btn-action-primary" onclick="submitAdminUpdateSypRate()" style="height: 38px; width: auto; padding: 0 16px; font-size: 12px;">تحديث</button>
+        </div>
+      </div>
+
+      <!-- Referral Commission Rate Manager -->
+      <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 14px;">
+        <div style="font-size: 12px; font-weight: 700; margin-bottom: 6px;">🎁 نسبة عمولة الإحالة من أرباح الهامش (%)</div>
+        <div style="display: flex; gap: 8px;">
+          <input type="number" step="any" class="admin-text-input" id="admin-ref-rate-input" placeholder="0.2" style="flex: 1; font-family: monospace; font-weight: 700;">
+          <button class="btn-action-primary" onclick="submitAdminUpdateReferralRate()" style="height: 38px; width: auto; padding: 0 16px; font-size: 12px;">تحديث</button>
+        </div>
+      </div>
+
+      <!-- Quick Admin Management Navigation Drawers -->
+      <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px;">
+        <button class="btn-action-secondary" onclick="openAdminUsersModal()" style="height: 44px; font-size: 12px;">
+          👥 إدارة المستخدمين والأرصدة
+        </button>
+        <button class="btn-action-secondary" onclick="openAdminOrdersModal()" style="height: 44px; font-size: 12px;">
+          📦 مراقبة الطلبات والاسترداد
+        </button>
+        <button class="btn-action-secondary" onclick="openAdminCouponsModal()" style="height: 44px; font-size: 12px;">
+          🏷️ إدارة وإنشاء الكوبونات
+        </button>
+        <button class="btn-action-secondary" onclick="openFullSqlAdmin()" style="height: 44px; font-size: 12px;">
+          🔗 لوحة SQLAdmin الكاملة
+        </button>
       </div>
     </div>
 
@@ -1736,7 +2027,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     let wishlistSet = new Set();
     let currentCatalogViewMode = localStorage.getItem('ghstore_cat_view') || 'grid';
 
-    // Recharge Flow State (Stars, Crypto, Sham Cash, Syriatel Cash)
+    // Recharge Flow State
     let selectedRechargeMethod = 'stars';
     let selectedRechargeAmount = 10.0;
     let activeInvoiceUrl = null;
@@ -1834,7 +2125,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       });
     }
 
-    // Default Category Fallback Meta
+    // Default Fallback Category Metadata
     const DEFAULT_CATALOG_META = {
       "AI & Chatbots": {
         arTitle: "الذكاء الاصطناعي",
@@ -2028,7 +2319,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       }).join('');
     }
 
-    // Complete i18n Translation Dictionary (Zero API names exposed, clean text without emojis)
+    // Complete i18n Translation Dictionary
     const I18N = {
       ar: {
         store: "المتجر",
@@ -2424,15 +2715,16 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
       const d = I18N[currentAppLanguage] || I18N.ar;
       const isGrid = (currentCatalogViewMode === 'grid');
+      const isAdmin = !!(userData && userData.is_admin);
 
       container.className = `catalogs-grid ${isGrid ? 'grid-layout' : 'list-layout'}`;
 
       container.innerHTML = categoriesList.map(catItem => {
         const catName = (typeof catItem === 'object' && catItem.name) ? catItem.name : String(catItem);
+        const catId = (typeof catItem === 'object' && catItem.id) ? catItem.id : null;
         const items = allProducts.filter(p => p.category === catName);
         if (!items || !items.length) return '';
 
-        // Prioritize dynamic DB category values, fallback to static defaults
         let displayTitle = catName;
         let displayPreview = '';
         let imageUrl = '';
@@ -2454,12 +2746,17 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         const minPrice = Math.min(...items.map(p => p.price || 999));
         const sym = items[0]?.sym || '$';
 
+        const adminEditBtn = (isAdmin && catId)
+          ? `<button class="admin-edit-badge-btn" onclick="openAdminCategoryEditor(${catId}, event)">تعديل</button>`
+          : '';
+
         if (isGrid) {
           return `
             <div class="catalog-visual-card" style="background-image: url('${imageUrl}');" onclick="openCollection('${catName.replace(/'/g, "\\\\'")}')">
               <div class="catalog-visual-overlay"></div>
               <div class="catalog-visual-top">
                 <span class="catalog-visual-pill">${items.length} ${d.items_suffix}</span>
+                ${adminEditBtn}
               </div>
               <div class="catalog-visual-bottom">
                 <div class="catalog-visual-title">${displayTitle}</div>
@@ -2478,7 +2775,10 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
             <div class="catalog-left">
               <div class="catalog-icon-box">${icon}</div>
               <div class="catalog-info">
-                <div class="catalog-name">${displayTitle}</div>
+                <div style="display:flex; align-items:center;">
+                  <span class="catalog-name">${displayTitle}</span>
+                  ${adminEditBtn}
+                </div>
                 <div class="catalog-sub">
                   <span>${items.length} ${d.items_suffix}</span> ·
                   <span style="color: var(--accent); font-weight: 700;">${d.starts_from} ${minPrice.toFixed(2)}${sym}</span>
@@ -2632,7 +2932,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       returnToCollections();
     }
 
-    // Clean Product Rows: NO EMOJIS, Clean Title + Structured Spec Badges (Duration, Warranty, Type)
+    // Clean Product Rows: NO EMOJIS, Clean Title + Structured Spec Badges + Admin Edit Button
     function renderProductItems(products) {
       const container = document.getElementById('catalog-products-list');
       if (!container) return;
@@ -2641,6 +2941,8 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         return;
       }
       const d = I18N[currentAppLanguage] || I18N.ar;
+      const isAdmin = !!(userData && userData.is_admin);
+
       container.innerHTML = products.map(p => {
         const isFav = wishlistSet.has(Number(p.id));
         const isOutOfStock = (p.stock !== null && p.stock <= 0);
@@ -2667,12 +2969,17 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         `;
 
         const displayTitle = p.clean_name || p.name;
+        const adminEditBtn = isAdmin
+          ? `<button class="admin-edit-badge-btn" onclick="openAdminProductEditor(${p.id}, event)">تعديل</button>`
+          : '';
 
-        // Clean row layout without clunky box icon on left
         return `
           <div class="product-row" onclick="openProductDetail(${Number(p.id)})">
             <div class="prod-left">
-              <div class="prod-title">${displayTitle}</div>
+              <div style="display:flex; align-items:center;">
+                <span class="prod-title">${displayTitle}</span>
+                ${adminEditBtn}
+              </div>
               <div class="prod-specs-row">
                 ${stockBadge}
                 ${durPill}
@@ -2694,7 +3001,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       }).join('');
     }
 
-    // DEDICATED IN-APP PRODUCT DETAIL PAGE (Clean Hero, No Emojis)
+    // DEDICATED IN-APP PRODUCT DETAIL PAGE
     function openProductDetail(productId) {
       haptic('light');
       selectedProduct = allProducts.find(p => Number(p.id) === Number(productId));
@@ -2734,6 +3041,12 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         setTxt('prod-stock-badge', isOutOfStock
           ? (currentAppLanguage === 'ar' ? 'نفد المخزون' : 'Out of Stock')
           : (selectedProduct.stock ? `${currentAppLanguage === 'ar' ? 'متوفر' : 'In Stock'} (${selectedProduct.stock})` : (currentAppLanguage === 'ar' ? 'تسليم فوري' : 'Instant Delivery')));
+
+        // Admin detail edit button
+        const adminDetailEdit = document.getElementById('admin-detail-edit-container');
+        if (adminDetailEdit) {
+          adminDetailEdit.style.display = (userData && userData.is_admin) ? 'block' : 'none';
+        }
 
         // Spec badges in product detail
         const durEl = document.getElementById('prod-dur-badge');
@@ -2777,13 +3090,11 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         console.error("Setup product detail error:", err);
       }
 
-      // Native Telegram BackButton support
       if (tg?.BackButton) {
         tg.BackButton.show();
         tg.BackButton.onClick(closeProductDetailPage);
       }
 
-      // Safely activate product detail view
       document.querySelectorAll('.tab-view').forEach(el => el.classList.remove('active'));
       const detailView = document.getElementById('view-product-detail');
       if (detailView) detailView.classList.add('active');
@@ -2850,7 +3161,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       }
     }
 
-    // SAFE PRICE UPDATER (NEVER destroys DOM children of btn-inapp-purchase)
+    // SAFE PRICE UPDATER
     function updateDetailPagePrice() {
       if (!selectedProduct) return;
       const unit = selectedProduct.price || 0.0;
@@ -2923,7 +3234,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         const d = await res.json();
         if (d.status === 'success') {
           haptic('success');
-          showToast(currentAppLanguage === 'ar' ? d.message : 'Subscribed to restock alerts!');
+          showToast('🔔 ' + (currentAppLanguage === 'ar' ? d.message : 'Subscribed to restock alerts!'));
         } else {
           showToast(currentAppLanguage === 'ar' ? 'تعذر الاشتراك في التنبيه' : 'Failed to subscribe to alert');
         }
@@ -3141,8 +3452,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
       const amtStr = selectedRechargeAmount ? selectedRechargeAmount.toFixed(2) : "10.00";
       if (selectedRechargeMethod === 'syriatelcash') {
-        // Syriatel Cash is strictly SYP
-        const sypRate = 392.0;
+        const sypRate = (userData && userData.admin_stats && userData.admin_stats.syp_usd_rate) ? userData.admin_stats.syp_usd_rate : 392.0;
         const sypEst = Math.round(selectedRechargeAmount * sypRate);
         if (currentAppLanguage === 'ar') {
           btn.innerHTML = `<span>شحن ${amtStr}$ (≈ ${sypEst.toLocaleString()} ل.س) عبر ${methodName}</span>`;
@@ -3214,7 +3524,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       }
     }
 
-    // Payment Link Sheet Modal Functions
     function openPaymentLinkSheet(url) {
       activeInvoiceUrl = url;
       const sheet = document.getElementById('payment-link-sheet');
@@ -3276,6 +3585,444 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       }
     }
 
+    // ==============================================
+    // 👑 ADMIN CONTROL CENTER MODALS & API FUNCTIONS
+    // ==============================================
+    async function submitAdminUpdateSypRate() {
+      const val = parseFloat(document.getElementById('admin-syp-rate-input')?.value);
+      if (!val || val <= 0 || !userId) return;
+      haptic('light');
+      try {
+        const res = await fetch('/api/admin/rate/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tg_id: userId, syp_rate: val })
+        });
+        const d = await res.json();
+        if (d.status === 'ok') {
+          haptic('success');
+          showToast(`تم تحديث سعر صرف الليرة بنجاح (1$ = ${d.syp_rate} ل.س)`);
+          loadUserData();
+        } else {
+          showToast('فشل تحديث سعر الصرف');
+        }
+      } catch (e) {
+        showToast('خطأ في إرسال طلب التحديث');
+      }
+    }
+
+    async function submitAdminUpdateReferralRate() {
+      const val = parseFloat(document.getElementById('admin-ref-rate-input')?.value);
+      if (val === undefined || val === null || isNaN(val) || !userId) return;
+      haptic('light');
+      try {
+        const res = await fetch('/api/admin/referral-rate/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tg_id: userId, referral_rate: val })
+        });
+        const d = await res.json();
+        if (d.status === 'ok') {
+          haptic('success');
+          showToast(`تم تعيين نسبة عمولة الإحالة: ${d.referral_rate}%`);
+          loadUserData();
+        }
+      } catch (e) {
+        showToast('فشل تحديث نسبة العمولة');
+      }
+    }
+
+    // Admin Users Modal
+    function openAdminUsersModal() {
+      haptic('pop');
+      document.getElementById('admin-users-modal').style.display = 'flex';
+      executeAdminUserSearch();
+    }
+    function closeAdminUsersModal() {
+      document.getElementById('admin-users-modal').style.display = 'none';
+    }
+
+    async function executeAdminUserSearch() {
+      const q = (document.getElementById('admin-user-search-input')?.value || '').trim();
+      const container = document.getElementById('admin-users-results-list');
+      container.innerHTML = '<div style="text-align:center; padding:20px; color:var(--hint);">جاري البحث في قاعدة البيانات...</div>';
+      try {
+        const res = await fetch(`/api/admin/users?tg_id=${userId}&query=${encodeURIComponent(q)}`);
+        const d = await res.json();
+        if (!d.users || !d.users.length) {
+          container.innerHTML = '<div style="text-align:center; padding:20px; color:var(--hint);">لا يوجد مستخدمين مطابقين.</div>';
+          return;
+        }
+        container.innerHTML = d.users.map(u => `
+          <div style="background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <strong style="font-size:14px;">${u.username ? '@' + u.username : 'User'}</strong>
+                <div style="font-size:11px; color:var(--hint); font-family:monospace;">ID: ${u.telegram_id}</div>
+              </div>
+              <span class="pill-badge" style="background:${u.is_banned ? 'rgba(239,68,68,0.2); color:#ef4444' : 'rgba(16,185,129,0.2); color:#10b981'}; font-size:11px;">
+                ${u.is_banned ? 'محظور' : 'نشط'}
+              </span>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:12px; margin:8px 0; border-top:1px solid var(--border); padding-top:6px;">
+              <span>الرصيد: <strong style="color:var(--accent);">$${u.balance.toFixed(2)}</strong></span>
+              <span>المشتريات: <strong>$${u.total_spent.toFixed(2)}</strong></span>
+              <span>الرتبة: <strong>${u.vip_tier}</strong></span>
+            </div>
+            <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
+              <button class="admin-edit-badge-btn" onclick="promptAdjustBalance(${u.telegram_id}, 'add')">+ إضافة رصيد</button>
+              <button class="admin-edit-badge-btn" onclick="promptAdjustBalance(${u.telegram_id}, 'deduct')">- خصم رصيد</button>
+              <button class="admin-edit-badge-btn" onclick="promptSetDiscount(${u.telegram_id})">تخصيص خصم %</button>
+              <button class="admin-edit-badge-btn" style="color:${u.is_banned ? '#10b981' : '#ef4444'};" onclick="submitToggleBan(${u.telegram_id})">
+                ${u.is_banned ? 'فك الحظر' : 'حظر الحساب'}
+              </button>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        container.innerHTML = '<div style="text-align:center; padding:20px; color:var(--danger);">خطأ في جلب المستخدمين.</div>';
+      }
+    }
+
+    async function promptAdjustBalance(targetTgId, actionType) {
+      const amtStr = prompt(actionType === 'add' ? 'أدخل المبلغ بالدولار ($) المراد إضافته:' : 'أدخل المبلغ بالدولار ($) المراد خصمه:');
+      if (!amtStr) return;
+      const amt = parseFloat(amtStr);
+      if (isNaN(amt) || amt <= 0) return;
+      try {
+        const res = await fetch('/api/admin/users/adjust-balance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_tg_id: userId, target_tg_id: targetTgId, amount: amt, action: actionType })
+        });
+        const d = await res.json();
+        if (d.status === 'ok') {
+          showToast(`تم تعديل الرصيد بنجاح! الرصيد الجديد: $${d.new_balance.toFixed(2)}`);
+          executeAdminUserSearch();
+        }
+      } catch (e) {
+        showToast('فشل تعديل الرصيد');
+      }
+    }
+
+    async function submitToggleBan(targetTgId) {
+      try {
+        const res = await fetch('/api/admin/users/toggle-ban', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_tg_id: userId, target_tg_id: targetTgId })
+        });
+        const d = await res.json();
+        if (d.status === 'ok') {
+          showToast(d.is_banned ? 'تم حظر المستخدم' : 'تم فك حظر المستخدم');
+          executeAdminUserSearch();
+        }
+      } catch (e) {
+        showToast('فشل تحديث حالة الحظر');
+      }
+    }
+
+    async function promptSetDiscount(targetTgId) {
+      const discStr = prompt('أدخل نسبة الخصم الخاصة المخصصة لهذا المستخدم (0-100)% أو اتركه فارغاً للإلغاء:');
+      if (discStr === null) return;
+      const disc = discStr === '' ? null : parseFloat(discStr);
+      try {
+        const res = await fetch('/api/admin/users/set-discount', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_tg_id: userId, target_tg_id: targetTgId, discount_pct: disc })
+        });
+        const d = await res.json();
+        if (d.status === 'ok') {
+          showToast('تم تحديث نسبة الخصم الخاصة بنجاح!');
+          executeAdminUserSearch();
+        }
+      } catch (e) {
+        showToast('فشل تعيين الخصم');
+      }
+    }
+
+    // Admin Orders Modal
+    function openAdminOrdersModal() {
+      haptic('pop');
+      document.getElementById('admin-orders-modal').style.display = 'flex';
+      loadAdminOrders('all');
+    }
+    function closeAdminOrdersModal() {
+      document.getElementById('admin-orders-modal').style.display = 'none';
+    }
+
+    async function loadAdminOrders(status) {
+      ['all', 'pending', 'completed', 'refunded'].forEach(t => {
+        const btn = document.getElementById('admin-ord-tab-' + t);
+        if (btn) btn.classList.toggle('active', (status === 'all' && t === 'all') || (status === 'pending_fulfillment' && t === 'pending') || (status === t));
+      });
+      const container = document.getElementById('admin-orders-results-list');
+      container.innerHTML = '<div style="text-align:center; padding:20px; color:var(--hint);">جاري تحميل الطلبات...</div>';
+      try {
+        const res = await fetch(`/api/admin/orders?tg_id=${userId}&status=${encodeURIComponent(status)}`);
+        const d = await res.json();
+        if (!d.orders || !d.orders.length) {
+          container.innerHTML = '<div style="text-align:center; padding:20px; color:var(--hint);">لا توجد طلبات مطابقة.</div>';
+          return;
+        }
+        container.innerHTML = d.orders.map(o => `
+          <div style="background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <strong style="font-size:14px;">طلب #${o.id} · ${o.username || 'tg:' + o.telegram_id}</strong>
+              <span class="pill-badge" style="background:${o.status === 'completed' ? 'rgba(16,185,129,0.2); color:#10b981' : o.status === 'refunded' ? 'rgba(239,68,68,0.2); color:#ef4444' : 'rgba(245,158,11,0.2); color:#f59e0b'}; font-size:10px;">
+                ${o.status}
+              </span>
+            </div>
+            <div style="font-size:13px; font-weight:700; margin:4px 0;">${o.products}</div>
+            <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--hint);">
+              <span>المبلغ: <strong style="color:var(--text);">$${o.total_sell.toFixed(2)}</strong></span>
+              <span>التكلفة: $${o.cost_usd.toFixed(2)}</span>
+              <span>ربح الهامش: <strong style="color:var(--success);">+$${o.margin.toFixed(2)}</strong></span>
+            </div>
+            ${o.goods && o.goods.length ? `
+              <div style="background:var(--input-bg); border-radius:6px; padding:6px; margin-top:6px; font-family:monospace; font-size:11px; word-break:break-all;">
+                ${o.goods.slice(0, 2).join('<br>')}
+              </div>
+            ` : ''}
+            <div style="display:flex; gap:6px; margin-top:8px;">
+              ${o.status !== 'completed' ? `<button class="admin-edit-badge-btn" onclick="submitAdminOrderStatus(${o.id}, 'completed')">تأكيد التسليم</button>` : ''}
+              ${o.status !== 'refunded' ? `<button class="admin-edit-badge-btn" style="color:#ef4444;" onclick="submitAdminOrderStatus(${o.id}, 'refunded')">استرداد المبلغ للعميل</button>` : ''}
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        container.innerHTML = '<div style="text-align:center; padding:20px; color:var(--danger);">فشل جلب الطلبات.</div>';
+      }
+    }
+
+    async function submitAdminOrderStatus(orderId, newStatus) {
+      if (newStatus === 'refunded' && !confirm('هل أنت متأكد من استرداد قيمة الطلب إلى رصيد العميل؟')) return;
+      try {
+        const res = await fetch('/api/admin/orders/update-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_tg_id: userId, order_id: orderId, new_status: newStatus })
+        });
+        const d = await res.json();
+        if (d.status === 'ok') {
+          showToast(newStatus === 'refunded' ? 'تم استرداد المبلغ بنجاح!' : 'تم تحديث حالة الطلب!');
+          loadAdminOrders('all');
+        }
+      } catch (e) {
+        showToast('فشل تحديث الطلب');
+      }
+    }
+
+    // Admin Coupons Modal
+    function openAdminCouponsModal() {
+      haptic('pop');
+      document.getElementById('admin-coupons-modal').style.display = 'flex';
+      loadAdminCoupons();
+    }
+    function closeAdminCouponsModal() {
+      document.getElementById('admin-coupons-modal').style.display = 'none';
+    }
+
+    async function loadAdminCoupons() {
+      const container = document.getElementById('admin-coupons-list');
+      container.innerHTML = '<div style="text-align:center; padding:10px; color:var(--hint);">تحميل الكوبونات...</div>';
+      try {
+        const res = await fetch(`/api/admin/coupons?tg_id=${userId}`);
+        const d = await res.json();
+        if (!d.coupons || !d.coupons.length) {
+          container.innerHTML = '<div style="text-align:center; padding:10px; color:var(--hint);">لا توجد كوبونات مسجلة.</div>';
+          return;
+        }
+        container.innerHTML = d.coupons.map(c => `
+          <div style="background:var(--card); border:1px solid var(--border); border-radius:8px; padding:8px 12px; display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <strong style="font-family:monospace; font-size:13px; color:var(--accent);">${c.code}</strong>
+              <div style="font-size:11px; color:var(--hint);">
+                ${c.type === 'percent' ? c.value + '%' : '$' + c.value} · الاستخدام: ${c.usage_count}/${c.usage_limit || '∞'}
+              </div>
+            </div>
+            <button class="admin-edit-badge-btn" style="color:${c.is_active ? '#ef4444' : '#10b981'};" onclick="submitToggleCoupon(${c.id})">
+              ${c.is_active ? 'تعطيل' : 'تفعيل'}
+            </button>
+          </div>
+        `).join('');
+      } catch (e) {
+        container.innerHTML = '<div style="text-align:center; color:var(--danger);">خطأ في جلب الكوبونات.</div>';
+      }
+    }
+
+    async function submitAdminCreateCoupon() {
+      const code = (document.getElementById('admin-new-coupon-code')?.value || '').trim();
+      const val = parseFloat(document.getElementById('admin-new-coupon-val')?.value || 0);
+      const type = document.getElementById('admin-new-coupon-type')?.value;
+      const limit = parseInt(document.getElementById('admin-new-coupon-limit')?.value || 100);
+      if (!code || val <= 0) {
+        showToast('يرجى إدخال كود صحيح وقيمة صالحة');
+        return;
+      }
+      try {
+        const res = await fetch('/api/admin/coupons/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_tg_id: userId, code: code, value: val, type: type, usage_limit: limit })
+        });
+        const d = await res.json();
+        if (d.status === 'ok') {
+          showToast(`تم إنشاء الكود ${d.coupon.code} بنجاح!`);
+          document.getElementById('admin-new-coupon-code').value = '';
+          document.getElementById('admin-new-coupon-val').value = '';
+          loadAdminCoupons();
+        }
+      } catch (e) {
+        showToast('فشل إنشاء الكوبون');
+      }
+    }
+
+    async function submitToggleCoupon(couponId) {
+      try {
+        const res = await fetch('/api/admin/coupons/toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_tg_id: userId, coupon_id: couponId })
+        });
+        const d = await res.json();
+        if (d.status === 'ok') {
+          showToast(d.is_active ? 'تم تفعيل الكوبون' : 'تم تعطيل الكوبون');
+          loadAdminCoupons();
+        }
+      } catch (e) {
+        showToast('فشل تحديث الكوبون');
+      }
+    }
+
+    // Live Product Editor Modal
+    function openAdminProductEditor(productId, e) {
+      if (e) e.stopPropagation();
+      const prod = allProducts.find(p => Number(p.id) === Number(productId));
+      if (!prod) return;
+      haptic('pop');
+      document.getElementById('admin-edit-prod-id').value = prod.id;
+      document.getElementById('admin-edit-prod-name').value = prod.clean_name || '';
+      document.getElementById('admin-edit-prod-cat').value = prod.category || '';
+      document.getElementById('admin-edit-prod-price').value = prod.price || '';
+      document.getElementById('admin-edit-prod-stock').value = (prod.stock !== null && prod.stock !== undefined) ? prod.stock : '';
+      document.getElementById('admin-edit-prod-hidden').checked = !!prod.hidden;
+      document.getElementById('admin-product-modal').style.display = 'flex';
+    }
+    function closeAdminProductModal() {
+      document.getElementById('admin-product-modal').style.display = 'none';
+    }
+
+    async function submitAdminProductUpdate() {
+      const pid = parseInt(document.getElementById('admin-edit-prod-id')?.value);
+      if (!pid) return;
+      const customName = document.getElementById('admin-edit-prod-name')?.value;
+      const cat = document.getElementById('admin-edit-prod-cat')?.value;
+      const price = parseFloat(document.getElementById('admin-edit-prod-price')?.value);
+      const stockStr = document.getElementById('admin-edit-prod-stock')?.value;
+      const hidden = document.getElementById('admin-edit-prod-hidden')?.checked;
+
+      haptic('light');
+      try {
+        const res = await fetch('/api/admin/product/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            admin_tg_id: userId,
+            product_id: pid,
+            custom_name: customName,
+            category: cat,
+            sell_price_usd: isNaN(price) ? null : price,
+            stock: stockStr === '' ? null : parseInt(stockStr),
+            hidden: hidden
+          })
+        });
+        const d = await res.json();
+        if (d.status === 'ok') {
+          showToast('تم تحديث بيانات المنتج بنجاح!');
+          closeAdminProductModal();
+          await fetchCatalogData();
+        } else {
+          showToast('فشل تحديث المنتج');
+        }
+      } catch (e) {
+        showToast('خطأ في الاتصال بالخادم');
+      }
+    }
+
+    // Live Category Editor Modal
+    function openAdminCategoryEditor(categoryId, catName, e) {
+      if (e) e.stopPropagation();
+      let cat = categoriesList.find(c => (typeof c === 'object' ? c.id : null) === categoryId);
+      if (!cat) {
+        cat = categoriesList.find(c => (typeof c === 'object' ? c.name : c) === catName);
+      }
+      haptic('pop');
+      document.getElementById('admin-edit-cat-id').value = (cat && typeof cat === 'object') ? cat.id : categoryId;
+      document.getElementById('admin-edit-cat-ar').value = (cat && typeof cat === 'object') ? (cat.name_ar || '') : (catName || '');
+      document.getElementById('admin-edit-cat-en').value = (cat && typeof cat === 'object') ? (cat.name_en || '') : (catName || '');
+      document.getElementById('admin-edit-cat-img').value = (cat && typeof cat === 'object') ? (cat.image_url || '') : '';
+      document.getElementById('admin-edit-cat-prev-ar').value = (cat && typeof cat === 'object') ? (cat.preview_ar || '') : '';
+      document.getElementById('admin-edit-cat-prev-en').value = (cat && typeof cat === 'object') ? (cat.preview_en || '') : '';
+      document.getElementById('admin-edit-cat-sort').value = (cat && typeof cat === 'object') ? (cat.sort_order || 1) : 1;
+      document.getElementById('admin-edit-cat-hidden').checked = (cat && typeof cat === 'object') ? !!cat.hidden : false;
+      document.getElementById('admin-category-modal').style.display = 'flex';
+    }
+    function closeAdminCategoryModal() {
+      document.getElementById('admin-category-modal').style.display = 'none';
+    }
+
+    async function submitAdminCategoryUpdate() {
+      const cid = parseInt(document.getElementById('admin-edit-cat-id')?.value);
+      if (!cid) return;
+      const nameAr = document.getElementById('admin-edit-cat-ar')?.value;
+      const nameEn = document.getElementById('admin-edit-cat-en')?.value;
+      const img = document.getElementById('admin-edit-cat-img')?.value;
+      const prevAr = document.getElementById('admin-edit-cat-prev-ar')?.value;
+      const prevEn = document.getElementById('admin-edit-cat-prev-en')?.value;
+      const sort = parseInt(document.getElementById('admin-edit-cat-sort')?.value || 1);
+      const hidden = document.getElementById('admin-edit-cat-hidden')?.checked;
+
+      haptic('light');
+      try {
+        const res = await fetch('/api/admin/category/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            admin_tg_id: userId,
+            category_id: cid,
+            name_ar: nameAr,
+            name_en: nameEn,
+            image_url: img,
+            preview_ar: prevAr,
+            preview_en: prevEn,
+            sort_order: sort,
+            hidden: hidden
+          })
+        });
+        const d = await res.json();
+        if (d.status === 'ok') {
+          showToast('تم تحديث بيانات التصنيف بنجاح!');
+          closeAdminCategoryModal();
+          await fetchCatalogData();
+        } else {
+          showToast('فشل تحديث التصنيف');
+        }
+      } catch (e) {
+        showToast('خطأ في الاتصال بالخادم');
+      }
+    }
+
+    function openFullSqlAdmin() {
+      haptic('light');
+      if (tg?.openLink) {
+        tg.openLink('https://bot.gh-store.me/admin');
+      } else {
+        window.open('/admin', '_blank');
+      }
+    }
+
     // User Profile, Settings & Referral Data Loading
     async function loadUserData() {
       if (!userId) {
@@ -3292,6 +4039,29 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         userData = d;
         try { localStorage.setItem('ghstore_user_cache', JSON.stringify(d)); } catch (e) {}
         updateBalancePills();
+
+        // Check & Render Admin Control Center in Settings
+        const adminCenterCard = document.getElementById('admin-control-center-card');
+        if (adminCenterCard) {
+          if (d.is_admin) {
+            adminCenterCard.style.display = 'block';
+            if (d.admin_stats) {
+              const setText = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val; };
+              setText('admin-stat-revenue', `$${d.admin_stats.total_revenue.toFixed(2)}`);
+              setText('admin-stat-balances', `$${d.admin_stats.total_users_balance.toFixed(2)}`);
+              setText('admin-stat-users', String(d.admin_stats.total_users_count));
+              setText('admin-stat-orders', String(d.admin_stats.total_orders_count));
+
+              const sypInput = document.getElementById('admin-syp-rate-input');
+              if (sypInput && !sypInput.value) sypInput.value = d.admin_stats.syp_usd_rate || 15000;
+
+              const refInput = document.getElementById('admin-ref-rate-input');
+              if (refInput && !refInput.value) refInput.value = d.admin_stats.referral_commission_percent || 0.2;
+            }
+          } else {
+            adminCenterCard.style.display = 'none';
+          }
+        }
 
         // Profile Picture
         const topAvatarBox = document.getElementById('top-avatar-box');
@@ -3450,7 +4220,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         <div class="inset-card" style="margin-bottom: 12px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
             <strong style="font-size: 15px;">#${o.id} · ${o.created_at || ''}</strong>
-            <span class="pill-badge" style="background: ${o.status.includes('completed') ? 'rgba(16,185,129,0.2); color:#10b981' : o.status.includes('fail') ? 'rgba(239,68,68,0.2); color:#ef4444' : 'rgba(245,158,11,0.2); color:#f59e0b'}; font-size:11px;">${o.status}</span>
+            <span class="pill-badge" style="background: ${o.status === 'completed' ? 'rgba(16,185,129,0.2); color:#10b981' : o.status === 'refunded' ? 'rgba(239,68,68,0.2); color:#ef4444' : 'rgba(245,158,11,0.2); color:#f59e0b'}; font-size:11px;">${o.status}</span>
           </div>
           <div style="font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 2px;">${o.products}</div>
           <div style="font-size: 13px; color: var(--accent); font-weight: 700; margin-bottom: 8px;">${d.total}: ${o.total.toFixed(2)}${o.sym}</div>

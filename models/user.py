@@ -27,6 +27,7 @@ class User(Base):
     referred_by_user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
     referred_at = Column(DateTime(timezone=True), nullable=True)
     currency_preference = Column(String(8), default="USD", nullable=False)
+    custom_discount_pct = Column(Float, nullable=True, default=None)
     received_referral_bonuses = relationship(
         "ReferralBonus",
         foreign_keys="ReferralBonus.referral_user_id",
@@ -85,12 +86,12 @@ class UserDTO(BaseModel):
     referred_by_user_id: int | None = None
     referred_at: datetime | None = None
     currency_preference: str = "USD"
+    custom_discount_pct: float | None = None
 
     @staticmethod
     def get_chart_text(language: Language) -> tuple[str, str]:
         return (get_text(language, BotEntity.ADMIN, "users_ylabel"),
                 get_text(language, BotEntity.ADMIN, "users_chart_title"))
-
 
 class UserAdmin(ModelView, model=User):
     column_exclude_list = [User.buys,
