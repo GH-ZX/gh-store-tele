@@ -92,9 +92,10 @@ async def sam_amount_received(message: Message, session: AsyncSession,
     identifier = await ConfigService.get(session, "SAM_RECEIVING_WALLET",
                                          env_fallback=config.SAM_RECEIVING_WALLET)
     try:
+        webhook_url = config.get_sam_webhook_url()
         invoice = await SamService.create_invoice(
             session, provider, identifier, amount, currency,
-            webhook_url=f"https://{(config.BATSTORE_WEBHOOK_URL or 'localhost').removesuffix('/ventebot')}/samwebhook"
+            webhook_url=webhook_url
         )
     except Exception as e:
         import logging

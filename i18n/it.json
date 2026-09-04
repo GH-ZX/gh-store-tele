@@ -135,6 +135,7 @@
     "remove_review_text_confirmation": "❓ <b>Sei sicuro di voler rimuovere il testo della recensione?</b>",
     "remove_review_image_confirmation": "❓ <b>Sei sicuro di voler rimuovere l'immagine della recensione?</b>",
     "reviews_management": "⭐ Gestione recensioni",
+    "reseller_management": "⚡ Rivenditore e Margini",
     "notification_new_deposit_id": "💰 Nuovo deposito dall'utente con ID {telegram_id} per {currency_sym}{deposit_amount_fiat:.2f} con 💰 {value} {crypto_name}\n💰 Bonus referral: {currency_sym}{referral_bonus:.2f}\n💰 Bonus referrer: {currency_sym}{referrer_bonus:.2f}",
     "notification_new_deposit_username": "💰 Nuovo deposito dall'utente con username @{username} per {currency_sym}{deposit_amount_fiat:.2f} con 💰 {value} {crypto_name}\n💰 Bonus referral: {currency_sym}{referral_bonus:.2f}\n💰 Bonus referrer: {currency_sym}{referrer_bonus:.2f}",
     "crypto_wallet": "\n\n<b>🤖 Saldi del Bot\n\n{wallet_content}</b>",

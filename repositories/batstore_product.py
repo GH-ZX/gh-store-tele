@@ -1,4 +1,4 @@
-from sqlalchemy import select, update, delete, func
+from sqlalchemy import select, update, delete, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -7,6 +7,19 @@ from models.batstore_product import BatStoreProduct, BatStoreProductDTO
 
 
 class BatStoreProductRepository:
+    _redis = None
+
+    @classmethod
+    def set_redis(cls, redis_client) -> None:
+        cls._redis = redis_client
+
+    @classmethod
+    async def invalidate_cache(cls) -> None:
+        if cls._redis is not None:
+            try:
+                await cls._redis.delete("ghstore:cache:batstore_cats")
+            except Exception:
+                pass
 
     @staticmethod
     async def get_by_product_id(product_id: int, session: AsyncSession | Session) -> BatStoreProductDTO | None:
@@ -31,22 +44,58 @@ class BatStoreProductRepository:
         rows = await session_execute(stmt, session)
         return [BatStoreProductDTO.model_validate(o, from_attributes=True) for o in rows.scalars().all()]
 
-    @staticmethod
-    async def get_categories(session: AsyncSession | Session) -> list[str]:
-        """Return distinct non-null category labels, sorted alphabetically."""
+    @classmethod
+    async def get_categories(cls, session: AsyncSession | Session) -> list[str]:
+        """Return distinct non-null category labels, sorted alphabetically (cached in Redis)."""
+        if cls._redis is not None:
+            try:
+                cached = await cls._redis.get("ghstore:cache:batstore_cats")
+                if cached:
+                    import json
+                    return json.loads(cached)
+            except Exception:
+                pass
+
         stmt = (select(BatStoreProduct.category)
                 .where(BatStoreProduct.hidden == False, BatStoreProduct.category.isnot(None))  # noqa: E712
                 .distinct()
                 .order_by(BatStoreProduct.category.asc()))
         rows = await session_execute(stmt, session)
-        return [r for r in rows.scalars().all() if r]
+        cats = [r for r in rows.scalars().all() if r]
 
+        if cls._redis is not None and cats:
+            try:
+                import json
+                await cls._redis.setex("ghstore:cache:batstore_cats", 1800, json.dumps(cats))
+            except Exception:
+                pass
+        return cats
     @staticmethod
     async def get_by_category(category: str, session: AsyncSession | Session) -> list[BatStoreProductDTO]:
         """Return visible products in a given category, sorted by name."""
         stmt = (select(BatStoreProduct)
                 .where(BatStoreProduct.hidden == False, BatStoreProduct.category == category)  # noqa: E712
                 .order_by(BatStoreProduct.name.asc()))
+        rows = await session_execute(stmt, session)
+        return [BatStoreProductDTO.model_validate(o, from_attributes=True) for o in rows.scalars().all()]
+
+    @staticmethod
+    async def search(query: str, session: AsyncSession | Session, limit: int = 15) -> list[BatStoreProductDTO]:
+        """Search products by name or description (case-insensitive)."""
+        pattern = f"%{query.strip()}%"
+        stmt = (
+            select(BatStoreProduct)
+            .where(
+                BatStoreProduct.hidden == False,  # noqa: E712
+                or_(
+                    BatStoreProduct.name.ilike(pattern),
+                    BatStoreProduct.description.ilike(pattern),
+                    BatStoreProduct.category.ilike(pattern),
+                )
+            )
+            .order_by(BatStoreProduct.name.asc())
+            .limit(limit)
+        )
         rows = await session_execute(stmt, session)
         return [BatStoreProductDTO.model_validate(o, from_attributes=True) for o in rows.scalars().all()]
 
@@ -63,6 +112,7 @@ class BatStoreProductRepository:
     async def create(dto: BatStoreProductDTO, session: AsyncSession | Session) -> BatStoreProductDTO:
         obj = BatStoreProduct(**dto.model_dump(exclude_none=True))
         session.add(obj)
+        await BatStoreProductRepository.invalidate_cache()
         await session_flush(session)
         return BatStoreProductDTO.model_validate(obj, from_attributes=True)
 
@@ -74,12 +124,14 @@ class BatStoreProductRepository:
             dto_dict.pop(k)
         if "id" not in dto_dict:
             return
+        await BatStoreProductRepository.invalidate_cache()
         stmt = update(BatStoreProduct).where(BatStoreProduct.product_id == dto.product_id).values(**dto_dict)
         await session_execute(stmt, session)
 
     @staticmethod
     async def delete_by_product_id(product_id: int, session: AsyncSession | Session) -> None:
         stmt = delete(BatStoreProduct).where(BatStoreProduct.product_id == product_id)
+        await BatStoreProductRepository.invalidate_cache()
         await session_execute(stmt, session)
 
     @staticmethod
@@ -88,4 +140,5 @@ class BatStoreProductRepository:
         if not product_ids:
             return
         stmt = delete(BatStoreProduct).where(BatStoreProduct.product_id.not_in(product_ids))
+        await BatStoreProductRepository.invalidate_cache()
         await session_execute(stmt, session)

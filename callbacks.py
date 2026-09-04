@@ -136,6 +136,14 @@ class AdminMenuCallback(BaseCallback, prefix="admin_menu"):
     def create(level: int, page: int = 0):
         return AdminMenuCallback(level=level, page=page)
 
+class ResellerManagementCallback(BaseCallback, prefix="reseller_mgmt"):
+    action: str | None = None
+    order_id: int | None = None
+
+    @staticmethod
+    def create(level: int, action: str | None = None, order_id: int | None = None, page: int = 0):
+        return ResellerManagementCallback(level=level, action=action, order_id=order_id, page=page)
+
 
 class AnnouncementCallback(BaseCallback, prefix="announcement"):
     announcement_type: AnnouncementType | None

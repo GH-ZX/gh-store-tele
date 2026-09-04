@@ -22,6 +22,7 @@ from db import session_commit
 from enums.bot_entity import BotEntity
 from enums.language import Language
 from repositories.batstore_product import BatStoreProductRepository
+from models.batstore_product import format_product_icon
 from models.batstore_order import BatStoreOrderDTO
 from repositories.batstore_order import BatStoreOrderRepository
 from repositories.user import UserRepository
@@ -92,7 +93,8 @@ async def batstore_products_in_category(callback: CallbackQuery,
     kb = InlineKeyboardBuilder()
     sym = _sym()
     for p in slice_:
-        label = p.name
+        icon = p.emoji or "⚡"
+        label = f"{icon} {p.name}"
         if p.sell_price_usd is not None:
             label = f"{label} — {p.sell_price_usd:.2f}{sym}"
         is_oos = RestockNotificationService.is_batstore_out_of_stock(p)
@@ -159,7 +161,13 @@ async def batstore_product_detail(callback: CallbackQuery,
     sym = _sym()
     user = await UserRepository.get_by_tgid(callback.from_user.id, session)
     balance = round((user.top_up_amount or 0) - (user.consume_records or 0), 2)
-    delivery = product.delivery_type or "stock"
+    delivery_raw = product.delivery_type or "stock"
+    delivery_labels = {
+        "stock": "Instant Delivery ⚡",
+        "supplier_api": "Instant Delivery ⚡",
+        "activation": "Custom Activation ⏳",
+    }
+    delivery = delivery_labels.get(delivery_raw, delivery_raw.title())
     is_oos = RestockNotificationService.is_batstore_out_of_stock(product)
     if is_oos:
         await RestockNotificationService.auto_subscribe_if_out_of_stock(
@@ -171,8 +179,10 @@ async def batstore_product_detail(callback: CallbackQuery,
         )
         await session_commit(session)
 
+    icon_html = format_product_icon(product)
+    display_name = f"🔴 {icon_html} {product.name} {get_text(language, BotEntity.USER, 'product_out_of_stock_badge')}" if is_oos else f"{icon_html} {product.name}"
     caption = get_text(language, BotEntity.USER, "batstore_detail").format(
-        name=f"🔴 {product.name} {get_text(language, BotEntity.USER, 'product_out_of_stock_badge')}" if is_oos else product.name,
+        name=display_name,
         description=product.description or "",
         price=f"{product.sell_price_usd:.2f}" if product.sell_price_usd is not None else "-",
         sym=sym,

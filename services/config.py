@@ -68,6 +68,16 @@ class ConfigService:
         return default
 
     @staticmethod
+    async def set(session: AsyncSession | Session, key: str, value: str | None) -> None:
+        """Upsert a configuration key/value in the database."""
+        row = await AppConfigRepository.get_by_key(key, session)
+        if row is not None:
+            row.value = value
+            await AppConfigRepository.update(row, session)
+        else:
+            await AppConfigRepository.create(key, value, False, None, session)
+
+    @staticmethod
     async def get_prefixed(session: AsyncSession | Session, env_prefix: str = "") -> dict[str, str]:
         """Return all DB config values keyed by config key, overlaid on env para."""
         resolved: dict[str, str] = {}

@@ -4,7 +4,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from callbacks import AdminMenuCallback, AnnouncementCallback, InventoryManagementCallback, \
     UserManagementCallback, StatisticsCallback, WalletCallback, MediaManagementCallback, CouponManagementCallback, \
-    ShippingManagementCallback, MyProfileCallback, ReviewManagementCallback
+    ShippingManagementCallback, MyProfileCallback, ReviewManagementCallback, ResellerManagementCallback
 from enums.bot_entity import BotEntity
 from enums.keyboard_button import KeyboardButton as KB
 from enums.language import Language
@@ -18,6 +18,7 @@ from handlers.admin.shipping_management import shipping_management
 from handlers.admin.statistics import statistics
 from handlers.admin.user_management import user_management
 from handlers.admin.wallet import wallet
+from handlers.admin.reseller_management import reseller_management_router
 from utils.custom_filters import AdminIdFilter
 from utils.utils import get_text
 
@@ -30,7 +31,8 @@ admin_router.include_routers(announcement_router,
                              media_management,
                              coupons_management,
                              shipping_management,
-                             buys_management_router)
+                             buys_management_router,
+                             reseller_management_router)
 
 
 @admin_router.message(F.text.in_(KB.get_localized_set(KB.ADMIN_MENU)), AdminIdFilter())
@@ -66,6 +68,8 @@ async def admin(**kwargs):
     kb_builder.button(text=get_text(language, BotEntity.ADMIN, "reviews_management"),
                       callback_data=ReviewManagementCallback.create(level=5,
                                                                     user_role=UserRole.ADMIN))
+    kb_builder.button(text=get_text(language, BotEntity.ADMIN, "reseller_management"),
+                      callback_data=ResellerManagementCallback.create(level=0))
     kb_builder.adjust(2)
     msg_text = get_text(language, BotEntity.ADMIN, "menu")
     if isinstance(message, Message):

@@ -147,3 +147,43 @@ async def test_stars_successful_payment_bad_payload(monkeypatch):
     answer_text = msg.answer.call_args[0][0]
     # Fallback uses total_amount/1000000 * rate (0.01) = 0.005 -> rounded to 0.01
     assert "0.01" in answer_text or "0.00" in answer_text
+
+
+@pytest.mark.asyncio
+async def test_stars_duplicate_payment_is_ignored(monkeypatch):
+    from handlers.user.stars import stars_successful_payment
+
+    user = _UserOrm(top_up=10.0)
+    updated = []
+
+    async def fake_get_by_tgid(tgid, session):
+        return user
+
+    async def fake_update(user_obj, session):
+        updated.append(user_obj)
+
+    async def fake_get_by_charge_id(charge_id, session):
+        return SimpleNamespace(id=1, telegram_payment_charge_id=charge_id)
+
+    monkeypatch.setattr("handlers.user.stars.UserRepository.get_by_tgid", fake_get_by_tgid)
+    monkeypatch.setattr("handlers.user.stars.UserRepository.update", fake_update)
+    monkeypatch.setattr("handlers.user.stars.StarsPaymentRepository.get_by_charge_id", fake_get_by_charge_id)
+
+    sp = SimpleNamespace(
+        invoice_payload="stars:1:100:1.00",
+        total_amount=100,
+        telegram_payment_charge_id="ch_dup_123",
+        provider_payment_charge_id="prov_123",
+    )
+    msg = SimpleNamespace(
+        successful_payment=sp,
+        from_user=SimpleNamespace(id=1),
+        answer=AsyncMock(),
+    )
+
+    await stars_successful_payment(msg, None, Language.EN)
+
+    # Should return early without updating balance
+    assert len(updated) == 0
+    assert user.top_up_amount == 10.0
+    msg.answer.assert_not_called()

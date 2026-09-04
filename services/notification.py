@@ -1,4 +1,5 @@
 import logging
+import time
 import traceback
 from datetime import datetime, timezone
 from aiogram import types, Bot
@@ -33,6 +34,33 @@ from utils.utils import get_text
 class NotificationService:
     PRIVACY_RESTRICTED_PATTERN = "BUTTON_USER_PRIVACY_RESTRICTED"
     TG_USER_URL_PREFIX = "tg://user?id="
+    _shared_bot: Bot | None = None
+    _recent_errors: dict[str, float] = {}
+
+    @classmethod
+    async def send_error_to_admins(cls, error_key: str, message: str | BufferedInputFile,
+                                   reply_markup: types.InlineKeyboardMarkup | None = None,
+                                   window_seconds: int = 600) -> None:
+        """Send error alert to admins with deduplication window (default 10m). Prevents alert spam."""
+        now = time.time()
+        last_sent = cls._recent_errors.get(error_key, 0.0)
+        if now - last_sent < window_seconds:
+            logging.info("Suppressed duplicate admin error alert for '%s' (sent %.0fs ago)", error_key, now - last_sent)
+            return
+        cls._recent_errors[error_key] = now
+        await cls.send_to_admins(message, reply_markup)
+
+    @classmethod
+    def get_bot(cls) -> Bot:
+        if cls._shared_bot is not None:
+            session_closed = getattr(getattr(cls._shared_bot, "session", None), "closed", False)
+            if not session_closed:
+                return cls._shared_bot
+        return create_bot(TOKEN)
+
+    @classmethod
+    def set_bot(cls, bot: Bot) -> None:
+        cls._shared_bot = bot
 
     @staticmethod
     def get_username_link(user_dto: UserDTO) -> str | None:
@@ -44,7 +72,7 @@ class NotificationService:
     async def get_preferred_user_link(user_dto: UserDTO) -> str | None:
         if user_dto.telegram_id is None:
             return NotificationService.get_username_link(user_dto)
-        bot = create_bot(TOKEN)
+        bot = NotificationService.get_bot()
         try:
             chat = await bot.get_chat(user_dto.telegram_id)
             if chat.has_private_forwards is not True:
@@ -55,8 +83,6 @@ class NotificationService:
                 user_dto.telegram_id,
                 exception
             )
-        finally:
-            await bot.session.close()
         return NotificationService.get_username_link(user_dto)
 
     @staticmethod
@@ -121,7 +147,7 @@ class NotificationService:
 
     @staticmethod
     async def send_to_admins(message: str | BufferedInputFile, reply_markup: types.InlineKeyboardMarkup | None):
-        bot = create_bot(TOKEN)
+        bot = NotificationService.get_bot()
         for admin_id in ADMIN_ID_LIST:
             try:
                 if isinstance(message, str):
@@ -138,41 +164,32 @@ class NotificationService:
                 )
             except Exception as e:
                 logging.error(e)
-        await bot.session.close()
+
 
     @staticmethod
     async def send_to_user(message: str, telegram_id: int, reply_markup: types.InlineKeyboardMarkup | None = None):
         if config.MULTIBOT:
             await MultibotService.send_message_to_user(message, telegram_id, reply_markup=reply_markup)
             return
-        bot = create_bot(TOKEN)
+        bot = NotificationService.get_bot()
         try:
             await bot.send_message(telegram_id, message, reply_markup=reply_markup)
         except Exception as e:
             logging.error(e)
-        finally:
-            await bot.session.close()
-
     @staticmethod
     async def edit_message(message: str, source_message_id: int, chat_id: int):
-        bot = create_bot(TOKEN)
+        bot = NotificationService.get_bot()
         try:
             await bot.edit_message_text(text=message, chat_id=chat_id, message_id=source_message_id)
         except Exception as e:
             logging.error(e)
-        finally:
-            await bot.session.close()
-
     @staticmethod
     async def edit_caption(caption: str, source_message_id: int, chat_id: int):
-        bot = create_bot(TOKEN)
+        bot = NotificationService.get_bot()
         try:
             await bot.edit_message_caption(caption=caption, chat_id=chat_id, message_id=source_message_id)
         except Exception as e:
             logging.error(e)
-        finally:
-            await bot.session.close()
-
     @staticmethod
     async def payment_expired(user_dto: UserDTO, payment_dto: ProcessingPaymentDTO, table_payment_dto: TablePaymentDTO):
         msg = get_text(user_dto.language, BotEntity.USER, "notification_payment_expired").format(

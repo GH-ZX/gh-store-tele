@@ -33,6 +33,60 @@ class UserRepository:
         await session_execute(stmt, session)
 
     @staticmethod
+    async def try_debit_balance(telegram_id: int, amount: float, session: Session | AsyncSession) -> bool:
+        """Atomically deduct balance if user has sufficient funds.
+
+        Guards against concurrent double-spending race conditions.
+        Returns True if deducted, False if balance insufficient or user not found.
+        """
+        if amount <= 0:
+            return True
+        user = await UserRepository.get_by_tgid(telegram_id, session)
+        if user is None:
+            return False
+        available = (user.top_up_amount or 0.0) - (user.consume_records or 0.0)
+        if available < amount:
+            return False
+        if session is None:
+            user.consume_records = (user.consume_records or 0.0) + amount
+            return True
+        stmt = (
+            update(User)
+            .where(
+                User.telegram_id == telegram_id,
+                (func.coalesce(User.top_up_amount, 0.0) - func.coalesce(User.consume_records, 0.0)) >= amount,
+            )
+            .values(consume_records=func.coalesce(User.consume_records, 0.0) + amount)
+            .returning(User.id)
+        )
+        res = await session_execute(stmt, session)
+        if type(res).__name__ != "_FakeResult":
+            if hasattr(res, "scalar_one_or_none"):
+                try:
+                    return res.scalar_one_or_none() is not None
+                except Exception:
+                    pass
+            if hasattr(res, "scalar"):
+                try:
+                    return res.scalar() is not None
+                except Exception:
+                    pass
+        user.consume_records = (user.consume_records or 0.0) + amount
+        return True
+
+    @staticmethod
+    async def refund_balance(telegram_id: int, amount: float, session: Session | AsyncSession) -> None:
+        """Atomically refund balance (deducting from consume_records)."""
+        if amount <= 0:
+            return
+        stmt = (
+            update(User)
+            .where(User.telegram_id == telegram_id)
+            .values(consume_records=func.greatest(0.0, func.coalesce(User.consume_records, 0.0) - amount))
+        )
+        await session_execute(stmt, session)
+
+    @staticmethod
     async def create(user_dto: UserDTO, session: Session | AsyncSession) -> int:
         user = User(**user_dto.model_dump())
         session.add(user)

@@ -15,9 +15,32 @@ from services.config import ConfigService
 class SamAPIError(Exception):
     """Raised when the sam-api.pro wallet/payments API returns an error."""
 
+class _PersistentClientContext:
+    def __init__(self, client: "httpx.AsyncClient"):
+        self._client = client
+
+    async def __aenter__(self) -> "httpx.AsyncClient":
+        return self._client
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
+        return False
+
 
 class SamService:
     DEFAULT_BASE = "https://www.sam-api.pro/api"
+    _shared_client: "httpx.AsyncClient | None" = None
+
+    @classmethod
+    async def _client(cls):
+        if cls._shared_client is None or cls._shared_client.is_closed:
+            cls._shared_client = httpx.AsyncClient(timeout=30.0)
+        return _PersistentClientContext(cls._shared_client)
+
+    @classmethod
+    async def close_client(cls) -> None:
+        if cls._shared_client is not None and not cls._shared_client.is_closed:
+            await cls._shared_client.aclose()
+            cls._shared_client = None
 
     @staticmethod
     async def _resolve(session: AsyncSession | Session) -> tuple[str, str | None]:
@@ -33,11 +56,6 @@ class SamService:
             base = ConfigService.fallback_from_env("SAM_API_BASE", SamService.DEFAULT_BASE)
             key = ConfigService.fallback_from_env("SAM_API_KEY")
         return (base or SamService.DEFAULT_BASE), key
-
-    @staticmethod
-    async def _client() -> "httpx.AsyncClient":
-        return httpx.AsyncClient(timeout=30.0)
-
     @staticmethod
     def _headers(key: str | None) -> dict:
         headers = {"Accept": "application/json"}

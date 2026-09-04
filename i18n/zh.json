@@ -135,6 +135,7 @@
     "remove_review_text_confirmation": "❓ <b>确定要删除评价文字吗？</b>",
     "remove_review_image_confirmation": "❓ <b>确定要删除评价图片吗？</b>",
     "reviews_management": "⭐ 评价管理",
+    "reseller_management": "⚡ 分销与利润率",
     "notification_new_deposit_id": "💰 用户ID {telegram_id} 新存款 {currency_sym}{deposit_amount_fiat:.2f}，使用 💰 {value} {crypto_name}\n💰 被邀请人奖金: {currency_sym}{referral_bonus:.2f}\n💰 邀请人奖金: {currency_sym}{referrer_bonus:.2f}",
     "notification_new_deposit_username": "💰 用户名 @{username} 新存款 {currency_sym}{deposit_amount_fiat:.2f}，使用 💰 {value} {crypto_name}\n💰 被邀请人奖金: {currency_sym}{referral_bonus:.2f}\n💰 邀请人奖金: {currency_sym}{referrer_bonus:.2f}",
     "crypto_wallet": "\n\n<b>🤖 机器人余额\n\n{wallet_content}</b>",

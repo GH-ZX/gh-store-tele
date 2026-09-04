@@ -14,7 +14,7 @@ from db import session_commit
 from services.restock_notification import RestockNotificationService
 from enums.language import Language
 from models.batstore_order import BatStoreOrderDTO
-from models.batstore_product import BatStoreProduct
+from models.batstore_product import BatStoreProduct, format_product_icon
 from repositories.batstore_order import BatStoreOrderRepository
 from repositories.batstore_product import BatStoreProductRepository
 from repositories.user import UserRepository
@@ -46,7 +46,8 @@ class BatStoreStoreService:
         kb_builder = InlineKeyboardBuilder()
         sym = config.CURRENCY.get_localized_symbol()
         for p in slice_:
-            label = p.name
+            icon = getattr(p, "emoji", None) or "⚡"
+            label = f"{icon} {p.name}"
             if p.sell_price_usd is not None:
                 label = f"{label} — {p.sell_price_usd:.2f}{sym}"
             is_oos = RestockNotificationService.is_batstore_out_of_stock(p)
@@ -101,7 +102,13 @@ class BatStoreStoreService:
         sym = config.CURRENCY.get_localized_symbol()
         user = await UserRepository.get_by_tgid(callback.from_user.id, session)
         balance = round((user.top_up_amount or 0) - (user.consume_records or 0), 2)
-        delivery = product.delivery_type or "stock"
+        delivery_raw = product.delivery_type or "stock"
+        delivery_labels = {
+            "stock": "Instant Delivery ⚡",
+            "supplier_api": "Instant Delivery ⚡",
+            "activation": "Custom Activation ⏳",
+        }
+        delivery = delivery_labels.get(delivery_raw, delivery_raw.title())
         is_oos = RestockNotificationService.is_batstore_out_of_stock(product)
         if is_oos:
             await RestockNotificationService.auto_subscribe_if_out_of_stock(
@@ -113,8 +120,10 @@ class BatStoreStoreService:
             )
             await session_commit(session)
 
+        icon_html = format_product_icon(product)
+        display_name = f"🔴 {icon_html} {product.name} {get_text(language, BotEntity.USER, 'product_out_of_stock_badge')}" if is_oos else f"{icon_html} {product.name}"
         caption = get_text(language, BotEntity.USER, "batstore_detail").format(
-            name=f"🔴 {product.name} {get_text(language, BotEntity.USER, 'product_out_of_stock_badge')}" if is_oos else product.name,
+            name=display_name,
             description=product.description or "",
             price=f"{product.sell_price_usd:.2f}" if product.sell_price_usd is not None else "-",
             sym=sym,
@@ -224,7 +233,12 @@ class BatStoreStoreService:
         total = round(qty * product.sell_price_usd, 2)
         balance = round((user.top_up_amount or 0) - (user.consume_records or 0), 2)
 
-        if balance < total:
+        if callback_data.confirmation is False:
+            kb_builder.row(callback_data.get_back_button(language, 0))
+            return get_text(language, BotEntity.USER, "purchase_confirmation_declined"), kb_builder
+
+        debited = await UserRepository.try_debit_balance(callback.from_user.id, total, session)
+        if not debited:
             caption = get_text(language, BotEntity.USER, "batstore_insufficient").format(
                 need=f"{total}",
                 balance=f"{balance}",
@@ -232,16 +246,15 @@ class BatStoreStoreService:
             )
             kb_builder.row(callback_data.get_back_button(language, 0))
             return caption, kb_builder
-
-        if callback_data.confirmation is False:
-            # do not double-charge; proceed to fulfill
-            pass
+        await session_commit(session)
 
         customer_reference = f"ghstore-{callback.from_user.id}-{uuid.uuid4().hex[:8]}"
         try:
             quote = await BatStoreService.quote(session, product.product_id, qty)
         except Exception as e:
             logging.error("BatStore quote failed: %s", e)
+            await UserRepository.refund_balance(callback.from_user.id, total, session)
+            await session_commit(session)
             return get_text(language, BotEntity.USER, "batstore_failed"), kb_builder
 
         order_payload = {}
@@ -263,12 +276,9 @@ class BatStoreStoreService:
             external_ref = placed.get("order", {}).get("id") or placed.get("order_id")
         except Exception as e:
             logging.error("BatStore place_order failed: %s", e)
+            await UserRepository.refund_balance(callback.from_user.id, total, session)
+            await session_commit(session)
             return get_text(language, BotEntity.USER, "batstore_failed"), kb_builder
-
-        # charge the customer balance only after the upstream order succeeded
-        user.consume_records = (user.consume_records or 0) + total
-        await UserRepository.update(user, session)
-
         order_status = "completed"
         if product.delivery_type in ("activation",):
             order_status = "pending_fulfillment"
@@ -290,8 +300,8 @@ class BatStoreStoreService:
             goods = placed.get("order", {}) or {}
             items = goods.get("items") or []
             if items:
-                goods_list = "\n".join(f"• {it.get('value') or it.get('data') or it}" for it in items[:20])
-                delivery_info = f"📦 Your goods:\n{goods_list}"
+                goods_list = "\n".join(f"• <code>{it.get('value') or it.get('data') or it}</code>" for it in items[:20])
+                delivery_info = f"📦 <b>Your goods:</b>\n{goods_list}\n\n<i>(Tap any key above to copy)</i>"
             else:
                 delivery_info = get_text(language, BotEntity.USER, "batstore_activation_pending")
         else:

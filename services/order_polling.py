@@ -1,14 +1,16 @@
 import asyncio
 import logging
 
+import config
 from db import get_db_session, session_commit
 from repositories.batstore_order import BatStoreOrderRepository
 from services.batstore import BatStoreService
 from services.notification import NotificationService
+from collections import defaultdict
 
 _POLL_INTERVAL = 60
 _MAX_ATTEMPTS = 10
-
+_order_attempts: dict[int, int] = defaultdict(int)
 
 async def poll_pending_orders():
     """Periodically check pending BatStore orders with the reseller API.
@@ -28,11 +30,30 @@ async def poll_pending_orders():
                         continue
                     try:
                         order_id = int(order.external_order_ref)
-                        order_data = await BatStoreService.get_order(session, order_id)
+                        _order_attempts[order.id] += 1
+                        if _order_attempts[order.id] > _MAX_ATTEMPTS:
+                            logging.warning("Order %s exceeded max polling attempts (%s)", order.id, _MAX_ATTEMPTS)
+                            await BatStoreOrderRepository.update_status(
+                                order.id, "requires_manual_review", None, session)
+                            await session_commit(session)
+                            await NotificationService.send_to_admins(
+                                f"⚠️ BatStore order #{order.id} (tg:{order.telegram_id}) exceeded max polling attempts ({_MAX_ATTEMPTS}). "
+                                f"Status set to requires_manual_review. Upstream ID: {order.external_order_ref}",
+                                None
+                            )
+                            _order_attempts.pop(order.id, None)
+                            continue
+
+                        order_data = await asyncio.wait_for(
+                            BatStoreService.get_order(session, order_id),
+                            timeout=15.0
+                        )
+                    except asyncio.TimeoutError:
+                        logging.warning("Timeout checking order %s after 15s", order.id)
+                        continue
                     except Exception as e:
                         logging.warning("Failed to check order %s: %s", order.id, e)
                         continue
-
                     reseller_status = BatStoreService.get_order_reseller_status(order_data)
 
                     if reseller_status == "completed":
@@ -40,12 +61,14 @@ async def poll_pending_orders():
                         await BatStoreOrderRepository.update_status(
                             order.id, "completed", goods, session)
                         await session_commit(session)
+                        _order_attempts.pop(order.id, None)
                         await _notify_order_complete(order, goods)
 
                     elif reseller_status == "failed":
                         await BatStoreOrderRepository.update_status(
                             order.id, "failed", None, session)
                         await session_commit(session)
+                        _order_attempts.pop(order.id, None)
                         await _refund_and_notify(order, session)
 
         except Exception as e:
@@ -90,3 +113,43 @@ async def _refund_and_notify(order, session):
     except Exception as e:
         logging.error("Failed to notify user %s about refund for order %s: %s",
                       order.telegram_id, order.id, e)
+
+
+async def periodic_catalog_sync():
+    """Periodically sync the BatStore catalog every hour to keep prices and stock fresh."""
+    while True:
+        await asyncio.sleep(3600)
+        if config.BATSTORE_SYNC_ENABLED:
+            try:
+                async with get_db_session() as session:
+                    created, updated = await BatStoreService.sync_catalog(session)
+                logging.info("Periodic catalog sync completed: %s created, %s updated", created, updated)
+            except Exception as e:
+                logging.error("Periodic catalog sync failed: %s", e)
+
+
+async def periodic_balance_monitor():
+    """Periodically check the reseller wallet balance and alert admins if low."""
+    while True:
+        await asyncio.sleep(900)
+        try:
+            async with get_db_session() as session:
+                me_data = await BatStoreService.me(session)
+            wallet = me_data.get("wallet", {})
+            raw_bal = wallet.get("balance", "0")
+            try:
+                bal = float(raw_bal)
+                if bal < 25.0:
+                    await NotificationService.send_error_to_admins(
+                        "low_reseller_balance",
+                        f"⚠️ <b>Low Reseller Wallet Balance!</b>\n\n"
+                        f"• Current Balance: <b>${bal:.2f}</b>\n"
+                        f"• Alert Threshold: $25.00\n\n"
+                        "<i>Please top up your BatStore/VenteBot reseller wallet to prevent customer orders from failing.</i>",
+                        None,
+                        window_seconds=3600,
+                    )
+            except ValueError:
+                pass
+        except Exception as e:
+            logging.warning("Low balance monitor check failed: %s", e)

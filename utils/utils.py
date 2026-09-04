@@ -27,9 +27,11 @@ def get_sslipio_external_url():
 
 
 def get_bot_photo_id() -> str:
-    with open("static/no_image.jpeg", "r") as f:
-        return f.read()
-
+    try:
+        with open("static/no_image.jpeg", "r") as f:
+            return f.read().strip()
+    except Exception:
+        return "no_image_placeholder"
 
 def start_ngrok():
     ngrok_token = os.environ.get("NGROK_TOKEN")

@@ -135,6 +135,7 @@
     "remove_review_text_confirmation": "❓ <b>Sind Sie sicher, dass Sie den Bewertungstext entfernen möchten?</b>",
     "remove_review_image_confirmation": "❓ <b>Sind Sie sicher, dass Sie das Bewertungsbild entfernen möchten?</b>",
     "reviews_management": "⭐ Bewertungsverwaltung",
+    "reseller_management": "⚡ Reseller & Margen",
     "notification_new_deposit_id": "💰 Neue Einzahlung von Benutzer mit ID {telegram_id} für {currency_sym}{deposit_amount_fiat:.2f} mit 💰 {value} {crypto_name}\n💰 Empfehlungsbonus: {currency_sym}{referral_bonus:.2f}\n💰 Empfehlerbonus: {currency_sym}{referrer_bonus:.2f}",
     "notification_new_deposit_username": "💰 Neue Einzahlung von Benutzer mit Benutzername @{username} für {currency_sym}{deposit_amount_fiat:.2f} mit 💰 {value} {crypto_name}\n💰 Empfehlungsbonus: {currency_sym}{referral_bonus:.2f}\n💰 Empfehlerbonus: {currency_sym}{referrer_bonus:.2f}",
     "crypto_wallet": "\n\n<b>🤖 Bot-Guthaben\n\n{wallet_content}</b>",

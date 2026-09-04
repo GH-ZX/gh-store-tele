@@ -18,6 +18,7 @@ from handlers.common.common import enable_search
 from handlers.user.constants import UserStates
 from repositories.batstore_product import BatStoreProductRepository
 from repositories.batstore_order import BatStoreOrderRepository
+from models.batstore_product import format_product_icon
 from repositories.user import UserRepository
 from services.batstore import BatStoreService
 from services.cart import CartService
@@ -260,7 +261,8 @@ async def _batstore_products_in_category(callback, callback_data, state, session
     sym = _sym()
     for p in slice_:
         is_oos = RestockNotificationService.is_batstore_out_of_stock(p)
-        label = p.name
+        icon = p.emoji or "⚡"
+        label = f"{icon} {p.name}"
         if p.sell_price_usd is not None:
             label = f"{label} — {p.sell_price_usd:.2f}{sym}"
         if is_oos:
@@ -325,7 +327,13 @@ async def _batstore_product_detail(callback, callback_data, state, session, lang
     sym = _sym()
     user = await UserRepository.get_by_tgid(callback.from_user.id, session)
     balance = round((user.top_up_amount or 0) - (user.consume_records or 0), 2)
-    delivery = product.delivery_type or "stock"
+    delivery_raw = product.delivery_type or "stock"
+    delivery_labels = {
+        "stock": "Instant Delivery ⚡",
+        "supplier_api": "Instant Delivery ⚡",
+        "activation": "Custom Activation ⏳",
+    }
+    delivery = delivery_labels.get(delivery_raw, delivery_raw.title())
     is_oos = RestockNotificationService.is_batstore_out_of_stock(product)
     if is_oos:
         await RestockNotificationService.auto_subscribe_if_out_of_stock(
@@ -344,12 +352,13 @@ async def _batstore_product_detail(callback, callback_data, state, session, lang
     desc = re.sub(r'<tg-emoji[^>]*>([^<]*)</tg-emoji>', r'\1', desc)
     desc = desc.strip()
 
+    icon_html = format_product_icon(product)
     lines = []
     if is_oos:
-        lines.append(f"🔴 <b>{product.name}</b>")
+        lines.append(f"🔴 {icon_html} <b>{product.name}</b>")
         lines.append(f"<b>{get_text(language, BotEntity.USER, 'product_out_of_stock_badge')}</b>")
     else:
-        lines.append(f"<b>{product.name}</b>")
+        lines.append(f"{icon_html} <b>{product.name}</b>")
     if desc:
         lines.append(f"\n{desc}")
     lines.append(f"\n💲 Price: <b>{product.sell_price_usd:.2f}{sym}</b>")

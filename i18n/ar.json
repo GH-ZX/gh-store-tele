@@ -135,6 +135,7 @@
     "remove_review_text_confirmation": "❓ <b>هل أنت متأكد أنك تريد إزالة نص التقييم؟</b>",
     "remove_review_image_confirmation": "❓ <b>هل أنت متأكد أنك تريد إزالة صورة التقييم؟</b>",
     "reviews_management": "⭐ إدارة التقييمات",
+    "reseller_management": "⚡ الموزع وهوامش الربح",
     "notification_new_deposit_id": "💰 إيداع جديد بواسطة المستخدم برقم {telegram_id} بمبلغ {currency_sym}{deposit_amount_fiat:.2f} بـ 💰 {value} {crypto_name}\n💰 مكافأة الإحالة: {currency_sym}{referral_bonus:.2f}\n💰 مكافأة المحيل: {currency_sym}{referrer_bonus:.2f}",
     "notification_new_deposit_username": "💰 إيداع جديد بواسطة المستخدم @{username} بمبلغ {currency_sym}{deposit_amount_fiat:.2f} بـ 💰 {value} {crypto_name}\n💰 مكافأة الإحالة: {currency_sym}{referral_bonus:.2f}\n💰 مكافأة المحيل: {currency_sym}{referrer_bonus:.2f}",
     "crypto_wallet": "\n\n<b>🤖 أرصدة البوت\n\n{wallet_content}</b>",

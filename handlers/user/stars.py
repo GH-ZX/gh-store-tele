@@ -11,6 +11,9 @@ from db import session_commit
 from enums.bot_entity import BotEntity
 from enums.language import Language
 from repositories.user import UserRepository
+from models.stars_payment import StarsPaymentDTO
+from repositories.stars_payment import StarsPaymentRepository
+from services.referral import ReferralService
 from services.notification import NotificationService
 from utils.custom_filters import IsUserExistFilter
 from utils.utils import get_text
@@ -85,6 +88,13 @@ async def stars_pre_checkout(pre_checkout_query: PreCheckoutQuery):
 async def stars_successful_payment(message: Message, session: AsyncSession,
                                    language: Language):
     sp = message.successful_payment
+    charge_id = getattr(sp, "telegram_payment_charge_id", None)
+    if charge_id:
+        existing = await StarsPaymentRepository.get_by_charge_id(charge_id, session)
+        if existing is not None:
+            logging.info("Duplicate Stars payment webhook ignored for charge_id=%s", charge_id)
+            return
+
     rate = get_rate()
     usd = 0.0
     stars = 0
@@ -101,10 +111,19 @@ async def stars_successful_payment(message: Message, session: AsyncSession,
     if user is None:
         await message.answer(get_text(language, BotEntity.COMMON, "stars_failed"))
         return
-    user.top_up_amount = (user.top_up_amount or 0) + usd
-    await UserRepository.update(user, session)
-    await session_commit(session)
 
+    if charge_id:
+        await StarsPaymentRepository.create(StarsPaymentDTO(
+            telegram_id=tg_id,
+            telegram_payment_charge_id=charge_id,
+            provider_payment_charge_id=getattr(sp, "provider_payment_charge_id", None),
+            stars_amount=stars,
+            usd_amount=usd,
+            invoice_payload=sp.invoice_payload,
+        ), session)
+
+    await ReferralService.apply_deposit_referral(usd, user, session)
+    await session_commit(session)
     sym = config.CURRENCY.get_localized_symbol()
     await message.answer(get_text(language, BotEntity.COMMON, "stars_success").format(
         stars=stars, usd=f"{usd}", sym=sym))

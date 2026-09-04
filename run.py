@@ -28,6 +28,7 @@ from handlers.user.all_categories import all_categories_router
 
 from handlers.user.stars import stars_router
 from handlers.user.sam import sam_router
+from handlers.user.search import search_router
 from handlers.user.my_profile import my_profile_router
 from repositories.button_media import ButtonMediaRepository
 from services.media import MediaService
@@ -103,7 +104,8 @@ async def error_handler(event: ErrorEvent, message: Message):
     if len(admin_notification) > 4096:
         byte_array = bytearray(admin_notification, 'utf-8')
         admin_notification = BufferedInputFile(byte_array, "exception.txt")
-    await NotificationService.send_to_admins(admin_notification, None)
+    exc_name = type(event.exception).__name__ if event.exception else "Unknown"
+    await NotificationService.send_error_to_admins(f"aiogram_err_{exc_name}", admin_notification, None)
 
 
 throttling_middleware = ThrottlingMiddleware(redis)
@@ -115,7 +117,8 @@ users_routers.include_routers(
     review_management_router,
 
     stars_router,
-    sam_router
+    sam_router,
+    search_router
 )
 users_routers.message.middleware(throttling_middleware)
 users_routers.callback_query.middleware(throttling_middleware)

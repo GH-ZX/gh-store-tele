@@ -170,11 +170,16 @@ async def batstore_orders(**kwargs):
                     goods = d.get("delivery_goods", [])
                     if goods:
                         for g in goods[:5]:
-                            lines.append(f"  📦 {g}")
+                            lines.append(f"  📦 <code>{g}</code>")
                         if len(goods) > 5:
                             lines.append(f"  ... +{len(goods) - 5} more")
+                        lines.append("  <i>(Tap credentials above to copy)</i>")
         caption = "\n\n".join(lines)
 
+    if orders:
+        kb_builder.button(
+            text="⚠️ Report Order Issue",
+            callback_data="report_batstore_issue")
     kb_builder.button(
         text=get_text(language, BotEntity.COMMON, "back_button"),
         callback_data=MyProfileCallback.create(level=0))
@@ -247,3 +252,40 @@ async def navigate(callback: CallbackQuery,
     }
 
     await current_level_function(**kwargs)
+
+
+@my_profile_router.callback_query(F.data == "report_batstore_issue", IsUserExistFilter())
+async def report_issue_prompt(callback: CallbackQuery, state: FSMContext, language: Language):
+    await state.set_state(UserStates.order_issue)
+    kb = InlineKeyboardBuilder()
+    kb.button(text=get_text(language, BotEntity.COMMON, "back_button"), callback_data=MyProfileCallback.create(level=8).pack())
+    await callback.message.answer(
+        "📝 <b>Report an Issue with an Order</b>\n\n"
+        "Please send a message describing the issue. Include your <b>Order #</b> (e.g. <code>Order #42 key does not activate</code>).\n"
+        "Our support team will investigate immediately:",
+        reply_markup=kb.as_markup()
+    )
+    await callback.answer()
+
+
+@my_profile_router.message(IsUserExistFilter(), UserStates.order_issue, F.text)
+async def receive_order_issue(message: Message, state: FSMContext, session: AsyncSession, language: Language):
+    issue_text = (message.text or "").strip()
+    await state.clear()
+    username = f"@{message.from_user.username}" if message.from_user.username else "No username"
+    user_id = message.from_user.id
+
+    ticket_msg = (
+        f"📩 <b>New Support Ticket: Order Issue</b>\n\n"
+        f"• <b>From:</b> {username} (ID: <code>{user_id}</code>)\n"
+        f"• <b>Message:</b>\n{issue_text}"
+    )
+    await NotificationService.send_to_admins(ticket_msg, None)
+
+    kb = InlineKeyboardBuilder()
+    kb.button(text=get_text(language, BotEntity.COMMON, "back_button"), callback_data=MyProfileCallback.create(level=8).pack())
+    await message.answer(
+        "✅ <b>Your issue has been reported!</b>\n\n"
+        "Our team has received your ticket and will investigate shortly.",
+        reply_markup=kb.as_markup()
+    )

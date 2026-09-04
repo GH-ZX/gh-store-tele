@@ -340,7 +340,10 @@ class CartService:
             total_discount_amount = cart_total_price_before_discount - cart_total_price
         is_enough_money = (user.top_up_amount - user.consume_records) >= cart_total_price
         kb_builder = InlineKeyboardBuilder()
+        debited = False
         if callback_data.confirmation and len(out_of_stock) == 0 and is_enough_money:
+            debited = await UserRepository.try_debit_balance(user.telegram_id, cart_total_price, session)
+        if debited:
             msg = get_text(language, BotEntity.USER, "purchase_completed")
             buy_dto = BuyDTO(buyer_id=user.id,
                              total_price=cart_total_price,
@@ -371,8 +374,7 @@ class CartService:
                 callback_data=MyProfileCallback.create(level=4,
                                                        buy_id=buy_dto.id)
             )
-            user.consume_records = user.consume_records + cart_total_price
-            await UserRepository.update(user, session)
+
             await session_commit(session)
             await NotificationService.new_buy(buy_dto, user, session)
             return msg, kb_builder

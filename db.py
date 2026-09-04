@@ -32,8 +32,16 @@ from models.batstore_product import BatStoreProduct
 from models.batstore_order import BatStoreOrder
 from models.sam_payment import SamPayment
 from models.restock_subscription import RestockSubscription
+from models.stars_payment import StarsPayment
 url = f"postgresql+asyncpg://{config.DB_USER}:{config.DB_PASS}@{config.DB_HOST}:{config.DB_PORT}/{config.DB_NAME}"
-engine = create_async_engine(url, echo=False)
+engine = create_async_engine(
+    url,
+    echo=False,
+    pool_size=20,
+    max_overflow=20,
+    pool_recycle=1800,
+    pool_pre_ping=True,
+)
 session_maker = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 

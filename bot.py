@@ -14,7 +14,7 @@ from aiogram import Dispatcher
 from fastapi import FastAPI, Request, status, HTTPException
 
 from admin import authentication_backend
-from db import create_db_and_tables, engine, get_db_session
+from db import create_db_and_tables, engine, get_db_session, session_commit
 from processing.processing import processing_router
 import uvicorn
 from fastapi.responses import JSONResponse
@@ -38,11 +38,14 @@ from models.batstore_product import BatStoreProductAdmin
 from models.batstore_order import BatStoreOrderAdmin
 from models.sam_payment import SamPaymentAdmin, SamPaymentDTO
 from models.restock_subscription import RestockSubscriptionAdmin
+from models.stars_payment import StarsPaymentAdmin
 from repositories.sam_payment import SamPaymentRepository
 from repositories.user import UserRepository
 from repositories.button_media import ButtonMediaRepository
+from repositories.batstore_product import BatStoreProductRepository
 from services.config import ConfigService
 from services.batstore import BatStoreService
+from services.referral import ReferralService
 from services.sam import SamService, SamAPIError
 from services.media import MediaService
 from services.notification import NotificationService
@@ -53,6 +56,9 @@ from utils.utils import validate_i18n
 redis = Redis(host=config.REDIS_HOST, password=config.REDIS_PASSWORD)
 session = create_telegram_session()
 bot = create_bot(config.TOKEN, session)
+NotificationService.set_bot(bot)
+BatStoreProductRepository.set_redis(redis)
+authentication_backend.set_redis(redis)
 dp = Dispatcher(storage=RedisStorage(redis))
 
 
@@ -93,6 +99,9 @@ async def _sync_batstore_catalog() -> None:
 
 
 _polling_task: asyncio.Task | None = None
+_sync_loop_task: asyncio.Task | None = None
+_balance_monitor_task: asyncio.Task | None = None
+_digest_task: asyncio.Task | None = None
 
 
 async def _startup() -> None:
@@ -104,8 +113,12 @@ async def _startup() -> None:
     if config.BATSTORE_SYNC_ENABLED:
         asyncio.create_task(_sync_batstore_catalog())
     asyncio.create_task(_set_webhook_with_retry())
-    from services.order_polling import poll_pending_orders
+    from services.order_polling import poll_pending_orders, periodic_catalog_sync, periodic_balance_monitor
     _polling_task = asyncio.create_task(poll_pending_orders())
+    _sync_loop_task = asyncio.create_task(periodic_catalog_sync())
+    _balance_monitor_task = asyncio.create_task(periodic_balance_monitor())
+    from services.financial_digest import daily_digest_cron
+    _digest_task = asyncio.create_task(daily_digest_cron())
     static = Path("static")
     if static.exists() is False:
         static.mkdir()
@@ -152,17 +165,20 @@ async def _startup() -> None:
 
 
 async def _shutdown() -> None:
-    global _polling_task
+    global _polling_task, _sync_loop_task, _balance_monitor_task, _digest_task
     logging.warning('Shutting down..')
-    if _polling_task and not _polling_task.done():
-        _polling_task.cancel()
-        try:
-            await _polling_task
-        except asyncio.CancelledError:
-            pass
+    for t in (_polling_task, _sync_loop_task, _balance_monitor_task, _digest_task):
+        if t and not t.done():
+            t.cancel()
+            try:
+                await t
+            except asyncio.CancelledError:
+                pass
     await bot.delete_webhook()
     await dp.storage.close()
     await bot.session.close()
+    await BatStoreService.close_client()
+    await SamService.close_client()
     logging.warning('Bye!')
 
 
@@ -210,7 +226,40 @@ admin.add_model_view(BatStoreProductAdmin)
 admin.add_model_view(BatStoreOrderAdmin)
 admin.add_model_view(SamPaymentAdmin)
 admin.add_model_view(RestockSubscriptionAdmin)
+admin.add_model_view(StarsPaymentAdmin)
 app.include_router(processing_router)
+
+
+@app.get("/health")
+@app.get("/status")
+async def health_check():
+    """Health check endpoint for Docker, Cloudflare, and external uptime monitors."""
+    from sqlalchemy import text
+    db_ok = False
+    redis_ok = False
+    try:
+        async with get_db_session() as session:
+            res = await session.execute(text("SELECT 1"))
+            db_ok = res.scalar() == 1
+    except Exception as e:
+        logging.warning("Health check DB check failed: %s", e)
+
+    try:
+        redis_ok = bool(await redis.ping())
+    except Exception as e:
+        logging.warning("Health check Redis ping failed: %s", e)
+
+    status_code = 200 if (db_ok and redis_ok) else 503
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": "healthy" if (db_ok and redis_ok) else "degraded",
+            "postgres": "connected" if db_ok else "disconnected",
+            "redis": "connected" if redis_ok else "disconnected",
+            "stars_enabled": bool(config.GHSTORE_STARS_ENABLED),
+            "batstore_sync": bool(config.BATSTORE_SYNC_ENABLED),
+        },
+    )
 
 
 @app.post(config.WEBHOOK_PATH)
@@ -254,8 +303,7 @@ async def sam_webhook(request: Request):
             if event == "invoice.paid" and payment.event != "invoice.paid":
                 user = await UserRepository.get_by_tgid(payment.telegram_id, session)
                 if user is not None:
-                    user.top_up_amount = (user.top_up_amount or 0) + payment.usd_amount
-                    await UserRepository.update(user, session)
+                    await ReferralService.apply_deposit_referral(payment.usd_amount, user, session)
                     await session_commit(session)
                     sym = config.CURRENCY.get_localized_symbol()
                     caption = f"✅ Top-up via {payment.method}:\n{payment.usd_amount:.2f}{sym} added to your balance."
@@ -290,7 +338,8 @@ async def exception_handler(request: Request, exc: Exception):
     if len(admin_notification) > 4096:
         byte_array = bytearray(admin_notification, 'utf-8')
         admin_notification = BufferedInputFile(byte_array, "exception.txt")
-    await NotificationService.send_to_admins(admin_notification, None)
+    exc_name = type(exc).__name__
+    await NotificationService.send_error_to_admins(f"fastapi_err_{exc_name}", admin_notification, None)
     return JSONResponse(
         status_code=500,
         content={"message": f"An error occurred: {str(exc)}"},

@@ -69,6 +69,73 @@ def auto_categorize(name: str) -> str:
     return "Other"
 
 
+# Mapping keyword -> (fallback_emoji, telegram_custom_emoji_id)
+# Keywords checked in order. Matches return specific animated custom emoji ID and fallback unicode emoji.
+_PRODUCT_ICON_MAP: list[tuple[str, str, str | None]] = [
+    # AI & Chatbots
+    ("gemini", "✨", "5465366406979267926"),
+    ("claude", "🧠", "5368324170671202286"),
+    ("chatgpt", "🤖", "5465366406979267927"),
+    ("chat gpt", "🤖", "5465366406979267927"),
+    ("gpt", "🤖", "5465366406979267927"),
+    ("copilot", "✈️", "5465366406979267928"),
+    ("grok", "⚡", "5465366406979267929"),
+    ("codex", "💻", "5465366406979267930"),
+    ("elevenlabs", "🎙️", "5465366406979267931"),
+    ("midjourney", "🎨", "5465366406979267932"),
+    ("perplexity", "🔍", "5465366406979267933"),
+    # Streaming & Video
+    ("netflix", "🎬", "5465366406979267934"),
+    ("peacock", "🦚", "5465366406979267935"),
+    ("shahid", "🍿", "5465366406979267936"),
+    ("apple tv", "🍎", "5465366406979267937"),
+    ("amazon prime", "📦", "5465366406979267938"),
+    ("prime video", "📦", "5465366406979267938"),
+    ("disney", "🏰", "5465366406979267939"),
+    ("youtube", "▶️", "5465366406979267940"),
+    ("crunchyroll", "🍥", "5465366406979267941"),
+    # VPN & Privacy
+    ("nord", "🛡️", "5465366406979267942"),
+    ("surfshark", "🦈", "5465366406979267943"),
+    ("expressvpn", "⚡", "5465366406979267944"),
+    ("proton", "🔒", "5465366406979267945"),
+    ("hma", "🫏", "5465366406979267946"),
+    ("vpn", "🛡️", "5465366406979267947"),
+    # Music & Audio
+    ("spotify", "🎵", "5465366406979267948"),
+    ("deezer", "🎧", "5465366406979267949"),
+    ("tidal", "🌊", "5465366406979267950"),
+    ("apple music", "🍎", "5465366406979267951"),
+    # Creative & Productivity
+    ("canva", "🖌️", "5465366406979267952"),
+    ("adobe", "🔴", "5465366406979267953"),
+    ("figma", "📐", "5465366406979267954"),
+    ("framer", "🖼️", "5465366406979267955"),
+    ("notion", "📝", "5465366406979267956"),
+    ("capcut", "✂️", "5465366406979267957"),
+    ("github", "🐙", "5465366406979267958"),
+    ("telegram", "✈️", "5465366406979267959"),
+]
+
+
+def auto_detect_icon(name: str) -> tuple[str, str | None]:
+    """Detect appropriate fallback emoji and custom_emoji_id from product name."""
+    lower = name.lower()
+    for kw, fallback_emoji, custom_id in _PRODUCT_ICON_MAP:
+        if kw in lower:
+            return fallback_emoji, custom_id
+    return "⚡", None
+
+
+def format_product_icon(product, for_button: bool = False) -> str:
+    """Format icon: HTML custom animated emoji for text/captions, plain emoji for keyboard buttons."""
+    emoji = getattr(product, "emoji", None) or "⚡"
+    custom_id = getattr(product, "custom_emoji_id", None)
+    if not for_button and custom_id:
+        return f'<tg-emoji emoji-id="{custom_id}">{emoji}</tg-emoji>'
+    return emoji
+
+
 class MarginType:
     PERCENT = "percent"
     FIXED = "fixed"
@@ -92,6 +159,7 @@ class BatStoreProduct(Base):
     name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
     emoji = Column(String, nullable=True)
+    custom_emoji_id = Column(String, nullable=True)
     image_url = Column(String, nullable=True)
     cost_usd = Column(Float, nullable=False, default=0.0)
     standard_price_usd = Column(Float, nullable=True)
@@ -119,6 +187,7 @@ class BatStoreProductDTO(BaseModel):
     name: str | None = None
     description: str | None = None
     emoji: str | None = None
+    custom_emoji_id: str | None = None
     image_url: str | None = None
     cost_usd: float = 0.0
     standard_price_usd: float | None = None
@@ -141,6 +210,8 @@ class BatStoreProductAdmin(ModelView, model=BatStoreProduct):
 
     column_list = [BatStoreProduct.product_id,
                    BatStoreProduct.name,
+                   BatStoreProduct.emoji,
+                   BatStoreProduct.custom_emoji_id,
                    BatStoreProduct.category,
                    BatStoreProduct.cost_usd,
                    BatStoreProduct.sell_price_usd,
@@ -161,6 +232,8 @@ class BatStoreProductAdmin(ModelView, model=BatStoreProduct):
         BatStoreProduct.stock: "Stock",
         BatStoreProduct.hidden: "Hidden",
         BatStoreProduct.reseller_key_override: "Reseller key (override)",
+        BatStoreProduct.emoji: "Icon Emoji",
+        BatStoreProduct.custom_emoji_id: "Animated Emoji ID",
     }
     column_sortable_list = [BatStoreProduct.product_id,
                             BatStoreProduct.name,

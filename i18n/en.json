@@ -135,6 +135,7 @@
     "remove_review_text_confirmation": "❓ <b>Are you sure you want to remove the review text?</b>",
     "remove_review_image_confirmation": "❓ <b>Are you sure you want to remove the review image?</b>",
     "reviews_management": "⭐ Reviews Management",
+    "reseller_management": "⚡ Reseller & Margins",
     "notification_new_deposit_id": "💰 New deposit by user with ID {telegram_id} for {currency_sym}{deposit_amount_fiat:.2f} with 💰 {value} {crypto_name}\n💰 Referral bonus: {currency_sym}{referral_bonus:.2f}\n💰 Referrer bonus: {currency_sym}{referrer_bonus:.2f}",
     "notification_new_deposit_username": "💰 New deposit by user with username @{username} for {currency_sym}{deposit_amount_fiat:.2f} with 💰 {value} {crypto_name}\n💰 Referral bonus: {currency_sym}{referral_bonus:.2f}\n💰 Referrer bonus: {currency_sym}{referrer_bonus:.2f}",
     "crypto_wallet": "\n\n<b>🤖 Bot balances\n\n{wallet_content}</b>",

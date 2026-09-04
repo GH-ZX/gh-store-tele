@@ -70,3 +70,6 @@ class ShippingManagementStates(StatesGroup):
 
 class BuysManagementStates(StatesGroup):
     update_track_number = State()
+
+class ResellerManagementStates(StatesGroup):
+    margin_percent = State()

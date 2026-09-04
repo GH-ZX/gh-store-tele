@@ -62,25 +62,17 @@ export default {
       }
     }
 
-    // If backend is not configured yet, gracefully answer webhooks so Telegram / payment callbacks don't fail
+    // If backend is not configured yet, return 503 Service Unavailable for webhooks
+    // so Telegram and payment callbacks retry rather than dropping updates.
     if (request.method === "POST") {
-      if (url.pathname === "/" || url.pathname === "/webhook") {
-        return new Response(
-          JSON.stringify({
-            ok: true,
-            status: "queued_at_edge",
-            notice: "bot.gh-store.me Cloudflare Worker is active. Set BACKEND_URL secret to forward updates to your bot server."
-          }),
-          { headers: { "Content-Type": "application/json" } }
-        );
-      }
-
-      if (url.pathname === "/samwebhook" || url.pathname === "/ventebot") {
-        return new Response(
-          JSON.stringify({ status: "ok" }),
-          { headers: { "Content-Type": "application/json" } }
-        );
-      }
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          status: "backend_not_configured",
+          message: "bot.gh-store.me Cloudflare Worker is active, but BACKEND_URL is not set yet. Please set BACKEND_URL in Cloudflare or Wrangler to forward updates to the bot server."
+        }),
+        { status: 503, headers: { "Content-Type": "application/json", "Retry-After": "30" } }
+      );
     }
 
     // Default info landing page

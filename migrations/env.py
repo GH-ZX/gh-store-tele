@@ -65,11 +65,19 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
+    from alembic import op
+    orig_execute = op.execute
+
+    def safe_execute(sql, *args, **kwargs):
+        if connection.dialect.name != "sqlite" and isinstance(sql, str) and sql.strip().upper().startswith("PRAGMA"):
+            return None
+        return orig_execute(sql, *args, **kwargs)
+
+    op.execute = safe_execute
     context.configure(connection=connection, target_metadata=target_metadata)
 
     with context.begin_transaction():
         context.run_migrations()
-
 
 async def run_async_migrations() -> None:
     """In this scenario we need to create an Engine

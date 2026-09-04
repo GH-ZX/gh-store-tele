@@ -73,6 +73,18 @@ BATSTORE_WEBHOOK_URL = os.environ.get("BATSTORE_WEBHOOK_URL")
 SAM_API_BASE = os.environ.get("SAM_API_BASE")
 SAM_API_KEY = os.environ.get("SAM_API_KEY")
 SAM_RECEIVING_WALLET = os.environ.get("SAM_RECEIVING_WALLET")
+SAM_WEBHOOK_URL = os.environ.get("SAM_WEBHOOK_URL")
+
+def get_sam_webhook_url() -> str | None:
+    """Return fully qualified public URL for the /samwebhook callback."""
+    if SAM_WEBHOOK_URL:
+        return SAM_WEBHOOK_URL
+    host = (WEBHOOK_HOST or "").strip().rstrip("/")
+    if not host or host == "localhost":
+        return None
+    if host.startswith("http://") or host.startswith("https://"):
+        return f"{host}/samwebhook"
+    return f"https://{host}/samwebhook"
 SAM_CURRENCY = os.environ.get("SAM_CURRENCY", "USD")
 SAM_SYP_USD_RATE = os.environ.get("SAM_SYP_USD_RATE", "0.002551")
 MARGIN_PERCENT = os.environ.get("MARGIN_PERCENT", "0")

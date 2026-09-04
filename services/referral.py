@@ -22,7 +22,8 @@ class ReferralService:
     @staticmethod
     async def create_referral_code(user_dto: UserDTO, session: AsyncSession):
         deposits_sum = await DepositRepository.get_sum(user_dto.id, session)
-        if user_dto.referral_code is None and deposits_sum >= config.MIN_REFERRER_TOTAL_DEPOSIT:
+        min_dep = getattr(config, "MIN_REFERRER_TOTAL_DEPOSIT", 0.0)
+        if getattr(user_dto, "referral_code", None) is None and deposits_sum >= min_dep:
             alphabet = string.ascii_uppercase + string.digits
             random_part = ''.join(secrets.choice(alphabet) for _ in range(6))
             referral_code = f"U_{random_part}"
@@ -34,7 +35,7 @@ class ReferralService:
                                      session: AsyncSession):
         referral_deposits_qty = await DepositRepository.get_deposits_qty_by_user_id(user_dto.id, session)
         referral_bonus = 0
-        if user_dto.referred_by_user_id is not None and referral_deposits_qty <= config.REFERRAL_BONUS_DEPOSIT_LIMIT:
+        if getattr(user_dto, "referred_by_user_id", None) is not None and referral_deposits_qty <= config.REFERRAL_BONUS_DEPOSIT_LIMIT:
             referral_bonus = payment_dto.fiatAmount * (config.REFERRAL_BONUS_PERCENT / 100)
         referral_bonus_cap = await DepositRepository.get_sum(user_dto.id, session) * (
                 config.REFERRAL_BONUS_CAP_PERCENT / 100)
@@ -67,7 +68,7 @@ class ReferralService:
         referral_bonus = 0
         referrer_bonus = 0
         referrer_user_dto = None
-        if user_dto.referred_by_user_id is not None:
+        if getattr(user_dto, "referred_by_user_id", None) is not None:
             referral_deposits_qty = await DepositRepository.get_deposits_qty_by_user_id(
                 user_dto.id, session
             )
@@ -108,6 +109,48 @@ class ReferralService:
         if referrer_user_dto:
             referral_bonus_dto = await ReferralRepository.create(referral_bonus_dto, session)
         return referral_bonus_dto
+
+    @staticmethod
+    async def apply_deposit_referral(fiat_amount: float,
+                                     user_dto: UserDTO,
+                                     session: AsyncSession) -> float:
+        """Apply referral bonus logic for any deposit rail (Stars, SAM, etc.).
+
+        Credits user_dto and their referrer (if any).
+        Returns extra referral bonus granted to user_dto.
+        """
+        await ReferralService.create_referral_code(user_dto, session)
+        referral_bonus = 0.0
+        referrer_bonus = 0.0
+        referrer_user_dto = None
+        if getattr(user_dto, "referred_by_user_id", None) is not None:
+            ref_pct = getattr(config, "REFERRAL_BONUS_PERCENT", 0.0)
+            referrer_pct = getattr(config, "REFERRER_BONUS_PERCENT", 0.0)
+            raw_referral_bonus = fiat_amount * (ref_pct / 100)
+            raw_referrer_bonus = fiat_amount * (referrer_pct / 100)
+            referral_bonus = raw_referral_bonus
+            referrer_bonus = raw_referrer_bonus
+
+            if referrer_bonus > 0:
+                referrer_user_dto = await UserRepository.get_user_entity(user_dto.referred_by_user_id, session)
+                if referrer_user_dto:
+                    referrer_user_dto.top_up_amount = (referrer_user_dto.top_up_amount or 0.0) + referrer_bonus
+                    await UserRepository.update(referrer_user_dto, session)
+
+        user_dto.top_up_amount = (user_dto.top_up_amount or 0.0) + fiat_amount + referral_bonus
+        await UserRepository.update(user_dto, session)
+
+        if referrer_user_dto and (referral_bonus > 0 or referrer_bonus > 0):
+            referral_bonus_dto = ReferralBonusDTO(
+                referral_user_id=user_dto.id,
+                referrer_user_id=referrer_user_dto.id,
+                payment_amount=fiat_amount,
+                applied_referral_bonus=referral_bonus,
+                applied_referrer_bonus=referrer_bonus,
+            )
+            await ReferralRepository.create(referral_bonus_dto, session)
+
+        return referral_bonus
 
     @staticmethod
     async def view_statistics(callback: CallbackQuery,

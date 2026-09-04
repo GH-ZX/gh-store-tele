@@ -57,6 +57,8 @@ def _build_config_module() -> ModuleType:
     config.SAM_RECEIVING_WALLET = "test_wallet"
     config.SAM_CURRENCY = "USD"
     config.SAM_SYP_USD_RATE = "0.002551"
+    config.SAM_WEBHOOK_URL = None
+    config.get_sam_webhook_url = lambda: "https://example.com/samwebhook"
     config.MARGIN_PERCENT = "0"
     config.MARGIN_FIXED = "0"
     config.DEFAULT_MARGIN_TYPE = "percent"
@@ -154,7 +156,12 @@ class _FakeResult:
         return None
     def all(self):
         return []
-
+    def scalar(self):
+        return 0.0
+    def scalar_one(self):
+        return 0.0
+    def scalar_one_or_none(self):
+        return None
 async def _noop_async(*args, **kwargs):
     return _FakeResult()
 db_module.session_execute = _noop_async

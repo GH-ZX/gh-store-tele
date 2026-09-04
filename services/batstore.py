@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 import config
 from db import session_commit
-from models.batstore_product import BatStoreProduct, BatStoreProductDTO, MarginType, auto_categorize
+from models.batstore_product import BatStoreProduct, BatStoreProductDTO, MarginType, auto_categorize, auto_detect_icon, format_product_icon
 from repositories.batstore_product import BatStoreProductRepository
 from services.config import ConfigService
 from services.restock_notification import RestockNotificationService
@@ -22,9 +22,40 @@ class BatStoreAPIError(Exception):
     """Raised when the BatStore/VenteBot reseller API returns an error."""
 
 
+class _PersistentClientContext:
+    def __init__(self, client: "httpx.AsyncClient"):
+        self._client = client
+
+    async def __aenter__(self) -> "httpx.AsyncClient":
+        return self._client
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
+        return False
+
+
 class BatStoreService:
     BASE_DEFAULT = "https://ventetelegrambotrailway-production.up.railway.app"
     HEADER_KEY = "X-Reseller-Key"
+    _shared_client: "httpx.AsyncClient | None" = None
+
+    @classmethod
+    async def _client(cls):
+        if cls._shared_client is None or cls._shared_client.is_closed:
+            cls._shared_client = httpx.AsyncClient(timeout=30.0)
+        return _PersistentClientContext(cls._shared_client)
+
+    @classmethod
+    async def close_client(cls) -> None:
+        if cls._shared_client is not None and not cls._shared_client.is_closed:
+            await cls._shared_client.aclose()
+            cls._shared_client = None
+
+    @staticmethod
+    def _headers(key: str | None) -> dict[str, str]:
+        headers = {}
+        if key:
+            headers[BatStoreService.HEADER_KEY] = str(key)
+        return headers
 
     @staticmethod
     async def _resolve(session: AsyncSession | Session) -> tuple[str, str | None]:
@@ -42,17 +73,11 @@ class BatStoreService:
             base = ConfigService.fallback_from_env("BATSTORE_API_URL", BatStoreService.BASE_DEFAULT)
             key = ConfigService.fallback_from_env("BATSTORE_API_KEY")
         return (base or BatStoreService.BASE_DEFAULT), key
-
-    @staticmethod
-    async def _client() -> "httpx.AsyncClient":
-        await asyncio.sleep(0)  # no-op; kept for symmetry/overridability
-        return httpx.AsyncClient(timeout=30.0)
-
     @staticmethod
     async def me(session: AsyncSession | Session) -> dict:
         base, key = await BatStoreService._resolve(session)
         async with await BatStoreService._client() as client:
-            resp = await client.get(f"{base}/api/reseller/me", headers={BatStoreService.HEADER_KEY: key})
+            resp = await client.get(f"{base}/api/reseller/me", headers=BatStoreService._headers(key))
         if resp.status_code != 200:
             raise BatStoreAPIError(f"GET /me {resp.status_code}: {resp.text[:200]}")
         data = resp.json()
@@ -65,7 +90,7 @@ class BatStoreService:
         base, key = await BatStoreService._resolve(session)
         async with await BatStoreService._client() as client:
             resp = await client.get(f"{base}/api/reseller/products",
-                                    headers={BatStoreService.HEADER_KEY: key})
+                                    headers=BatStoreService._headers(key))
         if resp.status_code != 200:
             raise BatStoreAPIError(f"GET /products {resp.status_code}: {resp.text[:200]}")
         data = resp.json()
@@ -84,7 +109,7 @@ class BatStoreService:
         payload = {"product_id": product_id, "quantity": quantity}
         async with await BatStoreService._client() as client:
             resp = await client.post(f"{base}/api/reseller/quote",
-                                     json=payload, headers={BatStoreService.HEADER_KEY: key})
+                                     json=payload, headers=BatStoreService._headers(key))
         if resp.status_code != 200:
             raise BatStoreAPIError(f"POST /quote {resp.status_code}: {resp.text[:200]}")
         data = resp.json()
@@ -112,7 +137,7 @@ class BatStoreService:
             payload["idempotency_key"] = idempotency_key
         async with await BatStoreService._client() as client:
             resp = await client.post(f"{base}/api/reseller/orders",
-                                     json=payload, headers={BatStoreService.HEADER_KEY: key})
+                                     json=payload, headers=BatStoreService._headers(key))
         if resp.status_code not in (200, 402):
             raise BatStoreAPIError(f"POST /orders {resp.status_code}: {resp.text[:200]}")
         data = resp.json()
@@ -125,7 +150,7 @@ class BatStoreService:
         base, key = await BatStoreService._resolve(session)
         async with await BatStoreService._client() as client:
             resp = await client.get(f"{base}/api/reseller/orders/{order_id}",
-                                    headers={BatStoreService.HEADER_KEY: key})
+                                    headers=BatStoreService._headers(key))
         if resp.status_code != 200:
             raise BatStoreAPIError(f"GET /orders/{order_id} {resp.status_code}: {resp.text[:200]}")
         data = resp.json()
@@ -216,6 +241,8 @@ class BatStoreService:
         created = 0
         updated = 0
         restocked_products: list[tuple[int, str]] = []
+        price_spikes: list[tuple[int, str, float, float]] = []
+        kept_ids: list[int] = []
         for p in products:
             pid = int(p["id"])
             if pid == API_TEST_PRODUCT_ID or p.get("api_test"):
@@ -224,12 +251,14 @@ class BatStoreService:
             cost = float(p.get("price_usd") or 0.0)
             product_name = p.get("name") or f"Product {pid}"
             existing = await BatStoreProductRepository.get_by_product_id(pid, session)
+            detected_emoji, detected_custom_id = auto_detect_icon(product_name)
             if existing is None:
                 dto = BatStoreProductDTO(
                     product_id=pid,
                     name=product_name,
                     description=p.get("description"),
-                    emoji=p.get("emoji"),
+                    emoji=p.get("emoji") or detected_emoji,
+                    custom_emoji_id=detected_custom_id,
                     image_url=p.get("image_url"),
                     cost_usd=cost,
                     standard_price_usd=p.get("standard_price_usd"),
@@ -256,6 +285,10 @@ class BatStoreService:
                 if was_out_of_stock and now_in_stock:
                     restocked_products.append((pid, p.get("name") or existing.name))
 
+                is_price_spike = False
+                if existing.cost_usd and existing.cost_usd > 0 and (cost - existing.cost_usd) / existing.cost_usd > 0.30:
+                    is_price_spike = True
+                    price_spikes.append((pid, p.get("name") or existing.name, existing.cost_usd, cost))
                 sell = BatStoreService.compute_sell_price(
                     cost, global_percent, global_fixed, existing.margin_type,
                     existing.margin_value if existing.margin_type != MarginType.FIXED_PRICE
@@ -266,7 +299,8 @@ class BatStoreService:
                     product_id=pid,
                     name=p.get("name") or existing.name,
                     description=p.get("description") or existing.description,
-                    emoji=p.get("emoji") or existing.emoji,
+                    emoji=existing.emoji or p.get("emoji") or detected_emoji,
+                    custom_emoji_id=existing.custom_emoji_id or detected_custom_id,
                     image_url=p.get("image_url") or existing.image_url,
                     cost_usd=cost,
                     standard_price_usd=p.get("standard_price_usd"),
@@ -277,7 +311,7 @@ class BatStoreService:
                     margin_value=existing.margin_value,
                     category=cat,
                     sell_price_usd=sell,
-                    hidden=existing.hidden,
+                    hidden=True if is_price_spike else existing.hidden,
                 )
                 await BatStoreProductRepository.update(upd, session)
                 updated += 1
@@ -293,5 +327,20 @@ class BatStoreService:
             except Exception as e:
                 logging.error("Failed to notify restocked product %s: %s", restocked_pid, e)
         if restocked_products:
+            await session_commit(session)
+        for spike_pid, spike_name, old_c, new_c in price_spikes:
+            try:
+                pct = ((new_c - old_c) / old_c) * 100
+                await NotificationService.send_error_to_admins(
+                    f"price_spike_{spike_pid}",
+                    f"⚠️ <b>Price Spike Circuit Breaker Triggered!</b>\n\n"
+                    f"• <b>Product:</b> {spike_name} (ID: <code>{spike_pid}</code>)\n"
+                    f"• <b>Old Cost:</b> ${old_c:.2f}\n"
+                    f"• <b>New Cost:</b> ${new_c:.2f} (+{pct:.0f}%)\n\n"
+                    f"<i>This product was automatically hidden from the storefront to prevent loss. Review margins in SQLAdmin or the Reseller Menu.</i>",
+                    None
+                )
+            except Exception as e:
+                logging.error("Failed to notify admin of price spike for %s: %s", spike_pid, e)
             await session_commit(session)
         return created, updated
