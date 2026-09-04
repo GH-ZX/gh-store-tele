@@ -52,8 +52,9 @@ async def safe_edit_message(
         try:
             await callback.message.edit_media(media=content, reply_markup=reply_markup)
             return
-        except Exception:
-            pass
+        except Exception as e:
+            if "message is not modified" in str(e).lower():
+                return
         try:
             await callback.message.delete()
         except Exception:
@@ -69,14 +70,16 @@ async def safe_edit_message(
         try:
             await callback.message.edit_text(text=text, reply_markup=reply_markup)
             return
-        except Exception:
-            pass
+        except Exception as e:
+            if "message is not modified" in str(e).lower():
+                return
         # Try editing caption if current message has media
         try:
             await callback.message.edit_caption(caption=text, reply_markup=reply_markup)
             return
-        except Exception:
-            pass
+        except Exception as e:
+            if "message is not modified" in str(e).lower():
+                return
         # If both failed, delete and send fresh message
         try:
             await callback.message.delete()

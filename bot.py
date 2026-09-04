@@ -45,6 +45,7 @@ from repositories.sam_payment import SamPaymentRepository
 from repositories.user import UserRepository
 from repositories.button_media import ButtonMediaRepository
 from repositories.batstore_product import BatStoreProductRepository
+from repositories.batstore_order import BatStoreOrderRepository
 from services.config import ConfigService
 from services.batstore import BatStoreService
 from services.referral import ReferralService
@@ -345,9 +346,22 @@ async def get_tma_user_data(tg_id: int):
 
         referrals_count = await UserRepository.get_referrals_qty_by_referrer_id(user.id, session)
         me = await bot.get_me()
+
+        # Fetch real Telegram profile photo
+        photo_url = None
+        try:
+            photos = await bot.get_user_profile_photos(user.telegram_id, limit=1)
+            if photos.total_count > 0:
+                file_id = photos.photos[0][-1].file_id
+                file_obj = await bot.get_file(file_id)
+                photo_url = f"https://api.telegram.org/file/bot{config.TOKEN}/{file_obj.file_path}"
+        except Exception as e:
+            logging.debug("Could not fetch profile photo: %s", e)
+
         return {
             "telegram_id": user.telegram_id,
             "username": user.telegram_username or "",
+            "photo_url": photo_url,
             "balance": balance,
             "display_balance": format_currency_display(balance, curr_pref),
             "currency_preference": curr_pref,
@@ -392,6 +406,174 @@ async def update_tma_user_settings(request: Request):
         await session_commit(session)
 
     return {"status": "ok"}
+
+
+@app.post("/api/buy")
+async def tma_instant_buy(request: Request):
+    """In-app checkout for Telegram Mini App. Customers stay in the app without text chat redirect."""
+    import uuid
+    from models.batstore_order import BatStoreOrderDTO
+    from services.user import get_vip_tier_info
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+
+    tg_id = int(body.get("tg_id") or 0)
+    product_id = int(body.get("product_id") or 0)
+    quantity = max(1, min(10, int(body.get("quantity") or 1)))
+
+    if not tg_id or not product_id:
+        return JSONResponse({"error": "missing_parameters"}, status_code=400)
+
+    async with get_db_session() as session:
+        user = await UserRepository.get_by_tgid(tg_id, session)
+        if not user:
+            return JSONResponse({"error": "user_not_found"}, status_code=404)
+
+        product = await BatStoreProductRepository.get_by_product_id(product_id, session)
+        if not product or product.hidden:
+            return JSONResponse({"error": "product_not_found"}, status_code=404)
+
+        total = round(quantity * product.sell_price_usd, 2)
+        tier_label, discount_pct = get_vip_tier_info(getattr(user, "consume_records", 0.0))
+        if discount_pct > 0:
+            disc_val = round(total * (discount_pct / 100.0), 2)
+            total = max(0.01, round(total - disc_val, 2))
+
+        # 1. Atomically debit customer balance
+        debited = await UserRepository.try_debit_balance(user.telegram_id, total, session)
+        if not debited:
+            available = round((user.top_up_amount or 0.0) - (user.consume_records or 0.0), 2)
+            return JSONResponse({
+                "error": "insufficient_balance",
+                "needed": total,
+                "available": available,
+                "shortage": round(total - available, 2)
+            }, status_code=400)
+        await session_commit(session)
+
+        # 2. Place upstream supplier order
+        customer_ref = f"tma-{user.telegram_id}-{uuid.uuid4().hex[:8]}"
+        try:
+            placed = await BatStoreService.place_order(
+                session, product.product_id, quantity,
+                customer_reference=customer_ref,
+                idempotency_key=customer_ref,
+            )
+            ext_ref = placed.get("order", {}).get("id") or placed.get("order_id")
+            order_obj = placed.get("order", {}) or {}
+            items = order_obj.get("items") or []
+            goods_list = [it.get("value") or it.get("data") or str(it) for it in items] if items else []
+        except Exception as e:
+            logging.error("BatStore in-app checkout failed: %s", e)
+            await UserRepository.refund_balance(user.telegram_id, total, session)
+            await session_commit(session)
+            return JSONResponse({"error": "supplier_failed", "message": str(e)}, status_code=502)
+
+        # 3. Record order
+        order_status = "completed" if product.delivery_type in ("stock", "supplier_api") else "pending_fulfillment"
+        order = await BatStoreOrderRepository.create(BatStoreOrderDTO(
+            telegram_id=user.telegram_id,
+            total_sell=total,
+            status=order_status,
+            external_order_ref=str(ext_ref) if ext_ref else None,
+            customer_reference=customer_ref,
+            details=[{
+                "product_id": product.product_id,
+                "name": product.name,
+                "quantity": quantity,
+                "cost_usd": product.cost_usd,
+                "sell_usd": total,
+                "delivery_type": product.delivery_type,
+                "delivery_goods": goods_list,
+                "warranty_days": product.warranty_days or 0,
+            }],
+        ), session)
+        await session_commit(session)
+
+        # 4. Async notifications
+        sym = config.CURRENCY.get_localized_symbol()
+        await NotificationService.send_to_admins(
+            f"🛒 <b>New In-App Mini App Order #{order.id}</b>\n\n"
+            f"• <b>Customer:</b> tg:{user.telegram_id} (@{user.telegram_username or 'none'})\n"
+            f"• <b>Item:</b> {quantity}× {product.name}\n"
+            f"• <b>Total:</b> {total:.2f}{sym}\n"
+            f"• <b>Status:</b> {order_status}",
+            None
+        )
+
+        # Backup delivery into Telegram chat
+        if goods_list:
+            goods_lines = "\n".join(f"• <code>{g}</code>" for g in goods_list[:5])
+            await NotificationService.send_to_user(
+                f"✅ <b>Order #{order.id} Successful!</b>\n\n"
+                f"📦 <b>Delivered Goods:</b>\n{goods_lines}\n\n"
+                "<i>(Tap any credential above to copy it)</i>",
+                user.telegram_id
+            )
+
+        return {
+            "status": "success",
+            "order_id": order.id,
+            "product_name": product.name,
+            "quantity": quantity,
+            "total_paid": total,
+            "sym": sym,
+            "goods": goods_list,
+            "delivery_type": product.delivery_type or "stock",
+            "warranty_days": product.warranty_days or 0
+        }
+
+
+@app.post("/api/warranty/claim")
+async def tma_claim_warranty(request: Request):
+    """Claim warranty replacement directly from inside the Mini App."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+
+    tg_id = int(body.get("tg_id") or 0)
+    order_id = int(body.get("order_id") or 0)
+
+    async with get_db_session() as session:
+        order = await BatStoreOrderRepository.get_by_id(order_id, session)
+        if not order or order.telegram_id != tg_id or order.status != "completed":
+            return JSONResponse({"error": "order_not_eligible"}, status_code=400)
+        if getattr(order, "warranty_claimed", False):
+            return JSONResponse({"error": "already_claimed"}, status_code=400)
+
+        details = order.details or []
+        pid = details[0].get("product_id") if details else None
+        if not pid:
+            return JSONResponse({"error": "missing_product_info"}, status_code=400)
+
+        repl_ref = f"warranty-tma-{order.id}-{tg_id}"
+        try:
+            placed = await BatStoreService.place_order(
+                session, pid, 1,
+                customer_reference=repl_ref,
+                idempotency_key=repl_ref,
+            )
+            items = placed.get("order", {}).get("items") or []
+            goods_list = [it.get("value") or it.get("data") or str(it) for it in items] if items else []
+            await BatStoreOrderRepository.mark_warranty_claimed(order.id, True, session)
+            await session_commit(session)
+            await NotificationService.send_to_admins(
+                f"🛡️ Automated warranty issued for #{order.id} (tg:{tg_id}) via Mini App",
+                None
+            )
+            return {"status": "success", "goods": goods_list}
+        except Exception as e:
+            await BatStoreOrderRepository.mark_warranty_claimed(order.id, True, session)
+            await session_commit(session)
+            await NotificationService.send_to_admins(
+                f"🛡️ Manual warranty claim for #{order.id} (tg:{tg_id}) via Mini App: {e}",
+                None
+            )
+            return {"status": "pending_manual_review"}
 
 
 @app.get("/app", response_class=HTMLResponse)

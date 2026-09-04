@@ -1,11 +1,14 @@
-"""Telegram Mini App (TMA) Storefront HTML, CSS, and Client Logic.
+"""Telegram Mini App (TMA) Mobile-First Storefront.
 
-Provides a responsive, mobile-first 4-tab interface:
-- Tab 1 (Store): Search, category chips, animated emoji icons, and slide-up checkout modal.
-- Tab 2 (Orders): Order history, status pills, 1-tap copyable credentials, and warranty claims.
-- Tab 3 (Wallet): Spendable balance, deposit presets ($10, $25, $50, $100), and payment rail cards.
-- Tab 4 (Settings): Display currency toggle (USD, EUR, SYP, XTR), language switcher (7 languages),
-                   VIP rank progress bar, referral link copy, and support contact.
+Features:
+- Glassmorphic, iOS-style bottom navigation bar with safe-area notch padding.
+- Homepage Catalog Cards Grid (categories as distinct collections with item counts, starting prices, preview tags).
+- Category drill-down with '← All Catalogs' navigation.
+- Dedicated in-app Product Page with live balance check, quantity stepper, VIP discounts, and instant in-app checkout (POST /api/buy) — no text chat redirect!
+- In-app Order Success screen with 1-tap copyable credentials.
+- Real Telegram user profile picture and username integration.
+- Orders page with robust loading/empty states, 1-tap copyable license keys, and in-app warranty claims.
+- Client-side multi-language translation and RTL support for Arabic.
 """
 
 STOREFRONT_HTML = """<!DOCTYPE html>
@@ -17,259 +20,466 @@ STOREFRONT_HTML = """<!DOCTYPE html>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root {
-      --bg: var(--tg-theme-bg-color, #0b1120);
+      --bg: var(--tg-theme-bg-color, #0a0f1d);
       --text: var(--tg-theme-text-color, #f8fafc);
       --hint: var(--tg-theme-hint-color, #94a3b8);
       --btn: var(--tg-theme-button-color, #38bdf8);
       --btn-text: var(--tg-theme-button-text-color, #04121d);
-      --card: var(--tg-theme-secondary-bg-color, #1e293b);
+      --card: var(--tg-theme-secondary-bg-color, #172033);
       --border: rgba(255, 255, 255, 0.08);
       --accent: #38bdf8;
       --success: #10b981;
       --warning: #f59e0b;
       --danger: #ef4444;
-      --nav-height: 64px;
-      --safe-bottom: env(safe-area-inset-bottom, 16px);
+      --nav-height: 52px;
+      --safe-bottom: env(safe-area-inset-bottom, 20px);
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
       background: var(--bg);
       color: var(--text);
       min-height: 100vh;
-      padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + 20px);
+      padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + 24px);
       user-select: none;
       -webkit-user-select: none;
+      overflow-x: hidden;
     }
 
-    /* Top Sticky Header */
+    /* Top Sticky Navigation Bar */
     .top-header {
       position: sticky;
       top: 0;
-      z-index: 40;
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      background: rgba(11, 17, 32, 0.85);
-      border-bottom: 1px solid var(--border);
-      padding: 12px 16px;
+      z-index: 50;
+      backdrop-filter: blur(24px) saturate(180%);
+      -webkit-backdrop-filter: blur(24px) saturate(180%);
+      background: rgba(10, 15, 29, 0.88);
+      border-bottom: 0.5px solid var(--border);
+      padding: 10px 16px;
       display: flex;
       align-items: center;
       justify-content: space-between;
     }
-    .header-brand {
+    .header-left {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
     }
-    .header-brand h1 {
-      font-size: 18px;
+    .user-avatar-img {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 1.5px solid var(--accent);
+      cursor: pointer;
+    }
+    .user-avatar-fallback {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #38bdf8, #6366f1);
+      color: white;
+      font-size: 15px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .header-titles h1 {
+      font-size: 16px;
       font-weight: 700;
       letter-spacing: -0.3px;
-    }
-    .header-actions {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
     }
-    .balance-pill {
+    .header-titles span {
+      font-size: 11px;
+      color: var(--hint);
+      font-weight: 500;
+    }
+    .header-balance {
       background: rgba(56, 189, 248, 0.12);
       border: 1px solid rgba(56, 189, 248, 0.3);
       color: var(--accent);
-      padding: 5px 12px;
+      padding: 6px 14px;
       border-radius: 20px;
       font-size: 13px;
       font-weight: 700;
       display: flex;
       align-items: center;
-      gap: 5px;
+      gap: 4px;
       cursor: pointer;
     }
-    .vip-pill {
-      background: rgba(245, 158, 11, 0.12);
-      border: 1px solid rgba(245, 158, 11, 0.3);
+    .vip-chip {
+      background: rgba(245, 158, 11, 0.15);
       color: #f59e0b;
-      padding: 4px 10px;
-      border-radius: 20px;
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 6px;
     }
 
-    /* Page Container & Tab Views */
+    /* Views */
     .view-content {
       padding: 16px;
       display: none;
+      animation: fadeIn 0.2s ease-out;
     }
-    .view-content.active {
-      display: block;
-      animation: fadeIn 0.15s ease-out;
-    }
+    .view-content.active { display: block; }
     @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(4px); }
+      from { opacity: 0; transform: translateY(6px); }
       to { opacity: 1; transform: translateY(0); }
     }
 
-    /* Search & Category Chips */
-    .search-bar {
+    /* Search Bar */
+    .search-box {
       position: relative;
-      margin-bottom: 14px;
+      margin-bottom: 16px;
     }
-    .search-bar input {
+    .search-box input {
       width: 100%;
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 12px;
       color: var(--text);
-      padding: 11px 16px 11px 38px;
+      padding: 12px 16px 12px 40px;
       font-size: 14px;
       outline: none;
-      transition: border-color 0.2s;
     }
-    .search-bar input:focus {
-      border-color: var(--accent);
-    }
+    .search-box input:focus { border-color: var(--accent); }
     .search-icon {
       position: absolute;
       left: 14px;
       top: 50%;
       transform: translateY(-50%);
+      font-size: 15px;
+      color: var(--hint);
+    }
+    .clear-search {
+      position: absolute;
+      right: 14px;
+      top: 50%;
+      transform: translateY(-50%);
       font-size: 14px;
       color: var(--hint);
-    }
-    .chips-wrapper {
-      display: flex;
-      gap: 8px;
-      overflow-x: auto;
-      padding-bottom: 10px;
-      margin-bottom: 12px;
-      scrollbar-width: none;
-    }
-    .chips-wrapper::-webkit-scrollbar { display: none; }
-    .chip {
-      background: var(--card);
-      border: 1px solid var(--border);
-      color: var(--hint);
-      border-radius: 20px;
-      padding: 6px 14px;
-      font-size: 13px;
-      font-weight: 500;
-      white-space: nowrap;
       cursor: pointer;
-      transition: all 0.2s;
-    }
-    .chip.active {
-      background: var(--btn);
-      color: var(--btn-text);
-      border-color: var(--btn);
-      font-weight: 700;
+      display: none;
     }
 
-    /* Product Cards Grid */
-    .products-grid {
+    /* Catalog Cards Grid (Homepage Collections) */
+    .catalogs-grid {
       display: grid;
       grid-template-columns: 1fr;
       gap: 12px;
     }
     @media (min-width: 480px) {
-      .products-grid { grid-template-columns: repeat(2, 1fr); }
+      .catalogs-grid { grid-template-columns: repeat(2, 1fr); }
     }
-    .product-card {
+    .catalog-card {
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 14px;
+      border-radius: 16px;
+      padding: 16px;
       display: flex;
-      flex-direction: column;
+      align-items: center;
       justify-content: space-between;
       cursor: pointer;
       transition: transform 0.15s, border-color 0.15s;
     }
-    .product-card:active {
+    .catalog-card:active {
       transform: scale(0.98);
-      border-color: rgba(56, 189, 248, 0.4);
+      border-color: var(--accent);
     }
-    .card-top {
+    .catalog-left {
       display: flex;
-      align-items: flex-start;
-      gap: 12px;
-      margin-bottom: 10px;
+      align-items: center;
+      gap: 14px;
+      flex: 1;
+      overflow: hidden;
     }
-    .card-icon {
-      font-size: 26px;
-      width: 42px;
-      height: 42px;
-      border-radius: 10px;
+    .catalog-icon {
+      font-size: 28px;
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
       background: rgba(255, 255, 255, 0.05);
       display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
     }
-    .card-meta {
+    .catalog-info {
       flex: 1;
       overflow: hidden;
     }
-    .card-title {
-      font-size: 15px;
-      font-weight: 600;
-      margin-bottom: 3px;
-      line-height: 1.3;
+    .catalog-title {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 2px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .card-category {
-      font-size: 11px;
-      color: var(--hint);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      font-weight: 600;
-    }
-    .card-desc {
+    .catalog-meta {
       font-size: 12px;
       color: var(--hint);
-      line-height: 1.4;
-      margin-bottom: 12px;
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
+      display: flex;
+      gap: 6px;
+      align-items: center;
     }
-    .card-bottom {
+    .catalog-arrow {
+      color: var(--hint);
+      font-size: 18px;
+      margin-left: 10px;
+    }
+
+    /* Products View (inside a catalog) */
+    .subview-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding-top: 10px;
-      border-top: 1px solid var(--border);
+      margin-bottom: 14px;
     }
-    .card-price {
-      font-size: 16px;
-      font-weight: 700;
+    .back-catalog-btn {
+      background: transparent;
+      border: 1px solid var(--border);
       color: var(--accent);
-    }
-    .stock-tag {
-      font-size: 11px;
-      color: var(--hint);
-    }
-    .btn-buy {
-      background: var(--btn);
-      color: var(--btn-text);
-      border: none;
       border-radius: 8px;
-      padding: 7px 14px;
+      padding: 6px 12px;
       font-size: 13px;
-      font-weight: 700;
-      cursor: pointer;
+      font-weight: 600;
       display: flex;
       align-items: center;
-      gap: 4px;
+      gap: 6px;
+      cursor: pointer;
+    }
+    .subview-title {
+      font-size: 16px;
+      font-weight: 700;
     }
 
-    /* Orders View */
-    .order-card {
+    /* Product Cards */
+    .products-list {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+    .product-item {
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 14px;
       padding: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      cursor: pointer;
+      transition: transform 0.15s, border-color 0.15s;
+    }
+    .product-item:active {
+      transform: scale(0.99);
+      border-color: var(--accent);
+    }
+    .item-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 1;
+      overflow: hidden;
+    }
+    .item-icon {
+      font-size: 26px;
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.05);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .item-details {
+      flex: 1;
+      overflow: hidden;
+    }
+    .item-name {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .item-sub {
+      font-size: 12px;
+      color: var(--hint);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .item-right {
+      text-align: right;
+      flex-shrink: 0;
+    }
+    .item-price {
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--accent);
+    }
+    .item-stock {
+      font-size: 11px;
+      color: var(--hint);
+      margin-top: 2px;
+    }
+
+    /* Dedicated In-App Product Detail Page */
+    .product-page-hero {
+      text-align: center;
+      padding: 20px 0;
+      background: radial-gradient(circle at center, rgba(56, 189, 248, 0.12), transparent 70%);
+      border-radius: 20px;
+      margin-bottom: 16px;
+    }
+    .product-page-icon {
+      font-size: 54px;
+      margin-bottom: 10px;
+    }
+    .product-page-name {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.3px;
+      margin-bottom: 6px;
+    }
+    .product-page-cat {
+      font-size: 12px;
+      color: var(--accent);
+      text-transform: uppercase;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+    .info-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+    .info-title {
+      font-size: 12px;
+      color: var(--hint);
+      font-weight: 700;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .info-body {
+      font-size: 14px;
+      line-height: 1.5;
+      color: var(--text);
+    }
+    .badges-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .feature-badge {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      padding: 6px 12px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .price-box {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .price-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .price-large {
+      font-size: 26px;
+      font-weight: 800;
+      color: var(--accent);
+    }
+    .qty-stepper {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 4px 10px;
+    }
+    .qty-btn {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 16px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .qty-val { font-size: 15px; font-weight: 700; }
+    .btn-checkout {
+      width: 100%;
+      background: var(--btn);
+      color: var(--btn-text);
+      border: none;
+      border-radius: 14px;
+      padding: 16px;
+      font-size: 16px;
+      font-weight: 800;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: transform 0.15s, opacity 0.15s;
+    }
+    .btn-checkout:active { transform: scale(0.98); }
+    .insufficient-box {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 12px;
+      text-align: center;
+      font-size: 13px;
+      color: #fca5a5;
+    }
+
+    /* Order Success Page */
+    .success-hero {
+      text-align: center;
+      padding: 30px 16px;
+    }
+    .success-icon { font-size: 64px; margin-bottom: 14px; }
+    .success-title { font-size: 24px; font-weight: 800; margin-bottom: 6px; }
+    .success-sub { font-size: 13px; color: var(--hint); margin-bottom: 20px; }
+
+    /* Orders Tab */
+    .order-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
       margin-bottom: 12px;
     }
     .order-header {
@@ -278,142 +488,66 @@ STOREFRONT_HTML = """<!DOCTYPE html>
       justify-content: space-between;
       margin-bottom: 8px;
     }
-    .order-id {
-      font-weight: 700;
-      font-size: 14px;
-    }
-    .status-badge {
+    .status-tag {
       font-size: 11px;
-      padding: 3px 8px;
-      border-radius: 12px;
       font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 10px;
       text-transform: uppercase;
     }
     .status-completed { background: rgba(16, 185, 129, 0.15); color: var(--success); }
     .status-pending { background: rgba(245, 158, 11, 0.15); color: var(--warning); }
     .status-failed { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
-    .order-item-name {
-      font-size: 14px;
-      font-weight: 600;
-      margin-bottom: 6px;
-    }
-    .credential-box {
+    .key-box {
       background: rgba(0, 0, 0, 0.35);
-      border: 1px dashed rgba(255, 255, 255, 0.15);
-      border-radius: 8px;
-      padding: 10px;
+      border: 1px dashed rgba(56, 189, 248, 0.4);
+      border-radius: 10px;
+      padding: 12px;
       font-family: monospace;
       font-size: 13px;
       color: #38bdf8;
       word-break: break-all;
       margin: 8px 0;
-      position: relative;
       cursor: pointer;
     }
-    .credential-box:active {
-      background: rgba(56, 189, 248, 0.15);
-    }
-    .copy-hint {
-      font-size: 11px;
-      color: var(--hint);
-      margin-top: 4px;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-    }
-    .order-actions {
-      display: flex;
-      gap: 8px;
-      margin-top: 10px;
-      padding-top: 10px;
-      border-top: 1px solid var(--border);
-    }
-    .btn-outline {
-      background: transparent;
-      border: 1px solid var(--border);
-      color: var(--text);
-      border-radius: 8px;
-      padding: 6px 12px;
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      flex: 1;
-      text-align: center;
-    }
+    .key-box:active { background: rgba(56, 189, 248, 0.15); }
 
-    /* Wallet View */
-    .wallet-hero {
-      background: linear-gradient(135deg, #1e293b, #0f172a);
-      border: 1px solid rgba(56, 189, 248, 0.3);
-      border-radius: 18px;
+    /* Wallet Tab */
+    .wallet-banner {
+      background: linear-gradient(135deg, #1e293b 0%, #0b1120 100%);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      border-radius: 20px;
       padding: 24px;
       text-align: center;
       margin-bottom: 20px;
-      position: relative;
-      overflow: hidden;
     }
-    .wallet-hero::after {
-      content: '';
-      position: absolute;
-      width: 150px;
-      height: 150px;
-      background: radial-gradient(circle, rgba(56, 189, 248, 0.2) 0%, transparent 70%);
-      top: -30px;
-      right: -30px;
-    }
-    .wallet-label {
-      font-size: 12px;
-      color: var(--hint);
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      margin-bottom: 6px;
-    }
-    .wallet-amount {
-      font-size: 34px;
+    .wallet-hero-amount {
+      font-size: 36px;
       font-weight: 800;
-      color: #f8fafc;
       letter-spacing: -0.5px;
-      margin-bottom: 4px;
+      margin: 6px 0;
     }
-    .wallet-sub {
-      font-size: 13px;
-      color: var(--accent);
-      font-weight: 600;
-    }
-    .section-title {
-      font-size: 14px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: var(--hint);
-      margin: 20px 0 10px 4px;
-    }
-    .preset-grid {
+    .presets-row {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       gap: 8px;
-      margin-bottom: 16px;
+      margin-bottom: 20px;
     }
-    .preset-btn {
+    .preset-pill {
       background: var(--card);
       border: 1px solid var(--border);
-      color: var(--text);
       border-radius: 12px;
-      padding: 12px 0;
+      padding: 10px 0;
       font-size: 14px;
       font-weight: 700;
       text-align: center;
       cursor: pointer;
     }
-    .preset-btn:active {
-      background: var(--btn);
-      color: var(--btn-text);
-      border-color: var(--btn);
-    }
-    .rail-card {
+    .preset-pill:active { background: var(--btn); color: var(--btn-text); }
+    .rail-item {
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 14px;
+      border-radius: 16px;
       padding: 16px;
       display: flex;
       align-items: center;
@@ -421,275 +555,116 @@ STOREFRONT_HTML = """<!DOCTYPE html>
       margin-bottom: 10px;
       cursor: pointer;
     }
-    .rail-card:active {
-      transform: scale(0.99);
-      border-color: var(--accent);
-    }
-    .rail-left {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    .rail-icon {
-      font-size: 24px;
-      width: 44px;
-      height: 44px;
-      border-radius: 12px;
-      background: rgba(255, 255, 255, 0.05);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .rail-name {
-      font-size: 15px;
-      font-weight: 600;
-      margin-bottom: 2px;
-    }
-    .rail-sub {
-      font-size: 12px;
-      color: var(--hint);
-    }
+    .rail-item:active { border-color: var(--accent); }
 
-    /* Settings View */
-    .profile-card {
+    /* Settings Tab */
+    .settings-profile-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .settings-group {
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 16px;
       padding: 16px;
-      margin-bottom: 20px;
-    }
-    .profile-row {
-      display: flex;
-      align-items: center;
-      gap: 14px;
       margin-bottom: 14px;
     }
-    .profile-avatar {
-      width: 52px;
-      height: 52px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, #38bdf8, #818cf8);
-      color: white;
-      font-size: 22px;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .profile-name {
-      font-size: 16px;
-      font-weight: 700;
-      margin-bottom: 3px;
-    }
-    .profile-id {
+    .group-title {
       font-size: 12px;
       color: var(--hint);
-      font-family: monospace;
-    }
-    .setting-group {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 16px;
-      margin-bottom: 14px;
-    }
-    .setting-header {
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--hint);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
       margin-bottom: 10px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
     }
-    .option-chips {
+    .segment-chips {
       display: flex;
-      flex-wrap: wrap;
       gap: 8px;
+      flex-wrap: wrap;
     }
-    .opt-chip {
-      background: rgba(255, 255, 255, 0.05);
+    .seg-chip {
+      background: rgba(255, 255, 255, 0.04);
       border: 1px solid var(--border);
-      color: var(--text);
-      border-radius: 8px;
+      border-radius: 10px;
       padding: 8px 14px;
       font-size: 13px;
       font-weight: 600;
       cursor: pointer;
     }
-    .opt-chip.selected {
+    .seg-chip.active {
       background: rgba(56, 189, 248, 0.15);
       border-color: var(--accent);
       color: var(--accent);
     }
-    .referral-box {
+    .referral-container {
       background: rgba(0, 0, 0, 0.25);
       border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 12px;
+      border-radius: 12px;
+      padding: 10px 14px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-top: 8px;
-    }
-    .referral-link {
-      font-family: monospace;
-      font-size: 13px;
-      color: var(--accent);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      flex: 1;
-      margin-right: 8px;
+      margin-top: 10px;
     }
 
-    /* Fixed Bottom Navigation Bar */
-    .bottom-nav {
+    /* iPhone Bottom Tab Bar */
+    .iphone-navbar {
       position: fixed;
       bottom: 0;
       left: 0;
       right: 0;
       height: calc(var(--nav-height) + var(--safe-bottom));
       padding-bottom: var(--safe-bottom);
-      background: rgba(11, 17, 32, 0.92);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border-top: 1px solid var(--border);
+      background: rgba(10, 15, 29, 0.88);
+      backdrop-filter: blur(28px) saturate(190%);
+      -webkit-backdrop-filter: blur(28px) saturate(190%);
+      border-top: 0.5px solid rgba(255, 255, 255, 0.12);
       display: flex;
       align-items: center;
       justify-content: space-around;
-      z-index: 50;
+      z-index: 100;
     }
-    .nav-item {
+    .tab-btn {
       flex: 1;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 4px;
-      color: var(--hint);
+      gap: 3px;
+      color: #8e8e93;
       cursor: pointer;
-      padding: 6px 0;
-      transition: color 0.15s;
+      transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
     }
-    .nav-item.active {
-      color: var(--accent);
+    .tab-btn.active {
+      color: #38bdf8;
+      transform: scale(1.04);
     }
-    .nav-icon {
-      font-size: 20px;
+    .tab-btn .tab-icon {
+      font-size: 21px;
+      line-height: 1;
     }
-    .nav-label {
-      font-size: 11px;
+    .tab-btn .tab-label {
+      font-size: 10px;
       font-weight: 600;
       letter-spacing: -0.2px;
     }
 
-    /* Bottom Sheet Modal */
-    .modal-backdrop {
+    /* Toast */
+    .toast-pill {
       position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.65);
-      backdrop-filter: blur(4px);
-      -webkit-backdrop-filter: blur(4px);
-      z-index: 100;
-      display: none;
-      align-items: flex-end;
-    }
-    .modal-backdrop.open {
-      display: flex;
-    }
-    .sheet-modal {
-      width: 100%;
-      background: var(--card);
-      border-top-left-radius: 20px;
-      border-top-right-radius: 20px;
-      border: 1px solid var(--border);
-      border-bottom: none;
-      padding: 20px 20px calc(20px + var(--safe-bottom)) 20px;
-      animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-      max-height: 85vh;
-      overflow-y: auto;
-    }
-    @keyframes slideUp {
-      from { transform: translateY(100%); }
-      to { transform: translateY(0); }
-    }
-    .sheet-handle {
-      width: 36px;
-      height: 4px;
-      border-radius: 2px;
-      background: rgba(255, 255, 255, 0.2);
-      margin: 0 auto 16px auto;
-    }
-    .sheet-header {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 12px;
-    }
-    .sheet-title {
-      font-size: 18px;
-      font-weight: 700;
-    }
-    .sheet-desc {
-      font-size: 13px;
-      color: var(--hint);
-      line-height: 1.5;
-      margin-bottom: 16px;
-    }
-    .stepper {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      background: rgba(0, 0, 0, 0.25);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 8px 16px;
-      margin-bottom: 16px;
-    }
-    .stepper-btn {
-      width: 34px;
-      height: 34px;
-      border-radius: 8px;
-      background: var(--card);
-      border: 1px solid var(--border);
-      color: var(--text);
-      font-size: 18px;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-    }
-    .stepper-val {
-      font-size: 16px;
-      font-weight: 700;
-    }
-    .sheet-btn {
-      width: 100%;
-      background: var(--btn);
-      color: var(--btn-text);
-      border: none;
-      border-radius: 14px;
-      padding: 14px;
-      font-size: 16px;
-      font-weight: 700;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-    }
-
-    /* Toast Notification */
-    .toast {
-      position: fixed;
-      top: 20px;
+      top: 16px;
       left: 50%;
       transform: translateX(-50%) translateY(-100px);
       background: rgba(16, 185, 129, 0.95);
       color: white;
-      padding: 8px 16px;
+      padding: 8px 18px;
       border-radius: 20px;
       font-size: 13px;
       font-weight: 600;
@@ -697,203 +672,270 @@ STOREFRONT_HTML = """<!DOCTYPE html>
       transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
       box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
     }
-    .toast.show {
-      transform: translateX(-50%) translateY(0);
-    }
+    .toast-pill.show { transform: translateX(-50%) translateY(0); }
   </style>
 </head>
 <body>
 
   <!-- Top Navigation Header -->
   <header class="top-header">
-    <div class="header-brand">
-      <h1>🛍️ GH Store</h1>
-      <span class="vip-pill" id="header-vip" style="display: none;">VIP</span>
-    </div>
-    <div class="header-actions">
-      <div class="balance-pill" onclick="switchTab('wallet')">
-        <span id="header-balance">$0.00</span>
-        <span style="font-size: 10px;">➕</span>
+    <div class="header-left">
+      <div id="header-avatar-box" onclick="switchTab('settings')">
+        <div class="user-avatar-fallback" id="header-avatar-initial">U</div>
       </div>
+      <div class="header-titles">
+        <h1 id="i18n-brand">🛍️ GH Store <span class="vip-chip" id="header-vip-tag" style="display: none;">VIP</span></h1>
+        <span id="header-sub-label">Verified Digital Reseller</span>
+      </div>
+    </div>
+    <div class="header-balance" onclick="switchTab('wallet')">
+      <span id="top-balance-val">$0.00</span>
+      <span style="font-size: 10px;">➕</span>
     </div>
   </header>
 
-  <!-- TAB 1: STORE / CATALOG -->
+  <!-- TAB 1: STORE VIEW -->
   <section id="view-store" class="view-content active">
-    <div class="search-bar">
+    <!-- Global Search -->
+    <div class="search-box">
       <span class="search-icon">🔍</span>
-      <input type="text" id="search-input" placeholder="Search ChatGPT, Gemini, Netflix..." oninput="handleSearch()">
+      <input type="text" id="global-search" placeholder="Search ChatGPT, Claude, Gemini, Netflix..." oninput="onSearchInput()">
+      <span class="clear-search" id="clear-search-btn" onclick="clearSearch()">✕</span>
     </div>
-    <div class="chips-wrapper" id="categories-container"></div>
-    <div class="products-grid" id="products-container"></div>
+
+    <!-- Mode A: Catalogs Cards Grid (Homepage Collections) -->
+    <div id="catalogs-mode">
+      <div style="font-size: 13px; font-weight: 700; text-transform: uppercase; color: var(--hint); margin: 0 0 12px 2px;" id="i18n-catalogs-title">
+        Featured Collections
+      </div>
+      <div class="catalogs-grid" id="catalogs-grid"></div>
+    </div>
+
+    <!-- Mode B: Products in Selected Catalog (or Search Results) -->
+    <div id="products-mode" style="display: none;">
+      <div class="subview-header">
+        <button class="back-catalog-btn" onclick="returnToCatalogs()">
+          <span>←</span>
+          <span id="i18n-all-catalogs">All Catalogs</span>
+        </button>
+        <div class="subview-title" id="active-catalog-title">Catalog</div>
+      </div>
+      <div class="products-list" id="products-list"></div>
+    </div>
   </section>
 
-  <!-- TAB 2: ORDERS -->
+  <!-- DEDICATED IN-APP PRODUCT DETAIL PAGE -->
+  <section id="view-product-detail" class="view-content">
+    <div class="subview-header">
+      <button class="back-catalog-btn" onclick="backFromProductPage()">
+        <span>←</span>
+        <span>Back</span>
+      </button>
+      <div class="subview-title" id="product-page-cat">Product</div>
+    </div>
+
+    <div class="product-page-hero">
+      <div class="product-page-icon" id="page-icon">⚡</div>
+      <h2 class="product-page-name" id="page-name">Product Name</h2>
+      <div class="product-page-cat" id="page-category">Category</div>
+    </div>
+
+    <div class="badges-row">
+      <div class="feature-badge" id="page-delivery-badge">⚡ Instant Automated Delivery</div>
+      <div class="feature-badge" id="page-warranty-badge">🛡️ 30 Days Warranty</div>
+      <div class="feature-badge" id="page-stock-badge">🟢 In Stock</div>
+    </div>
+
+    <div class="info-card">
+      <div class="info-title">Description</div>
+      <div class="info-body" id="page-desc">Instant automated license key delivery.</div>
+    </div>
+
+    <div class="price-box">
+      <div class="price-row">
+        <div>
+          <div style="font-size: 12px; color: var(--hint); text-transform: uppercase;">Total Price</div>
+          <div class="price-large" id="page-total-price">$0.00</div>
+          <div style="font-size: 12px; color: var(--success); font-weight: 700;" id="page-discount-line"></div>
+        </div>
+        <div class="qty-stepper">
+          <div class="qty-btn" onclick="stepQty(-1)">-</div>
+          <span class="qty-val" id="page-qty">1</span>
+          <div class="qty-btn" onclick="stepQty(1)">+</div>
+        </div>
+      </div>
+
+      <div id="insufficient-alert" class="insufficient-box" style="display: none;">
+        <div>⚠️ <b>Insufficient Balance</b></div>
+        <div id="insufficient-text" style="margin-top: 4px;">You need $10.00 more.</div>
+      </div>
+
+      <button class="btn-checkout" id="page-buy-btn" onclick="executeInAppBuy()">
+        <span>⚡ Instant Buy</span>
+        <span id="btn-price-label">($0.00)</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- IN-APP ORDER SUCCESS VIEW -->
+  <section id="view-order-success" class="view-content">
+    <div class="success-hero">
+      <div class="success-icon">🎉</div>
+      <h2 class="success-title">Order Successful!</h2>
+      <p class="success-sub" id="success-order-sub">Order #000 · Completed</p>
+    </div>
+
+    <div class="info-card">
+      <div class="info-title">Delivered License / Credentials</div>
+      <div id="success-keys-container"></div>
+      <div style="font-size: 11px; color: var(--hint); text-align: center; margin-top: 6px;">
+        Tap on credentials above to copy instantly!
+      </div>
+    </div>
+
+    <div style="display: flex; gap: 10px;">
+      <button class="btn-checkout" onclick="switchTab('orders')" style="background: var(--card); color: var(--text); border: 1px solid var(--border);">
+        📦 View in Orders
+      </button>
+      <button class="btn-checkout" onclick="switchTab('store')">
+        🛍️ Continue Shopping
+      </button>
+    </div>
+  </section>
+
+  <!-- TAB 2: ORDERS VIEW -->
   <section id="view-orders" class="view-content">
-    <div class="section-title">Your Purchase History</div>
-    <div id="orders-container">
-      <div style="text-align: center; padding: 40px 20px; color: var(--hint);">Loading orders...</div>
+    <div style="font-size: 13px; font-weight: 700; text-transform: uppercase; color: var(--hint); margin: 0 0 12px 2px;">
+      Your Purchases
     </div>
+    <div id="orders-list"></div>
   </section>
 
-  <!-- TAB 3: WALLET -->
+  <!-- TAB 3: WALLET VIEW -->
   <section id="view-wallet" class="view-content">
-    <div class="wallet-hero">
-      <div class="wallet-label">Spendable Balance</div>
-      <div class="wallet-amount" id="wallet-big-balance">$0.00</div>
-      <div class="wallet-sub" id="wallet-display-alt"></div>
+    <div class="wallet-banner">
+      <div style="font-size: 12px; color: var(--hint); text-transform: uppercase; letter-spacing: 1px;">Account Balance</div>
+      <div class="wallet-hero-amount" id="wallet-balance-num">$0.00</div>
+      <div style="font-size: 13px; color: var(--accent); font-weight: 600;" id="wallet-alt-curr">Available for instant purchases</div>
     </div>
 
-    <div class="section-title">Quick Top-up</div>
-    <div class="preset-grid">
-      <div class="preset-btn" onclick="triggerTopup(10)">+$10</div>
-      <div class="preset-btn" onclick="triggerTopup(25)">+$25</div>
-      <div class="preset-btn" onclick="triggerTopup(50)">+$50</div>
-      <div class="preset-btn" onclick="triggerTopup(100)">+$100</div>
+    <div style="font-size: 13px; font-weight: 700; text-transform: uppercase; color: var(--hint); margin: 0 0 10px 2px;">
+      Quick Deposit Amounts
+    </div>
+    <div class="presets-row">
+      <div class="preset-pill" onclick="sendBotTopup(10)">+$10</div>
+      <div class="preset-pill" onclick="sendBotTopup(25)">+$25</div>
+      <div class="preset-pill" onclick="sendBotTopup(50)">+$50</div>
+      <div class="preset-pill" onclick="sendBotTopup(100)">+$100</div>
     </div>
 
-    <div class="section-title">Payment Methods</div>
-    <div class="rail-card" onclick="triggerRail('stars')">
-      <div class="rail-left">
-        <div class="rail-icon">⭐</div>
+    <div style="font-size: 13px; font-weight: 700; text-transform: uppercase; color: var(--hint); margin: 0 0 10px 2px;">
+      Payment Channels
+    </div>
+    <div class="rail-item" onclick="launchBotRail('stars')">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="font-size: 26px;">⭐</span>
         <div>
-          <div class="rail-name">Telegram Stars</div>
-          <div class="rail-sub">Instant in-app payment with Apple / Google Pay</div>
+          <div style="font-size: 15px; font-weight: 700;">Telegram Stars</div>
+          <div style="font-size: 12px; color: var(--hint);">Instant in-app payment with Apple / Google Pay</div>
         </div>
       </div>
       <span style="color: var(--hint);">➔</span>
     </div>
 
-    <div class="rail-card" onclick="triggerRail('crypto')">
-      <div class="rail-left">
-        <div class="rail-icon">🪙</div>
+    <div class="rail-item" onclick="launchBotRail('crypto')">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="font-size: 26px;">🪙</span>
         <div>
-          <div class="rail-name">Cryptocurrency</div>
-          <div class="rail-sub">BTC, USDT, SOL, LTC, DOGE via KryptoExpress</div>
+          <div style="font-size: 15px; font-weight: 700;">Cryptocurrency</div>
+          <div style="font-size: 12px; color: var(--hint);">BTC, USDT, SOL, LTC, DOGE via KryptoExpress</div>
         </div>
       </div>
       <span style="color: var(--hint);">➔</span>
     </div>
 
-    <div class="rail-card" onclick="triggerRail('sam')">
-      <div class="rail-left">
-        <div class="rail-icon">📱</div>
+    <div class="rail-item" onclick="launchBotRail('sam')">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="font-size: 26px;">📱</span>
         <div>
-          <div class="rail-name">SAM Syriatel & ShamCash</div>
-          <div class="rail-sub">Syrian mobile wallet invoice payment</div>
+          <div style="font-size: 15px; font-weight: 700;">SAM Syriatel & ShamCash</div>
+          <div style="font-size: 12px; color: var(--hint);">Direct Syrian mobile wallet payment</div>
         </div>
       </div>
       <span style="color: var(--hint);">➔</span>
     </div>
   </section>
 
-  <!-- TAB 4: SETTINGS -->
+  <!-- TAB 4: SETTINGS VIEW -->
   <section id="view-settings" class="view-content">
-    <div class="profile-card">
-      <div class="profile-row">
-        <div class="profile-avatar" id="avatar-char">U</div>
-        <div>
-          <div class="profile-name" id="profile-name">Telegram User</div>
-          <div class="profile-id" id="profile-id">ID: 000000000</div>
-        </div>
+    <div class="settings-profile-card">
+      <div id="settings-avatar-box">
+        <div class="user-avatar-fallback" id="settings-avatar-initial" style="width: 48px; height: 48px; font-size: 20px;">U</div>
       </div>
-      <div style="font-size: 13px; color: var(--hint); display: flex; justify-content: space-between;">
-        <span>VIP Loyalty Status:</span>
-        <strong id="profile-vip-tier" style="color: var(--accent);">Standard (0% off)</strong>
+      <div>
+        <div style="font-size: 17px; font-weight: 800;" id="user-display-name">Customer</div>
+        <div style="font-size: 12px; color: var(--hint); font-family: monospace;" id="user-tg-id">ID: 000000000</div>
+        <div style="margin-top: 4px;" id="user-vip-badge"></div>
       </div>
     </div>
 
-    <div class="setting-group">
-      <div class="setting-header">💱 Display Currency Preference</div>
-      <div class="option-chips" id="currency-options">
-        <div class="opt-chip" onclick="setCurrency('USD')">USD ($)</div>
-        <div class="opt-chip" onclick="setCurrency('EUR')">EUR (€)</div>
-        <div class="opt-chip" onclick="setCurrency('SYP')">SYP (ل.س)</div>
-        <div class="opt-chip" onclick="setCurrency('XTR')">Stars (⭐)</div>
+    <div class="settings-group">
+      <div class="group-title">💱 Display Currency Preference</div>
+      <div class="segment-chips" id="currency-chips">
+        <div class="seg-chip" onclick="updateCurrencyPref('USD')">USD ($)</div>
+        <div class="seg-chip" onclick="updateCurrencyPref('EUR')">EUR (€)</div>
+        <div class="seg-chip" onclick="updateCurrencyPref('SYP')">SYP (ل.س)</div>
+        <div class="seg-chip" onclick="updateCurrencyPref('XTR')">Stars (⭐)</div>
       </div>
     </div>
 
-    <div class="setting-group">
-      <div class="setting-header">🌐 Storefront Language</div>
-      <div class="option-chips" id="language-options">
-        <div class="opt-chip" onclick="setLang('en')">English</div>
-        <div class="opt-chip" onclick="setLang('ar')">العربية</div>
-        <div class="opt-chip" onclick="setLang('de')">Deutsch</div>
-        <div class="opt-chip" onclick="setLang('es')">Español</div>
-        <div class="opt-chip" onclick="setLang('fr')">Français</div>
-        <div class="opt-chip" onclick="setLang('it')">Italiano</div>
-        <div class="opt-chip" onclick="setLang('zh')">中文</div>
+    <div class="settings-group">
+      <div class="group-title">🌐 Language / اللغة</div>
+      <div class="segment-chips" id="language-chips">
+        <div class="seg-chip" onclick="updateLanguagePref('en')">English</div>
+        <div class="seg-chip" onclick="updateLanguagePref('ar')">العربية</div>
+        <div class="seg-chip" onclick="updateLanguagePref('de')">Deutsch</div>
+        <div class="seg-chip" onclick="updateLanguagePref('es')">Español</div>
+        <div class="seg-chip" onclick="updateLanguagePref('fr')">Français</div>
+        <div class="seg-chip" onclick="updateLanguagePref('it')">Italiano</div>
+        <div class="seg-chip" onclick="updateLanguagePref('zh')">中文</div>
       </div>
     </div>
 
-    <div class="setting-group">
-      <div class="setting-header">🎁 Referral Program</div>
-      <div style="font-size: 12px; color: var(--hint); line-height: 1.4; margin-bottom: 8px;">
-        Share your link with friends to earn deposit commissions automatically on every purchase!
+    <div class="settings-group">
+      <div class="group-title">🎁 Invite & Earn Referral Link</div>
+      <div style="font-size: 12px; color: var(--hint); margin-bottom: 8px;">
+        Earn instant balance rewards on every deposit your referrals make!
       </div>
-      <div class="referral-box">
-        <span class="referral-link" id="referral-link-text">https://t.me/...</span>
-        <button class="btn-outline" onclick="copyReferralLink()" style="flex: none; padding: 4px 10px;">Copy</button>
+      <div class="referral-container">
+        <span id="ref-link-display" style="font-family: monospace; font-size: 12px; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; margin-right: 8px;">https://t.me/...</span>
+        <button class="back-catalog-btn" onclick="copyRefLink()" style="flex: none;">Copy</button>
       </div>
     </div>
   </section>
 
-  <!-- Fixed Bottom Navigation Bar -->
-  <nav class="bottom-nav">
-    <div class="nav-item active" onclick="switchTab('store')">
-      <div class="nav-icon">🛍️</div>
-      <div class="nav-label">Store</div>
+  <!-- iPhone-style Bottom Navigation Bar -->
+  <nav class="iphone-navbar">
+    <div class="tab-btn active" id="tab-nav-store" onclick="switchTab('store')">
+      <div class="tab-icon">🛍️</div>
+      <div class="tab-label" id="i18n-tab-store">Store</div>
     </div>
-    <div class="nav-item" onclick="switchTab('orders')">
-      <div class="nav-icon">📦</div>
-      <div class="nav-label">Orders</div>
+    <div class="tab-btn" id="tab-nav-orders" onclick="switchTab('orders')">
+      <div class="tab-icon">📦</div>
+      <div class="tab-label" id="i18n-tab-orders">Orders</div>
     </div>
-    <div class="nav-item" onclick="switchTab('wallet')">
-      <div class="nav-icon">💳</div>
-      <div class="nav-label">Wallet</div>
+    <div class="tab-btn" id="tab-nav-wallet" onclick="switchTab('wallet')">
+      <div class="tab-icon">💳</div>
+      <div class="tab-label" id="i18n-tab-wallet">Wallet</div>
     </div>
-    <div class="nav-item" onclick="switchTab('settings')">
-      <div class="nav-icon">⚙️</div>
-      <div class="nav-label">Settings</div>
+    <div class="tab-btn" id="tab-nav-settings" onclick="switchTab('settings')">
+      <div class="tab-icon">⚙️</div>
+      <div class="tab-label" id="i18n-tab-settings">Settings</div>
     </div>
   </nav>
 
-  <!-- Product Detail Bottom Sheet Modal -->
-  <div class="modal-backdrop" id="product-modal" onclick="closeModalOnBackdrop(event)">
-    <div class="sheet-modal" id="sheet-content">
-      <div class="sheet-handle"></div>
-      <div class="sheet-header">
-        <div class="card-icon" id="modal-icon">⚡</div>
-        <div>
-          <div class="sheet-title" id="modal-title">Product</div>
-          <div style="font-size: 12px; color: var(--hint);" id="modal-category">Category</div>
-        </div>
-      </div>
-      <p class="sheet-desc" id="modal-desc"></p>
-
-      <div class="stepper">
-        <span style="font-size: 14px; font-weight: 600;">Quantity</span>
-        <div style="display: flex; align-items: center; gap: 12px;">
-          <div class="stepper-btn" onclick="changeQty(-1)">-</div>
-          <span class="stepper-val" id="modal-qty">1</span>
-          <div class="stepper-btn" onclick="changeQty(1)">+</div>
-        </div>
-      </div>
-
-      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
-        <span style="font-size: 14px; color: var(--hint);">Total Price:</span>
-        <strong style="font-size: 20px; color: var(--accent);" id="modal-total">$0.00</strong>
-      </div>
-
-      <button class="sheet-btn" id="modal-confirm-btn" onclick="confirmPurchase()">
-        <span>Confirm & Buy in Bot</span>
-        <span>➔</span>
-      </button>
-    </div>
-  </div>
-
-  <!-- Toast Notification -->
-  <div class="toast" id="toast">Copied to clipboard!</div>
+  <!-- Toast Pill -->
+  <div class="toast-pill" id="toast-pill">Copied!</div>
 
   <script>
     const tg = window.Telegram?.WebApp;
@@ -903,7 +945,6 @@ STOREFRONT_HTML = """<!DOCTYPE html>
       if (tg.enableClosingConfirmation) tg.enableClosingConfirmation();
     }
 
-    // Haptics helper
     function haptic(type = 'light') {
       try {
         if (tg?.HapticFeedback) {
@@ -917,320 +958,511 @@ STOREFRONT_HTML = """<!DOCTYPE html>
     }
 
     function showToast(msg) {
-      const t = document.getElementById('toast');
+      const t = document.getElementById('toast-pill');
       t.innerText = msg;
       t.classList.add('show');
       haptic('success');
       setTimeout(() => t.classList.remove('show'), 2000);
     }
 
+    // State
     let allProducts = [];
-    let activeCategory = "All";
+    let categoriesList = [];
     let userData = null;
-    let selectedProduct = null;
-    let selectedQty = 1;
+    let activeCatalog = null;
+    let currentSelectedProduct = null;
+    let selectedQuantity = 1;
+    let activeTab = 'store';
 
-    // Resolve user ID
+    // Telegram User ID Resolution
     const urlParams = new URLSearchParams(window.location.search);
     const tgUser = tg?.initDataUnsafe?.user;
-    const userId = tgUser?.id || urlParams.get('tg_id') || 0;
+    const resolvedUserId = tgUser?.id || urlParams.get('tg_id') || 0;
 
-    // Tab Switching
-    function switchTab(tabId) {
-      haptic('selection');
+    // Catalog Mapping Data (icons, previews)
+    const CATALOG_META = {
+      "AI & Chatbots": { icon: "🤖", preview: "Claude · ChatGPT · Gemini · Grok" },
+      "Streaming & Entertainment": { icon: "🎬", preview: "Netflix · Peacock · Shahid · Apple TV" },
+      "VPN & Security": { icon: "🛡️", preview: "NordVPN · Surfshark · Proton" },
+      "Design & Creative": { icon: "🎨", preview: "Canva · Adobe · Figma · Framer" },
+      "Productivity": { icon: "📝", preview: "Notion · CapCut · Office" },
+      "Other": { icon: "📦", preview: "Licenses, keys & digital goods" }
+    };
+
+    // Client-side i18n
+    const I18N = {
+      en: { store: "Store", orders: "Orders", wallet: "Wallet", settings: "Settings", search: "Search products...", collections: "Featured Collections", all_catalogs: "All Catalogs", buy_now: "Instant Buy" },
+      ar: { store: "المتجر", orders: "طلباتي", wallet: "المحفظة", settings: "الإعدادات", search: "البحث في المنتجات...", collections: "التصنيفات المميزة", all_catalogs: "جميع التصنيفات", buy_now: "شراء فوري" },
+      de: { store: "Shop", orders: "Bestellungen", wallet: "Guthaben", settings: "Einstellungen", search: "Produkte suchen...", collections: "Kategorien", all_catalogs: "Alle Kategorien", buy_now: "Sofort kaufen" },
+      es: { store: "Tienda", orders: "Pedidos", wallet: "Billetera", settings: "Ajustes", search: "Buscar productos...", collections: "Colecciones", all_catalogs: "Todas las Colecciones", buy_now: "Comprar ahora" },
+      fr: { store: "Boutique", orders: "Commandes", wallet: "Portefeuille", settings: "Paramètres", search: "Rechercher...", collections: "Collections", all_catalogs: "Toutes les Collections", buy_now: "Acheter" },
+      it: { store: "Negozio", orders: "Ordini", wallet: "Portafoglio", settings: "Impostazioni", search: "Cerca prodotti...", collections: "Collezioni", all_catalogs: "Tutte le Collezioni", buy_now: "Acquista" },
+      zh: { store: "商店", orders: "订单", wallet: "钱包", settings: "设置", search: "搜索产品...", collections: "精选分类", all_catalogs: "所有分类", buy_now: "立即购买" }
+    };
+
+    function applyLanguage(lang) {
+      const d = I18N[lang] || I18N.en;
+      document.getElementById('i18n-tab-store').innerText = d.store;
+      document.getElementById('i18n-tab-orders').innerText = d.orders;
+      document.getElementById('i18n-tab-wallet').innerText = d.wallet;
+      document.getElementById('i18n-tab-settings').innerText = d.settings;
+      document.getElementById('global-search').placeholder = d.search;
+      document.getElementById('i18n-catalogs-title').innerText = d.collections;
+      document.getElementById('i18n-all-catalogs').innerText = d.all_catalogs;
+      document.documentElement.dir = (lang === 'ar') ? 'rtl' : 'ltr';
+    }
+
+    // Tab Navigation
+    function switchTab(tab) {
+      haptic('light');
+      activeTab = tab;
       document.querySelectorAll('.view-content').forEach(el => el.classList.remove('active'));
-      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
 
-      const view = document.getElementById('view-' + tabId);
-      if (view) view.classList.add('active');
+      const targetView = document.getElementById('view-' + tab);
+      if (targetView) targetView.classList.add('active');
 
-      const idx = ['store', 'orders', 'wallet', 'settings'].indexOf(tabId);
-      if (idx !== -1) {
-        document.querySelectorAll('.nav-item')[idx].classList.add('active');
-      }
+      const targetBtn = document.getElementById('tab-nav-' + tab);
+      if (targetBtn) targetBtn.classList.add('active');
 
-      if (tabId === 'orders' || tabId === 'wallet' || tabId === 'settings') {
+      if (tab === 'orders' || tab === 'wallet' || tab === 'settings') {
         loadUserData();
+      }
+      if (tab === 'store') {
+        returnToCatalogs();
       }
     }
 
-    // Fetch Catalog
-    async function loadCatalog() {
+    // Load Catalog
+    async function fetchCatalogData() {
       try {
         const res = await fetch('/api/catalog');
         const data = await res.json();
         allProducts = data.products || [];
-        renderCategories(["All", ...(data.categories || [])]);
-        renderProducts(allProducts);
+        categoriesList = data.categories || [];
+        renderCatalogCards();
       } catch (e) {
-        document.getElementById('products-container').innerHTML =
-          '<div style="text-align: center; padding: 40px; color: var(--hint);">Could not load catalog.</div>';
+        document.getElementById('catalogs-grid').innerHTML = '<div style="color: var(--hint); text-align: center; padding: 30px;">Failed to load catalog.</div>';
       }
     }
 
-    function renderCategories(cats) {
-      const container = document.getElementById('categories-container');
-      container.innerHTML = cats.map(c => `
-        <div class="chip ${c === activeCategory ? 'active' : ''}" onclick="selectCategory('${c}')">${c}</div>
-      `).join('');
-    }
-
-    function selectCategory(cat) {
-      haptic('light');
-      activeCategory = cat;
-      document.querySelectorAll('.chip').forEach(el => el.classList.toggle('active', el.innerText === cat));
-      filterProducts();
-    }
-
-    function handleSearch() {
-      filterProducts();
-    }
-
-    function filterProducts() {
-      const q = (document.getElementById('search-input').value || '').toLowerCase().trim();
-      const filtered = allProducts.filter(p => {
-        const matchesCat = activeCategory === "All" || p.category === activeCategory;
-        const matchesSearch = !q || p.name.toLowerCase().includes(q) || (p.description || '').toLowerCase().includes(q);
-        return matchesCat && matchesSearch;
+    function renderCatalogCards() {
+      const container = document.getElementById('catalogs-grid');
+      // Build grouped stats
+      const groups = {};
+      categoriesList.forEach(c => {
+        groups[c] = allProducts.filter(p => p.category === c);
       });
-      renderProducts(filtered);
-    }
 
-    function renderProducts(list) {
-      const container = document.getElementById('products-container');
-      if (!list.length) {
-        container.innerHTML = '<div style="text-align: center; padding: 40px; color: var(--hint); grid-column: 1/-1;">No products found.</div>';
-        return;
-      }
-      container.innerHTML = list.map(p => `
-        <div class="product-card" onclick="openProductModal(${p.id})">
-          <div>
-            <div class="card-top">
-              <div class="card-icon">${p.emoji || '⚡'}</div>
-              <div class="card-meta">
-                <div class="card-category">${p.category || 'Digital Good'}</div>
-                <div class="card-title">${p.name}</div>
+      container.innerHTML = Object.keys(groups).map(catName => {
+        const items = groups[catName];
+        if (!items || !items.length) return '';
+        const meta = CATALOG_META[catName] || { icon: "📦", preview: "Digital Products" };
+        const minPrice = Math.min(...items.map(p => p.price || 999));
+        const sym = items[0]?.sym || '$';
+
+        return `
+          <div class="catalog-card" onclick="openCatalog('${catName.replace(/'/g, "\\\\'")}')">
+            <div class="catalog-left">
+              <div class="catalog-icon">${meta.icon}</div>
+              <div class="catalog-info">
+                <div class="catalog-title">${catName}</div>
+                <div class="catalog-meta">
+                  <span>${items.length} products</span> ·
+                  <span style="color: var(--accent); font-weight: 700;">From ${minPrice.toFixed(2)}${sym}</span>
+                </div>
+                <div style="font-size: 11px; color: var(--hint); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                  ${meta.preview}
+                </div>
               </div>
             </div>
-            <div class="card-desc">${p.description || 'Instant digital delivery.'}</div>
+            <div class="catalog-arrow">➔</div>
           </div>
-          <div class="card-bottom">
-            <div>
-              <div class="card-price">${p.price ? p.price.toFixed(2) + p.sym : 'N/A'}</div>
-              <div class="stock-tag">${p.stock ? p.stock + ' left' : 'In stock'}</div>
+        `;
+      }).join('');
+    }
+
+    function openCatalog(catName) {
+      haptic('medium');
+      activeCatalog = catName;
+      document.getElementById('catalogs-mode').style.display = 'none';
+      document.getElementById('products-mode').style.display = 'block';
+      document.getElementById('active-catalog-title').innerText = catName;
+
+      const filtered = allProducts.filter(p => p.category === catName);
+      renderProductsList(filtered);
+    }
+
+    function returnToCatalogs() {
+      haptic('light');
+      activeCatalog = null;
+      document.getElementById('global-search').value = '';
+      document.getElementById('clear-search-btn').style.display = 'none';
+      document.getElementById('products-mode').style.display = 'none';
+      document.getElementById('catalogs-mode').style.display = 'block';
+    }
+
+    function onSearchInput() {
+      const q = (document.getElementById('global-search').value || '').trim().toLowerCase();
+      const clearBtn = document.getElementById('clear-search-btn');
+
+      if (q) {
+        clearBtn.style.display = 'block';
+        document.getElementById('catalogs-mode').style.display = 'none';
+        document.getElementById('products-mode').style.display = 'block';
+        document.getElementById('active-catalog-title').innerText = `Search: "${q}"`;
+
+        const matched = allProducts.filter(p =>
+          p.name.toLowerCase().includes(q) ||
+          (p.description || '').toLowerCase().includes(q) ||
+          (p.category || '').toLowerCase().includes(q)
+        );
+        renderProductsList(matched);
+      } else {
+        clearBtn.style.display = 'none';
+        returnToCatalogs();
+      }
+    }
+
+    function clearSearch() {
+      document.getElementById('global-search').value = '';
+      returnToCatalogs();
+    }
+
+    function renderProductsList(products) {
+      const container = document.getElementById('products-list');
+      if (!products.length) {
+        container.innerHTML = '<div style="text-align: center; padding: 40px; color: var(--hint);">No products found in this category.</div>';
+        return;
+      }
+      container.innerHTML = products.map(p => `
+        <div class="product-item" onclick="openProductPage(${p.id})">
+          <div class="item-left">
+            <div class="item-icon">${p.emoji || '⚡'}</div>
+            <div class="item-details">
+              <div class="item-name">${p.name}</div>
+              <div class="item-sub">
+                <span>${p.stock ? p.stock + ' in stock' : 'Instant Delivery'}</span>
+              </div>
             </div>
-            <button class="btn-buy" onclick="event.stopPropagation(); openProductModal(${p.id})">
-              <span>View</span>
-            </button>
+          </div>
+          <div class="item-right">
+            <div class="item-price">${p.price ? p.price.toFixed(2) + p.sym : 'N/A'}</div>
+            <div class="item-stock">Tap to view ➔</div>
           </div>
         </div>
       `).join('');
     }
 
-    // Modal Sheet
-    function openProductModal(id) {
+    // DEDICATED IN-APP PRODUCT DETAIL PAGE
+    function openProductPage(productId) {
       haptic('medium');
-      selectedProduct = allProducts.find(p => p.id === id);
-      if (!selectedProduct) return;
-      selectedQty = 1;
+      currentSelectedProduct = allProducts.find(p => p.id === productId);
+      if (!currentSelectedProduct) return;
+      selectedQuantity = 1;
 
-      document.getElementById('modal-icon').innerText = selectedProduct.emoji || '⚡';
-      document.getElementById('modal-title').innerText = selectedProduct.name;
-      document.getElementById('modal-category').innerText = selectedProduct.category || 'Digital Goods';
-      document.getElementById('modal-desc').innerText = selectedProduct.description || 'Instant automated digital activation and delivery.';
-      updateModalTotal();
+      document.getElementById('page-icon').innerText = currentSelectedProduct.emoji || '⚡';
+      document.getElementById('page-name').innerText = currentSelectedProduct.name;
+      document.getElementById('page-category').innerText = currentSelectedProduct.category || 'Digital Good';
+      document.getElementById('page-desc').innerText = currentSelectedProduct.description || 'Instant automated license activation & credential delivery.';
 
-      document.getElementById('product-modal').classList.add('open');
+      const isInstant = currentSelectedProduct.delivery_type !== 'activation';
+      document.getElementById('page-delivery-badge').innerText = isInstant ? '⚡ Instant Automated Delivery' : '⏳ Custom Activation';
+      document.getElementById('page-stock-badge').innerText = currentSelectedProduct.stock ? `🟢 In Stock (${currentSelectedProduct.stock})` : '⚡ Instant Stock';
+
+      updatePageCalculations();
+
+      document.querySelectorAll('.view-content').forEach(el => el.classList.remove('active'));
+      document.getElementById('view-product-detail').classList.add('active');
     }
 
-    function closeModal() {
-      document.getElementById('product-modal').classList.remove('open');
-    }
-
-    function closeModalOnBackdrop(e) {
-      if (e.target.id === 'product-modal') closeModal();
-    }
-
-    function changeQty(delta) {
+    function backFromProductPage() {
       haptic('light');
-      selectedQty = Math.max(1, Math.min(10, selectedQty + delta));
-      document.getElementById('modal-qty').innerText = selectedQty;
-      updateModalTotal();
+      document.getElementById('view-product-detail').classList.remove('active');
+      document.getElementById('view-store').classList.add('active');
     }
 
-    function updateModalTotal() {
-      if (!selectedProduct) return;
-      const unit = selectedProduct.price || 0.0;
-      let total = unit * selectedQty;
-      // apply VIP discount if loaded
+    function stepQty(delta) {
+      haptic('light');
+      selectedQuantity = Math.max(1, Math.min(10, selectedQuantity + delta));
+      document.getElementById('page-qty').innerText = selectedQuantity;
+      updatePageCalculations();
+    }
+
+    function updatePageCalculations() {
+      if (!currentSelectedProduct) return;
+      const unitPrice = currentSelectedProduct.price || 0.0;
+      let total = unitPrice * selectedQuantity;
+      const sym = currentSelectedProduct.sym || '$';
+
+      // Check VIP discount
+      let discountLine = '';
       if (userData?.vip_discount) {
-        total = total * (1 - userData.vip_discount / 100);
+        const discVal = total * (userData.vip_discount / 100);
+        total = Math.max(0.01, total - discVal);
+        discountLine = `🎖️ ${userData.vip_tier}: -${userData.vip_discount}% applied!`;
       }
-      document.getElementById('modal-total').innerText = total.toFixed(2) + (selectedProduct.sym || '$');
-    }
+      document.getElementById('page-discount-line').innerText = discountLine;
+      document.getElementById('page-total-price').innerText = `${total.toFixed(2)}${sym}`;
+      document.getElementById('btn-price-label').innerText = `(${total.toFixed(2)}${sym})`;
 
-    function confirmPurchase() {
-      if (!selectedProduct) return;
-      haptic('success');
-      if (tg) {
-        tg.sendData(JSON.stringify({
-          action: "buy_batstore",
-          product_id: selectedProduct.id,
-          quantity: selectedQty
-        }));
-        tg.close();
+      // Balance check
+      const userBalance = userData?.balance || 0.0;
+      const alertBox = document.getElementById('insufficient-alert');
+      const buyBtn = document.getElementById('page-buy-btn');
+
+      if (userBalance < total) {
+        alertBox.style.display = 'block';
+        const shortage = (total - userBalance).toFixed(2);
+        document.getElementById('insufficient-text').innerText = `You need ${shortage}${sym} more. Tap below to top up!`;
+        buyBtn.innerHTML = `<span>💳 Top up Balance (+${shortage}${sym} needed)</span>`;
+        buyBtn.onclick = () => switchTab('wallet');
       } else {
-        alert("Please open this store inside Telegram to checkout!");
+        alertBox.style.display = 'none';
+        buyBtn.innerHTML = `<span>⚡ Instant Buy</span> <span>(${total.toFixed(2)}${sym})</span>`;
+        buyBtn.onclick = executeInAppBuy;
       }
     }
 
-    // User Data & Profile
-    async function loadUserData() {
-      if (!userId) return;
-      try {
-        const res = await fetch('/api/user-data?tg_id=' + userId);
-        const d = await res.json();
-        if (d.error) return;
-        userData = d;
+    // IN-APP CHECKOUT EXECUTION (POST /api/buy)
+    async function executeInAppBuy() {
+      if (!currentSelectedProduct || !resolvedUserId) {
+        showToast('Please open inside Telegram to purchase');
+        return;
+      }
+      haptic('medium');
+      const buyBtn = document.getElementById('page-buy-btn');
+      buyBtn.disabled = true;
+      buyBtn.innerHTML = '<span>⏳ Processing Order...</span>';
 
-        // Top bar update
-        document.getElementById('header-balance').innerText = d.display_balance || `$${d.balance.toFixed(2)}`;
-        if (d.vip_tier && d.vip_tier !== 'Standard') {
-          const vipEl = document.getElementById('header-vip');
-          vipEl.innerText = d.vip_tier;
-          vipEl.style.display = 'inline-block';
+      try {
+        const res = await fetch('/api/buy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tg_id: resolvedUserId,
+            product_id: currentSelectedProduct.id,
+            quantity: selectedQuantity
+          })
+        });
+        const d = await res.json();
+        buyBtn.disabled = false;
+
+        if (d.status === 'success') {
+          haptic('success');
+          // Update live balance
+          if (userData) {
+            userData.balance = Math.max(0, userData.balance - d.total_paid);
+            updateBalancePills();
+          }
+
+          // Show in-app success screen
+          document.getElementById('success-order-sub').innerText = `Order #${d.order_id} · ${d.product_name} (${d.quantity}×)`;
+          const keysBox = document.getElementById('success-keys-container');
+          if (d.goods && d.goods.length) {
+            keysBox.innerHTML = d.goods.map(g => `
+              <div class="key-box" onclick="copyCred('${g.replace(/'/g, "\\\\'")}')">
+                <code>${g}</code>
+                <div style="font-size: 10px; color: var(--hint); margin-top: 4px;">📋 Tap to copy</div>
+              </div>
+            `).join('');
+          } else {
+            keysBox.innerHTML = '<div style="padding: 12px; color: var(--warning); text-align: center;">⏳ Custom activation in progress. Delivered shortly!</div>';
+          }
+
+          document.querySelectorAll('.view-content').forEach(el => el.classList.remove('active'));
+          document.getElementById('view-order-success').classList.add('active');
+        } else {
+          haptic('error');
+          showToast(d.error || 'Order failed. Please try again.');
+          updatePageCalculations();
+        }
+      } catch (e) {
+        buyBtn.disabled = false;
+        haptic('error');
+        showToast('Connection error. Please retry.');
+        updatePageCalculations();
+      }
+    }
+
+    // User Data & Profile Loading
+    async function loadUserData() {
+      try {
+        if (!resolvedUserId) {
+          renderEmptyOrders();
+          return;
+        }
+        const res = await fetch('/api/user-data?tg_id=' + resolvedUserId);
+        const d = await res.json();
+        if (d.error) {
+          renderEmptyOrders();
+          return;
+        }
+        userData = d;
+        updateBalancePills();
+
+        // User Avatar (Telegram Real Image or Fallback Initial)
+        const avatarBox = document.getElementById('header-avatar-box');
+        const setAvatarBox = document.getElementById('settings-avatar-box');
+        const firstLetter = (tgUser?.first_name || d.username || 'U')[0].toUpperCase();
+
+        if (d.photo_url) {
+          avatarBox.innerHTML = `<img src="${d.photo_url}" class="user-avatar-img" alt="Avatar">`;
+          setAvatarBox.innerHTML = `<img src="${d.photo_url}" class="user-avatar-img" style="width: 48px; height: 48px;" alt="Avatar">`;
+        } else {
+          document.getElementById('header-avatar-initial').innerText = firstLetter;
+          document.getElementById('settings-avatar-initial').innerText = firstLetter;
         }
 
-        // Wallet view
-        document.getElementById('wallet-big-balance').innerText = `$${d.balance.toFixed(2)}`;
-        document.getElementById('wallet-display-alt').innerText = d.currency_preference !== 'USD'
-          ? `≈ ${d.display_balance}`
-          : 'Ready for instant purchases';
+        // Settings View Info
+        document.getElementById('user-display-name').innerText = tgUser?.first_name ? `${tgUser.first_name} ${tgUser.last_name || ''}`.trim() : (d.username ? '@' + d.username : 'Customer');
+        document.getElementById('user-tg-id').innerText = `Telegram ID: ${d.telegram_id}`;
+        document.getElementById('user-vip-badge').innerHTML = `<span class="vip-chip">${d.vip_tier} (-${d.vip_discount}% discount)</span>`;
 
-        // Settings view
-        document.getElementById('avatar-char').innerText = (d.username ? d.username[0] : 'U').toUpperCase();
-        document.getElementById('profile-name').innerText = d.username ? '@' + d.username : 'Customer';
-        document.getElementById('profile-id').innerText = 'ID: ' + d.telegram_id;
-        document.getElementById('profile-vip-tier').innerText = `${d.vip_tier} (${d.vip_discount}% off)`;
-
-        // Highlight selected currency
-        document.querySelectorAll('#currency-options .opt-chip').forEach(el => {
-          el.classList.toggle('selected', el.innerText.includes(d.currency_preference));
+        // Active currency chips
+        document.querySelectorAll('#currency-chips .seg-chip').forEach(el => {
+          el.classList.toggle('active', el.innerText.includes(d.currency_preference));
         });
 
-        // Highlight selected language
-        document.querySelectorAll('#language-options .opt-chip').forEach(el => {
-          el.classList.toggle('selected', el.getAttribute('onclick')?.includes(`'${d.language}'`));
+        // Active language chips
+        document.querySelectorAll('#language-chips .seg-chip').forEach(el => {
+          el.classList.toggle('active', el.getAttribute('onclick')?.includes(`'${d.language}'`));
         });
+        applyLanguage(d.language || 'en');
 
         // Referral link
         const refLink = `https://t.me/${d.bot_username}?start=${d.referral_code || ''}`;
-        document.getElementById('referral-link-text').innerText = refLink;
+        document.getElementById('ref-link-display').innerText = refLink;
 
-        // Render orders
-        renderOrders(d.orders || []);
-      } catch (e) {}
+        // Render Orders
+        renderOrdersList(d.orders || []);
+      } catch (e) {
+        renderEmptyOrders();
+      }
     }
 
-    function renderOrders(orders) {
-      const container = document.getElementById('orders-container');
+    function updateBalancePills() {
+      if (!userData) return;
+      document.getElementById('top-balance-val').innerText = userData.display_balance || `$${userData.balance.toFixed(2)}`;
+      document.getElementById('wallet-balance-num').innerText = `$${userData.balance.toFixed(2)}`;
+      document.getElementById('wallet-alt-curr').innerText = userData.currency_preference !== 'USD'
+        ? `≈ ${userData.display_balance}`
+        : 'Available for instant purchases';
+
+      if (userData.vip_tier && userData.vip_tier !== 'Standard') {
+        const tag = document.getElementById('header-vip-tag');
+        tag.innerText = userData.vip_tier;
+        tag.style.display = 'inline-block';
+      }
+    }
+
+    function renderEmptyOrders() {
+      document.getElementById('orders-list').innerHTML = `
+        <div style="text-align: center; padding: 40px 20px; color: var(--hint);">
+          <div style="font-size: 40px; margin-bottom: 10px;">📦</div>
+          <div style="font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 6px;">No Orders Yet</div>
+          <p style="font-size: 13px; line-height: 1.4; margin-bottom: 16px;">Browse collections and purchase products with 1 tap!</p>
+          <button class="btn-checkout" onclick="switchTab('store')" style="width: auto; padding: 10px 20px; margin: 0 auto;">Browse Store</button>
+        </div>
+      `;
+    }
+
+    function renderOrdersList(orders) {
+      const container = document.getElementById('orders-list');
       if (!orders.length) {
-        container.innerHTML = '<div style="text-align: center; padding: 40px; color: var(--hint);">No orders yet. Start exploring the store!</div>';
+        renderEmptyOrders();
         return;
       }
       container.innerHTML = orders.map(o => `
         <div class="order-card">
           <div class="order-header">
-            <span class="order-id">#${o.id} · ${o.created_at || ''}</span>
-            <span class="status-badge status-${o.status.includes('completed') ? 'completed' : o.status.includes('fail') ? 'failed' : 'pending'}">${o.status}</span>
+            <span style="font-weight: 700; font-size: 14px;">#${o.id} · ${o.created_at || ''}</span>
+            <span class="status-tag status-${o.status.includes('completed') ? 'completed' : o.status.includes('fail') ? 'failed' : 'pending'}">${o.status}</span>
           </div>
-          <div class="order-item-name">${o.products}</div>
-          <div style="font-size: 13px; color: var(--accent); font-weight: 700; margin-bottom: 6px;">Total: ${o.total.toFixed(2)}${o.sym}</div>
+          <div style="font-size: 15px; font-weight: 700; margin-bottom: 4px;">${o.products}</div>
+          <div style="font-size: 13px; color: var(--accent); font-weight: 700; margin-bottom: 8px;">Total: ${o.total.toFixed(2)}${o.sym}</div>
 
           ${o.goods && o.goods.length ? o.goods.map(g => `
-            <div class="credential-box" onclick="copyText('${g.replace(/'/g, "\\\\'")}')">
+            <div class="key-box" onclick="copyCred('${g.replace(/'/g, "\\\\'")}')">
               <code>${g}</code>
-              <div class="copy-hint">📋 Tap to copy credentials</div>
+              <div style="font-size: 10px; color: var(--hint); margin-top: 4px;">📋 Tap to copy credentials</div>
             </div>
           `).join('') : ''}
 
-          <div class="order-actions">
+          <div style="display: flex; gap: 8px; margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px;">
             ${o.warranty_days && !o.warranty_claimed && o.status === 'completed' ? `
-              <button class="btn-outline" onclick="claimWarrantyOrder(${o.id})">🛡️ Claim Warranty</button>
+              <button class="back-catalog-btn" onclick="inAppWarrantyClaim(${o.id})">🛡️ Claim Warranty</button>
             ` : ''}
-            <button class="btn-outline" onclick="reportOrderIssue(${o.id})">⚠️ Report Issue</button>
+            <button class="back-catalog-btn" onclick="inAppReportIssue(${o.id})">⚠️ Report Issue</button>
           </div>
         </div>
       `).join('');
     }
 
-    function copyText(text) {
+    function copyCred(text) {
       navigator.clipboard.writeText(text).then(() => {
         showToast('Credentials copied to clipboard!');
       });
     }
 
-    function copyReferralLink() {
-      const link = document.getElementById('referral-link-text').innerText;
+    function copyRefLink() {
+      const link = document.getElementById('ref-link-display').innerText;
       navigator.clipboard.writeText(link).then(() => {
         showToast('Referral link copied!');
       });
     }
 
-    async function setCurrency(code) {
+    async function updateCurrencyPref(code) {
       haptic('light');
-      document.querySelectorAll('#currency-options .opt-chip').forEach(el => {
-        el.classList.toggle('selected', el.innerText.includes(code));
+      document.querySelectorAll('#currency-chips .seg-chip').forEach(el => {
+        el.classList.toggle('active', el.innerText.includes(code));
       });
-      if (userId) {
+      if (resolvedUserId) {
         await fetch('/api/user/settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tg_id: userId, currency: code })
+          body: JSON.stringify({ tg_id: resolvedUserId, currency: code })
         });
-        showToast(`Display currency set to ${code}`);
+        showToast(`Currency set to ${code}`);
         loadUserData();
       }
     }
 
-    async function setLang(code) {
+    async function updateLanguagePref(code) {
       haptic('light');
-      if (userId) {
+      applyLanguage(code);
+      if (resolvedUserId) {
         await fetch('/api/user/settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tg_id: userId, language: code })
+          body: JSON.stringify({ tg_id: resolvedUserId, language: code })
         });
         showToast('Language updated!');
         loadUserData();
       }
     }
 
-    function triggerTopup(amount) {
+    async function inAppWarrantyClaim(orderId) {
       haptic('medium');
-      if (tg) {
-        tg.sendData(JSON.stringify({ action: "topup_prompt", amount: amount }));
-        tg.close();
+      try {
+        const res = await fetch('/api/warranty/claim', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tg_id: resolvedUserId, order_id: orderId })
+        });
+        const d = await res.json();
+        if (d.status === 'success') {
+          showToast('Warranty approved! New credentials issued.');
+          loadUserData();
+        } else {
+          showToast('Warranty claim sent to support review.');
+        }
+      } catch (e) {
+        showToast('Failed to claim warranty.');
       }
     }
 
-    function triggerRail(rail) {
-      haptic('medium');
-      if (tg) {
-        tg.sendData(JSON.stringify({ action: "open_rail", rail: rail }));
-        tg.close();
-      }
-    }
-
-    function claimWarrantyOrder(orderId) {
-      haptic('medium');
-      if (tg) {
-        tg.sendData(JSON.stringify({ action: "claim_warranty", order_id: orderId }));
-        tg.close();
-      }
-    }
-
-    function reportOrderIssue(orderId) {
+    function inAppReportIssue(orderId) {
       haptic('medium');
       if (tg) {
         tg.sendData(JSON.stringify({ action: "report_issue", order_id: orderId }));
@@ -1238,8 +1470,24 @@ STOREFRONT_HTML = """<!DOCTYPE html>
       }
     }
 
-    // Initial Load
-    loadCatalog();
+    function sendBotTopup(amount) {
+      haptic('medium');
+      if (tg) {
+        tg.sendData(JSON.stringify({ action: "topup_prompt", amount: amount }));
+        tg.close();
+      }
+    }
+
+    function launchBotRail(rail) {
+      haptic('medium');
+      if (tg) {
+        tg.sendData(JSON.stringify({ action: "open_rail", rail: rail }));
+        tg.close();
+      }
+    }
+
+    // Startup
+    fetchCatalogData();
     loadUserData();
   </script>
 </body>

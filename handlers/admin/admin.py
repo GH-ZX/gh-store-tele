@@ -20,6 +20,7 @@ from handlers.admin.user_management import user_management
 from handlers.admin.wallet import wallet
 from handlers.admin.reseller_management import reseller_management_router
 from utils.custom_filters import AdminIdFilter
+from utils.telegram import safe_edit_message
 from utils.utils import get_text
 
 admin_router = Router()
@@ -77,11 +78,7 @@ async def admin(**kwargs):
                              reply_markup=kb_builder.as_markup())
     elif isinstance(message, CallbackQuery):
         callback = message
-        if callback.message.caption:
-            await callback.message.delete()
-            await callback.message.answer(text=msg_text, reply_markup=kb_builder.as_markup())
-        else:
-            await callback.message.edit_text(msg_text, reply_markup=kb_builder.as_markup())
+        await safe_edit_message(callback, msg_text, kb_builder.as_markup())
 
 
 @admin_router.callback_query(AdminIdFilter(), AdminMenuCallback.filter())
@@ -89,6 +86,10 @@ async def admin_menu_navigation(callback: CallbackQuery,
                                 state: FSMContext,
                                 callback_data: AdminMenuCallback,
                                 language: Language):
+    try:
+        await callback.answer()
+    except Exception:
+        pass
     current_level = callback_data.level
 
     levels = {

@@ -62,7 +62,7 @@ async def start(message: Message, command: CommandObject, session: AsyncSession,
     tma_host = (config.WEBHOOK_HOST or "").strip().rstrip('/')
     keyboard = []
     if tma_host and tma_host.startswith("https://"):
-        tma_url = f"{tma_host}/app"
+        tma_url = f"{tma_host}/app?tg_id={telegram_id}"
         keyboard.append([types.KeyboardButton(text="🛍️ Open Store WebApp", web_app=types.WebAppInfo(url=tma_url))])
 
     keyboard.extend([
@@ -79,7 +79,8 @@ async def start(message: Message, command: CommandObject, session: AsyncSession,
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     inline_kb = InlineKeyboardBuilder()
     if tma_host and tma_host.startswith("https://"):
-        inline_kb.button(text="🛍️ Launch Store WebApp", web_app=types.WebAppInfo(url=f"{tma_host}/app"))
+        tma_url = f"{tma_host}/app?tg_id={telegram_id}"
+        inline_kb.button(text="🛍️ Launch Store WebApp", web_app=types.WebAppInfo(url=tma_url))
     inline_kb.button(text="🔍 Search Products", callback_data="trigger_search")
     inline_kb.adjust(1)
 
