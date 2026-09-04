@@ -933,7 +933,23 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       align-items: center;
       gap: 12px;
     }
-    .method-icon { font-size: 26px; }
+    .method-icon {
+      font-size: 26px;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .method-brand-img {
+      width: 32px;
+      height: 32px;
+      object-fit: contain;
+      flex-shrink: 0;
+      display: block;
+      border-radius: 6px;
+    }
     .method-name { font-size: 15px; font-weight: 700; }
     .method-sub { font-size: 11px; color: var(--hint); margin-top: 2px; }
     .method-radio-check {
@@ -1717,7 +1733,8 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       <!-- 3. Sham Cash -->
       <div class="recharge-method-card" id="method-card-shamcash" onclick="selectRechargeMethod('shamcash')">
         <div class="method-card-left">
-          <span class="method-icon">💳</span>
+          <img src="https://shamcash.sy/_next/static/media/logo.5be69def.svg" class="method-brand-img" alt="Sham Cash" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+          <span class="method-icon" style="display: none;">💳</span>
           <div>
             <div class="method-name" id="label-method-shamcash-name">شام كاش (Sham Cash)</div>
             <div class="method-sub" id="label-method-shamcash-sub">دفع مباشر وسريع عبر بنك شام كاش</div>
@@ -1729,7 +1746,8 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       <!-- 4. Syriatel Cash (SYP only) -->
       <div class="recharge-method-card" id="method-card-syriatelcash" onclick="selectRechargeMethod('syriatelcash')">
         <div class="method-card-left">
-          <span class="method-icon">📱</span>
+          <img src="https://www.syriatel.sy/assets/img/logo.png" class="method-brand-img" alt="Syriatel Cash" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+          <span class="method-icon" style="display: none;">📱</span>
           <div>
             <div class="method-name" id="label-method-syriatelcash-name">سيرياتيل كاش (Syriatel Cash)</div>
             <div class="method-sub" id="label-method-syriatelcash-sub">دفع مباشر بالليرة السورية (SYP فقط)</div>
