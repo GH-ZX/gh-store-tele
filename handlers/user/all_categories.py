@@ -26,6 +26,7 @@ from services.category import CategoryService
 from services.config import ConfigService
 from services.item import ItemService
 from services.notification import NotificationService
+from utils.telegram import safe_edit_message
 from services.subcategory import SubcategoryService
 from services.restock_notification import RestockNotificationService
 from utils.custom_filters import IsUserExistFilter
@@ -56,10 +57,7 @@ async def all_types(**kwargs):
         await message.answer(text=caption, reply_markup=kb_builder.as_markup())
     else:
         callback: CallbackQuery = message
-        try:
-            await callback.message.edit_text(text=caption, reply_markup=kb_builder.as_markup())
-        except Exception:
-            await callback.message.edit_media(media=media, reply_markup=kb_builder.as_markup())
+        await safe_edit_message(callback, media, kb_builder.as_markup())
 
 
 async def all_categories(**kwargs):
@@ -89,7 +87,7 @@ async def all_categories(**kwargs):
         await state.update_data(filter=None)
         await state.set_state()
         media, kb_builder = await CategoryService.get_buttons(callback_data, state, session, language)
-    await callback.message.edit_media(media=media, reply_markup=kb_builder.as_markup())
+    await safe_edit_message(callback, media, kb_builder.as_markup())
 
 
 async def show_subcategories_in_category(**kwargs):
@@ -124,7 +122,7 @@ async def show_subcategories_in_category(**kwargs):
         await state.update_data(filter=None)
         await state.set_state()
         media, kb_builder = await SubcategoryService.get_buttons(callback_data, state, session, language)
-    await callback.message.edit_media(media=media, reply_markup=kb_builder.as_markup())
+    await safe_edit_message(callback, media, kb_builder.as_markup())
 
 
 async def select_quantity(**kwargs):
@@ -140,7 +138,7 @@ async def select_quantity(**kwargs):
         return
 
     media, kb_builder = await SubcategoryService.get_select_quantity_buttons(callback_data, session, language)
-    await callback.message.edit_media(media=media, reply_markup=kb_builder.as_markup())
+    await safe_edit_message(callback, media, kb_builder.as_markup())
 
 
 async def add_to_cart_confirmation(**kwargs):
@@ -156,7 +154,7 @@ async def add_to_cart_confirmation(**kwargs):
         return
 
     msg, kb_builder = await SubcategoryService.get_add_to_cart_buttons(callback_data, session, language)
-    await callback.message.edit_caption(caption=msg, reply_markup=kb_builder.as_markup())
+    await safe_edit_message(callback, msg, kb_builder.as_markup())
 
 
 async def add_to_cart(**kwargs):
@@ -165,7 +163,7 @@ async def add_to_cart(**kwargs):
     session: AsyncSession = kwargs.get("session")
     language: Language = kwargs.get("language")
     media, kb_builder = await CartService.add_to_cart(callback, callback_data, session, language)
-    await callback.message.edit_media(media=media, reply_markup=kb_builder.as_markup())
+    await safe_edit_message(callback, media, kb_builder.as_markup())
 
 
 @all_categories_router.message(IsUserExistFilter(), F.text, StateFilter(UserStates.filter_items))
@@ -189,6 +187,10 @@ async def navigate_categories(callback: CallbackQuery,
                               state: FSMContext,
                               language: Language):
     current_level = callback_data.level
+    try:
+        await callback.answer()
+    except Exception:
+        pass
 
     levels = {
         0: all_types,
@@ -296,16 +298,7 @@ async def _batstore_products_in_category(callback, callback_data, state, session
     kb.row(_back_to_categories(language))
     caption = get_text(language, BotEntity.USER, "batstore_category_products").format(
         category=cat_name)
-    try:
-        await callback.message.edit_text(text=caption, reply_markup=kb.as_markup())
-    except Exception:
-        from utils.utils import get_bot_photo_id
-        try:
-            await callback.message.edit_media(
-                media=InputMediaPhoto(media=get_bot_photo_id(), caption=caption),
-                reply_markup=kb.as_markup())
-        except Exception as e:
-            logging.warning("Failed to edit batstore products message: %s", e)
+    await safe_edit_message(callback, caption, kb.as_markup())
 
 
 async def _batstore_product_detail(callback, callback_data, state, session, language):
@@ -407,17 +400,13 @@ async def _batstore_product_detail(callback, callback_data, state, session, lang
         text=get_text(language, BotEntity.COMMON, "back_button"),
         callback_data=AllCategoriesCallback.create(
             level=1, batstore_category_name=cat_name).pack()))
+
+    await safe_edit_message(callback, caption, kb.as_markup())
     if product.image_url:
         try:
-            await callback.message.edit_text(text=caption, reply_markup=kb.as_markup())
-            try:
-                await callback.message.answer_photo(photo=product.image_url)
-            except Exception as e:
-                logging.warning("Failed to send product image: %s", e)
-            return
+            await callback.message.answer_photo(photo=product.image_url)
         except Exception as e:
-            logging.warning("Failed to edit product detail message: %s", e)
-    await callback.message.edit_text(text=caption, reply_markup=kb.as_markup())
+            logging.debug("Could not send product photo: %s", e)
 
 
 

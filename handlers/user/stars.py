@@ -16,6 +16,7 @@ from repositories.stars_payment import StarsPaymentRepository
 from services.referral import ReferralService
 from services.notification import NotificationService
 from utils.custom_filters import IsUserExistFilter
+from utils.telegram import safe_edit_message
 from utils.utils import get_text
 
 stars_router = Router(name="stars")
@@ -53,9 +54,11 @@ async def stars_pick(callback: CallbackQuery, callback_data: StarsCallback,
             callback_data=StarsCallback.create(level=1, stars=stars).pack())
     kb_builder.adjust(3)
     kb_builder.row(_back_to_menu(language))
-    await callback.message.edit_caption(
-        caption=get_text(language, BotEntity.COMMON, "stars_pick_amount"),
-        reply_markup=kb_builder.as_markup())
+    await safe_edit_message(
+        callback,
+        get_text(language, BotEntity.COMMON, "stars_pick_amount"),
+        kb_builder.as_markup(),
+    )
 
 
 @stars_router.callback_query(StarsCallback.filter(F.level == 1), IsUserExistFilter())

@@ -17,7 +17,7 @@ from admin import authentication_backend
 from db import create_db_and_tables, engine, get_db_session, session_commit
 from processing.processing import processing_router
 import uvicorn
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from enums.cryptocurrency import Cryptocurrency
 from models.buy import BuyAdmin
 from models.buyItem import BuyItemAdmin
@@ -39,6 +39,8 @@ from models.batstore_order import BatStoreOrderAdmin
 from models.sam_payment import SamPaymentAdmin, SamPaymentDTO
 from models.restock_subscription import RestockSubscriptionAdmin
 from models.stars_payment import StarsPaymentAdmin
+from models.admin_audit_log import AdminAuditLogAdmin
+from services.cart_recovery import CartRecoveryService, cart_recovery_cron
 from repositories.sam_payment import SamPaymentRepository
 from repositories.user import UserRepository
 from repositories.button_media import ButtonMediaRepository
@@ -60,6 +62,7 @@ NotificationService.set_bot(bot)
 BatStoreProductRepository.set_redis(redis)
 authentication_backend.set_redis(redis)
 dp = Dispatcher(storage=RedisStorage(redis))
+CartRecoveryService.set_redis(redis)
 
 
 async def _set_webhook_with_retry() -> None:
@@ -104,6 +107,7 @@ _balance_monitor_task: asyncio.Task | None = None
 _digest_task: asyncio.Task | None = None
 
 
+_recovery_task: asyncio.Task | None = None
 async def _startup() -> None:
     global _polling_task
     await create_db_and_tables()
@@ -119,6 +123,7 @@ async def _startup() -> None:
     _balance_monitor_task = asyncio.create_task(periodic_balance_monitor())
     from services.financial_digest import daily_digest_cron
     _digest_task = asyncio.create_task(daily_digest_cron())
+    _recovery_task = asyncio.create_task(cart_recovery_cron())
     static = Path("static")
     if static.exists() is False:
         static.mkdir()
@@ -165,9 +170,9 @@ async def _startup() -> None:
 
 
 async def _shutdown() -> None:
-    global _polling_task, _sync_loop_task, _balance_monitor_task, _digest_task
+    global _polling_task, _sync_loop_task, _balance_monitor_task, _digest_task, _recovery_task
     logging.warning('Shutting down..')
-    for t in (_polling_task, _sync_loop_task, _balance_monitor_task, _digest_task):
+    for t in (_polling_task, _sync_loop_task, _balance_monitor_task, _digest_task, _recovery_task):
         if t and not t.done():
             t.cancel()
             try:
@@ -227,9 +232,8 @@ admin.add_model_view(BatStoreOrderAdmin)
 admin.add_model_view(SamPaymentAdmin)
 admin.add_model_view(RestockSubscriptionAdmin)
 admin.add_model_view(StarsPaymentAdmin)
+admin.add_model_view(AdminAuditLogAdmin)
 app.include_router(processing_router)
-
-
 @app.get("/health")
 @app.get("/status")
 async def health_check():
@@ -260,6 +264,160 @@ async def health_check():
             "batstore_sync": bool(config.BATSTORE_SYNC_ENABLED),
         },
     )
+
+
+
+@app.get("/api/catalog")
+async def get_tma_catalog():
+    """API endpoint for Telegram Mini App storefront."""
+    async with get_db_session() as session:
+        cats = await BatStoreProductRepository.get_categories(session)
+        products = await BatStoreProductRepository.get_visible(session)
+        sym = config.CURRENCY.get_localized_symbol()
+        data = []
+        for p in products:
+            data.append({
+                "id": p.product_id,
+                "name": p.name,
+                "category": p.category or "Other",
+                "price": p.sell_price_usd,
+                "sym": sym,
+                "description": p.description or "",
+                "emoji": p.emoji or "⚡",
+                "custom_emoji_id": p.custom_emoji_id,
+                "stock": p.stock,
+                "delivery_type": p.delivery_type or "stock",
+            })
+    return {"categories": cats, "products": data}
+
+
+@app.get("/app", response_class=HTMLResponse)
+async def tma_storefront():
+    """Interactive mobile-first Telegram Mini App (TMA) storefront."""
+    sym = config.CURRENCY.get_localized_symbol()
+    html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>GH Store</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {{
+      --bg: var(--tg-theme-bg-color, #0f172a);
+      --text: var(--tg-theme-text-color, #f8fafc);
+      --hint: var(--tg-theme-hint-color, #94a3b8);
+      --btn: var(--tg-theme-button-color, #38bdf8);
+      --btn-text: var(--tg-theme-button-text-color, #ffffff);
+      --card: var(--tg-theme-secondary-bg-color, #1e293b);
+      --border: rgba(255, 255, 255, 0.08);
+    }}
+    * {{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; }}
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 12px; }}
+    header {{ display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }}
+    h1 {{ font-size: 20px; margin: 0; font-weight: 700; display: flex; align-items: center; gap: 6px; }}
+    .search-box {{ width: 100%; margin-bottom: 12px; }}
+    .search-box input {{ width: 100%; background: var(--card); border: 1px solid var(--border); border-radius: 10px; color: var(--text); padding: 10px 14px; font-size: 14px; outline: none; }}
+    .chips {{ display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 12px; }}
+    .chip {{ background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 6px 14px; font-size: 13px; white-space: nowrap; cursor: pointer; }}
+    .chip.active {{ background: var(--btn); color: var(--btn-text); border-color: var(--btn); }}
+    .grid {{ display: grid; grid-template-columns: 1fr; gap: 10px; }}
+    .card {{ background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; justify-content: space-between; }}
+    .card-title {{ font-size: 15px; font-weight: 600; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }}
+    .card-desc {{ font-size: 13px; color: var(--hint); margin-bottom: 10px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }}
+    .card-footer {{ display: flex; align-items: center; justify-content: space-between; }}
+    .price {{ font-size: 16px; font-weight: 700; color: #38bdf8; }}
+    .buy-btn {{ background: var(--btn); color: var(--btn-text); border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }}
+    .stock-badge {{ font-size: 11px; color: var(--hint); margin-top: 2px; }}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🛍️ GH Store</h1>
+    <div id="user-badge" style="font-size: 13px; color: var(--hint);">Storefront</div>
+  </header>
+  <div class="search-box">
+    <input type="text" id="search" placeholder="🔍 Search products (Claude, Gemini, Netflix...)" oninput="filterProducts()">
+  </div>
+  <div class="chips" id="categories"></div>
+  <div class="grid" id="products"></div>
+  <script>
+    const tg = window.Telegram?.WebApp;
+    if (tg) {{ tg.ready(); tg.expand(); }}
+    let allProducts = [];
+    let activeCategory = "All";
+
+    async function loadCatalog() {{
+      try {{
+        const res = await fetch('/api/catalog');
+        const data = await res.json();
+        allProducts = data.products || [];
+        renderCategories(["All", ...(data.categories || [])]);
+        renderProducts(allProducts);
+      }} catch (e) {{
+        document.getElementById('products').innerHTML = '<div style="color: var(--hint); text-align: center; padding: 20px;">Could not load catalog.</div>';
+      }}
+    }}
+
+    function renderCategories(cats) {{
+      const container = document.getElementById('categories');
+      container.innerHTML = cats.map(c => `
+        <div class="chip ${{c === activeCategory ? 'active' : ''}}" onclick="selectCategory('${{c}}')">${{c}}</div>
+      `).join('');
+    }}
+
+    function selectCategory(cat) {{
+      activeCategory = cat;
+      document.querySelectorAll('.chip').forEach(el => el.classList.toggle('active', el.innerText === cat));
+      filterProducts();
+    }}
+
+    function filterProducts() {{
+      const q = (document.getElementById('search').value || '').toLowerCase();
+      const filtered = allProducts.filter(p => {{
+        const matchesCat = activeCategory === "All" || p.category === activeCategory;
+        const matchesSearch = !q || p.name.toLowerCase().includes(q) || (p.description || '').toLowerCase().includes(q);
+        return matchesCat && matchesSearch;
+      }});
+      renderProducts(filtered);
+    }}
+
+    function renderProducts(list) {{
+      const container = document.getElementById('products');
+      if (!list.length) {{
+        container.innerHTML = '<div style="color: var(--hint); text-align: center; padding: 30px;">No products found.</div>';
+        return;
+      }}
+      container.innerHTML = list.map(p => `
+        <div class="card">
+          <div>
+            <div class="card-title">${{p.emoji || '⚡'}} ${{p.name}}</div>
+            <div class="card-desc">${{p.description || 'Instant digital activation & delivery.'}}</div>
+          </div>
+          <div class="card-footer">
+            <div>
+              <div class="price">${{p.price ? p.price.toFixed(2) + p.sym : 'N/A'}}</div>
+              <div class="stock-badge">${{p.stock ? p.stock + ' in stock' : 'Instant order'}}</div>
+            </div>
+            <button class="buy-btn" onclick="buyProduct(${{p.id}}, '${{encodeURIComponent(p.name)}}')">Buy Now</button>
+          </div>
+        </div>
+      `).join('');
+    }}
+
+    function buyProduct(id, name) {{
+      if (tg) {{
+        tg.sendData(JSON.stringify({{ action: "buy_batstore", product_id: id }}));
+        tg.close();
+      }} else {{
+        alert("Please open this store from inside Telegram!");
+      }}
+    }}
+    loadCatalog();
+  </script>
+</body>
+</html>"""
+    return HTMLResponse(content=html_content)
 
 
 @app.post(config.WEBHOOK_PATH)

@@ -26,6 +26,7 @@ from models.batstore_product import format_product_icon
 from models.batstore_order import BatStoreOrderDTO
 from repositories.batstore_order import BatStoreOrderRepository
 from repositories.user import UserRepository
+from utils.telegram import safe_edit_message
 from services.batstore import BatStoreService
 from services.notification import NotificationService
 from services.restock_notification import RestockNotificationService
@@ -71,7 +72,7 @@ async def batstore_categories(callback: CallbackQuery,
         callback_data=AllCategoriesCallback.create(level=0).pack()))
     caption = get_text(language, BotEntity.USER, "batstore_categories_title")
     media = InputMediaPhoto(media=get_bot_photo_id(), caption=caption)
-    await callback.message.edit_media(media=media, reply_markup=kb.as_markup())
+    await safe_edit_message(callback, media, kb.as_markup())
 
 
 # ------------------------------------------------ level 11: product list in category
@@ -135,7 +136,7 @@ async def batstore_products_in_category(callback: CallbackQuery,
         caption = get_text(language, BotEntity.USER, "batstore_category_products").format(
             category=cat_name)
     media = InputMediaPhoto(media=get_bot_photo_id(), caption=caption)
-    await callback.message.edit_media(media=media, reply_markup=kb.as_markup())
+    await safe_edit_message(callback, media, kb.as_markup())
 
 
 # ------------------------------------------------ level 12: product detail + quantity
@@ -224,9 +225,9 @@ async def batstore_product_detail(callback: CallbackQuery,
 
     if product.image_url:
         media = InputMediaPhoto(media=product.image_url, caption=caption)
-        await callback.message.edit_media(media=media, reply_markup=kb.as_markup())
+        await safe_edit_message(callback, media, kb.as_markup())
     else:
-        await callback.message.edit_text(text=caption, reply_markup=kb.as_markup())
+        await safe_edit_message(callback, caption, kb.as_markup())
 
 
 def _max_qty(product, balance: float) -> int:

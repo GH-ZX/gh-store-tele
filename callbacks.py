@@ -83,6 +83,7 @@ class MyProfileCallback(BaseCallback, SortingCallback, prefix="my_profile"):
     language: Language | None = None
     user_role: UserRole = UserRole.USER
     confirmation: bool = False
+    currency: str | None = None
 
     @staticmethod
     def create(level: int,
@@ -95,6 +96,7 @@ class MyProfileCallback(BaseCallback, SortingCallback, prefix="my_profile"):
                language: Language | None = None,
                user_role: UserRole = UserRole.USER,
                confirmation: bool = False,
+               currency: str | None = None,
                page=0) -> 'MyProfileCallback':
         return MyProfileCallback(level=level, buy_id=buy_id, buyItem_id=buyItem_id,
                                  sort_order=sort_order, sort_property=sort_property,
@@ -103,7 +105,9 @@ class MyProfileCallback(BaseCallback, SortingCallback, prefix="my_profile"):
                                  language=language,
                                  user_role=user_role,
                                  confirmation=confirmation,
+                                 currency=currency,
                                  page=page)
+
 
 
 class CartCallback(BaseCallback, prefix="cart"):

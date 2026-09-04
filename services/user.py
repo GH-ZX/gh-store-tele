@@ -20,6 +20,34 @@ from models.user import User, UserDTO
 from repositories.button_media import ButtonMediaRepository
 from repositories.buy import BuyRepository
 from repositories.cart import CartRepository
+def get_vip_tier_info(consume_records: float | None) -> tuple[str, float]:
+    """Return (tier_label, discount_percent) based on lifetime spend."""
+    spent = float(consume_records or 0.0)
+    if spent >= 1000.0:
+        return "💎 Platinum VIP", 10.0
+    elif spent >= 500.0:
+        return "🥇 Gold VIP", 7.0
+    elif spent >= 100.0:
+        return "🥈 Silver VIP", 3.0
+    return "Standard", 0.0
+
+
+def format_currency_display(amount_usd: float, currency_code: str = "USD") -> str:
+    """Format USD amount into user's preferred currency."""
+    code = (currency_code or "USD").upper()
+    if code == "EUR":
+        eur_amt = amount_usd * 0.92
+        return f"€{eur_amt:.2f}"
+    elif code == "SYP":
+        rate = float(config.SAM_SYP_USD_RATE or 0.002551)
+        syp_amt = amount_usd / rate if rate > 0 else amount_usd * 392.0
+        return f"{int(syp_amt):,} ل.س"
+    elif code == "XTR":
+        stars_rate = float(config.GHSTORE_STARS_TO_USD or 0.01)
+        stars = int(amount_usd / stars_rate) if stars_rate > 0 else int(amount_usd * 100)
+        return f"{stars} ⭐"
+    return f"${amount_usd:.2f}"
+
 from repositories.user import UserRepository
 from services.media import MediaService
 from services.config import ConfigService
@@ -73,14 +101,23 @@ class UserService:
                           callback_data=MyProfileCallback.create(level=7))
         kb_builder.button(text=get_text(language, BotEntity.USER, "language"),
                           callback_data=MyProfileCallback.create(level=6))
-        kb_builder.adjust(2)
         user = await UserRepository.get_by_tgid(telegram_id, session)
+        curr_pref = getattr(user, "currency_preference", "USD") or "USD"
+        kb_builder.button(text=f"💱 {curr_pref}",
+                          callback_data=MyProfileCallback.create(level=9))
+        kb_builder.adjust(2)
+
         fiat_balance = round(user.top_up_amount - user.consume_records, 2)
         caption = (get_text(language, BotEntity.USER, "my_profile_msg")
                    .format(telegram_id=user.telegram_id,
                            fiat_balance=fiat_balance,
                            currency_text=config.CURRENCY.get_localized_text(),
                            currency_sym=config.CURRENCY.get_localized_symbol()))
+        tier_label, discount_pct = get_vip_tier_info(user.consume_records)
+        display_bal = format_currency_display(fiat_balance, curr_pref)
+        vip_info = f"\n🎖️ Rank: <b>{tier_label}</b>" + (f" (<b>-{discount_pct:.0f}%</b> checkout discount)" if discount_pct > 0 else "")
+        curr_info = f"\n💱 Display Currency: <b>{curr_pref}</b> (approx: <b>{display_bal}</b>)" if curr_pref != "USD" else ""
+        caption += f"{vip_info}{curr_info}"
         button_media = await ButtonMediaRepository.get_by_button(KeyboardButton.MY_PROFILE, session)
         media = MediaService.convert_to_media(button_media.media_id, caption=caption)
         return media, kb_builder

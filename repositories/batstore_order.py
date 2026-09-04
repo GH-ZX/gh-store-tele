@@ -59,3 +59,21 @@ class BatStoreOrderRepository:
             order.details = [{"delivery_goods": delivery_goods}]
         await session.flush()
         return order
+
+    @staticmethod
+    async def get_by_id(order_id: int, session: AsyncSession | Session) -> BatStoreOrder | None:
+        stmt = select(BatStoreOrder).where(BatStoreOrder.id == order_id)
+        result = await session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    @staticmethod
+    async def mark_warranty_claimed(order_id: int, claimed: bool, session: AsyncSession | Session) -> None:
+        import datetime
+        stmt = select(BatStoreOrder).where(BatStoreOrder.id == order_id)
+        result = await session.execute(stmt)
+        order = result.scalar_one_or_none()
+        if order:
+            order.warranty_claimed = claimed
+            order.warranty_claimed_at = datetime.datetime.now(datetime.timezone.utc)
+            await session.flush()
+        return order

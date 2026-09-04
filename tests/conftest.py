@@ -27,6 +27,8 @@ def _build_config_module() -> ModuleType:
     config.KRYPTO_EXPRESS_API_URL = "https://kryptoexpress.pro/api"
     config.KRYPTO_EXPRESS_API_SECRET = "test-secret"
     config.WEBHOOK_HOST = "https://example.com"
+    config.WEBHOOK_PATH = "/"
+    config.WEBHOOK_SECRET_TOKEN = "secret"
     config.WEBAPP_HOST = "127.0.0.1"
     config.WEBAPP_PORT = 5000
     config.CRYPTO_FORWARDING_MODE = False
@@ -37,7 +39,7 @@ def _build_config_module() -> ModuleType:
     config.SOL_FORWARDING_ADDRESS = "sol-forward"
     config.BNB_FORWARDING_ADDRESS = "bnb-forward"
     config.ADMIN_ID_LIST = [1]
-    config.TOKEN = "token"
+    config.TOKEN = "123456789:ABCdefGHIjklMNOpqrsTUVwxyz123456789"
     config.MULTIBOT = False
     config.TELEGRAM_PROXY_URL = None
     config.REDIS_HOST = "localhost"
@@ -85,9 +87,13 @@ def _build_config_module() -> ModuleType:
 
 sys.modules.setdefault("config", _build_config_module())
 
-sqladmin_module = ModuleType("sqladmin")
-sqladmin_module.ModelView = type("ModelView", (), {"__init_subclass__": classmethod(lambda cls, **kwargs: None)})
-sys.modules.setdefault("sqladmin", sqladmin_module)
+try:
+    import sqladmin
+except ImportError:
+    sqladmin_module = ModuleType("sqladmin")
+    sqladmin_module.ModelView = type("ModelView", (), {"__init_subclass__": classmethod(lambda cls, **kwargs: None)})
+    sqladmin_module.Admin = type("Admin", (), {"__init__": lambda self, *args, **kwargs: None, "add_model_view": lambda self, *args, **kwargs: None})
+    sys.modules.setdefault("sqladmin", sqladmin_module)
 
 jose_module = ModuleType("jose")
 jose_module.JWTError = Exception
@@ -124,23 +130,27 @@ pyngrok_module.ngrok = SimpleNamespace(
 )
 sys.modules.setdefault("pyngrok", pyngrok_module)
 
-redis_module = ModuleType("redis")
-redis_asyncio_module = ModuleType("redis.asyncio")
+try:
+    import redis
+    import redis.asyncio
+except ImportError:
+    redis_module = ModuleType("redis")
+    redis_asyncio_module = ModuleType("redis.asyncio")
 
+    class _Redis:
+        def __init__(self, *args, **kwargs):
+            pass
+        async def close(self):
+            return None
 
-class _Redis:
-    def __init__(self, *args, **kwargs):
-        pass
-
-    async def close(self):
-        return None
-
-
-redis_asyncio_module.Redis = _Redis
-redis_module.asyncio = redis_asyncio_module
-sys.modules.setdefault("redis", redis_module)
-sys.modules.setdefault("redis.asyncio", redis_asyncio_module)
-
+    redis_asyncio_client_module = ModuleType("redis.asyncio.client")
+    redis_asyncio_client_module.Redis = _Redis
+    redis_asyncio_module.Redis = _Redis
+    redis_asyncio_module.client = redis_asyncio_client_module
+    redis_module.asyncio = redis_asyncio_module
+    sys.modules.setdefault("redis", redis_module)
+    sys.modules.setdefault("redis.asyncio", redis_asyncio_module)
+    sys.modules.setdefault("redis.asyncio.client", redis_asyncio_client_module)
 db_module = ModuleType("db")
 
 
@@ -169,4 +179,19 @@ db_module.session_flush = _noop_async
 db_module.session_commit = _noop_async
 db_module.get_db_session = _noop_session_cm
 db_module.create_db_and_tables = _noop_async
+db_module.engine = SimpleNamespace()
 sys.modules.setdefault("db", db_module)
+
+
+import pytest
+
+@pytest.fixture(autouse=True)
+def _isolate_notification_bot():
+    try:
+        from services.notification import NotificationService
+        old_bot = NotificationService._shared_bot
+        NotificationService._shared_bot = None
+        yield
+        NotificationService._shared_bot = old_bot
+    except Exception:
+        yield

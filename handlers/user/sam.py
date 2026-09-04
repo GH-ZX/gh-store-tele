@@ -17,6 +17,7 @@ from services.sam import SamService
 from services.config import ConfigService
 from utils.custom_filters import IsUserExistFilter
 from utils.utils import get_text
+from utils.telegram import safe_edit_message
 
 sam_router = Router(name="sam")
 
@@ -51,9 +52,11 @@ async def sam_pick_provider(callback: CallbackQuery, callback_data: SamCallback,
     if not shamcash_enabled and not syriatel_enabled:
         await callback.answer(get_text(language, BotEntity.COMMON, "sam_pay_failed"))
         return
-    await callback.message.edit_caption(
-        caption=get_text(language, BotEntity.COMMON, "sam_pick_provider"),
-        reply_markup=kb_builder.as_markup())
+    await safe_edit_message(
+        callback,
+        get_text(language, BotEntity.COMMON, "sam_pick_provider"),
+        kb_builder.as_markup(),
+    )
 
 
 @sam_router.callback_query(SamCallback.filter(F.level == 1), IsUserExistFilter())
@@ -64,9 +67,11 @@ async def sam_amount_prompt(callback: CallbackQuery, callback_data: SamCallback,
     currency = config.SAM_CURRENCY or "USD"
     kb_builder = InlineKeyboardBuilder()
     kb_builder.row(_back(language))
-    await callback.message.edit_caption(
-        caption=get_text(language, BotEntity.COMMON, "sam_amount_prompt").format(currency=currency),
-        reply_markup=kb_builder.as_markup())
+    await safe_edit_message(
+        callback,
+        get_text(language, BotEntity.COMMON, "sam_amount_prompt").format(currency=currency),
+        kb_builder.as_markup(),
+    )
 
 
 @sam_router.message(UserStates.sam_top_up_amount, F.text, IsUserExistFilter())

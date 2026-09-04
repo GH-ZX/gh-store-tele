@@ -59,26 +59,48 @@ class BatStoreService:
         return headers
 
     @staticmethod
-    async def _resolve(session: AsyncSession | Session) -> tuple[str, str | None]:
-        """Resolve DB-first (admin-editable) base URL + API key, as a session may
-        not always be the calling context. Prefer the ambient session when the
-        caller has one; otherwise open a short-lived one."""
+    async def _resolve(session: AsyncSession | Session) -> tuple[str, str | None, str | None]:
+        """Resolve primary base URL, secondary failover mirror URL, and API key."""
         try:
             base = await ConfigService.get(session, "BATSTORE_API_URL",
                                            env_fallback=config.BATSTORE_API_URL,
                                            default=BatStoreService.BASE_DEFAULT)
+            base_sec = await ConfigService.get(session, "BATSTORE_API_URL_SECONDARY",
+                                               env_fallback=getattr(config, "BATSTORE_API_URL_SECONDARY", None),
+                                               default=None)
             key = await ConfigService.get(session, "BATSTORE_API_KEY",
                                           env_fallback=config.BATSTORE_API_KEY)
         except Exception as e:
             logging.warning("ConfigService resolution failed, using env fallback: %s", e)
             base = ConfigService.fallback_from_env("BATSTORE_API_URL", BatStoreService.BASE_DEFAULT)
+            base_sec = ConfigService.fallback_from_env("BATSTORE_API_URL_SECONDARY", None)
             key = ConfigService.fallback_from_env("BATSTORE_API_KEY")
-        return (base or BatStoreService.BASE_DEFAULT), key
+        return (base or BatStoreService.BASE_DEFAULT), base_sec, key
+
+    @staticmethod
+    async def _request(method: str, path: str, session: AsyncSession | Session,
+                       key_override: str | None = None, **kwargs) -> "httpx.Response":
+        base, base_sec, key = await BatStoreService._resolve(session)
+        effective_key = key_override or key
+        headers = BatStoreService._headers(effective_key)
+        if "headers" in kwargs:
+            headers.update(kwargs.pop("headers"))
+
+        async with await BatStoreService._client() as client:
+            try:
+                resp = await client.request(method, f"{base}{path}", headers=headers, **kwargs)
+                if resp.status_code in (502, 503, 504) and base_sec:
+                    logging.warning("Primary reseller API %s returned %s; retrying secondary mirror %s", base, resp.status_code, base_sec)
+                    resp = await client.request(method, f"{base_sec}{path}", headers=headers, **kwargs)
+                return resp
+            except Exception as e:
+                if base_sec:
+                    logging.warning("Primary reseller API %s failed (%s); retrying secondary mirror %s", base, e, base_sec)
+                    return await client.request(method, f"{base_sec}{path}", headers=headers, **kwargs)
+                raise
     @staticmethod
     async def me(session: AsyncSession | Session) -> dict:
-        base, key = await BatStoreService._resolve(session)
-        async with await BatStoreService._client() as client:
-            resp = await client.get(f"{base}/api/reseller/me", headers=BatStoreService._headers(key))
+        resp = await BatStoreService._request("GET", "/api/reseller/me", session)
         if resp.status_code != 200:
             raise BatStoreAPIError(f"GET /me {resp.status_code}: {resp.text[:200]}")
         data = resp.json()
@@ -88,10 +110,7 @@ class BatStoreService:
 
     @staticmethod
     async def list_products(session: AsyncSession | Session) -> list[dict]:
-        base, key = await BatStoreService._resolve(session)
-        async with await BatStoreService._client() as client:
-            resp = await client.get(f"{base}/api/reseller/products",
-                                    headers=BatStoreService._headers(key))
+        resp = await BatStoreService._request("GET", "/api/reseller/products", session)
         if resp.status_code != 200:
             raise BatStoreAPIError(f"GET /products {resp.status_code}: {resp.text[:200]}")
         data = resp.json()
@@ -104,13 +123,9 @@ class BatStoreService:
                     product_id: int,
                     quantity: int = 1,
                     key_override: str | None = None) -> dict:
-        base, key = await BatStoreService._resolve(session)
-        if key_override:
-            key = key_override
         payload = {"product_id": product_id, "quantity": quantity}
-        async with await BatStoreService._client() as client:
-            resp = await client.post(f"{base}/api/reseller/quote",
-                                     json=payload, headers=BatStoreService._headers(key))
+        resp = await BatStoreService._request("POST", "/api/reseller/quote", session,
+                                              key_override=key_override, json=payload)
         if resp.status_code != 200:
             raise BatStoreAPIError(f"POST /quote {resp.status_code}: {resp.text[:200]}")
         data = resp.json()
@@ -126,9 +141,6 @@ class BatStoreService:
                           customer_reference: str | None = None,
                           idempotency_key: str | None = None,
                           key_override: str | None = None) -> dict:
-        base, key = await BatStoreService._resolve(session)
-        if key_override:
-            key = key_override
         payload = {"product_id": product_id, "quantity": quantity}
         if activation_identifier:
             payload["activation_identifier"] = activation_identifier
@@ -136,9 +148,8 @@ class BatStoreService:
             payload["customer_reference"] = customer_reference
         if idempotency_key:
             payload["idempotency_key"] = idempotency_key
-        async with await BatStoreService._client() as client:
-            resp = await client.post(f"{base}/api/reseller/orders",
-                                     json=payload, headers=BatStoreService._headers(key))
+        resp = await BatStoreService._request("POST", "/api/reseller/orders", session,
+                                              key_override=key_override, json=payload)
         if resp.status_code not in (200, 402):
             raise BatStoreAPIError(f"POST /orders {resp.status_code}: {resp.text[:200]}")
         data = resp.json()
@@ -148,10 +159,7 @@ class BatStoreService:
 
     @staticmethod
     async def get_order(session: AsyncSession | Session, order_id: int) -> dict:
-        base, key = await BatStoreService._resolve(session)
-        async with await BatStoreService._client() as client:
-            resp = await client.get(f"{base}/api/reseller/orders/{order_id}",
-                                    headers=BatStoreService._headers(key))
+        resp = await BatStoreService._request("GET", f"/api/reseller/orders/{order_id}", session)
         if resp.status_code != 200:
             raise BatStoreAPIError(f"GET /orders/{order_id} {resp.status_code}: {resp.text[:200]}")
         data = resp.json()
@@ -214,8 +222,22 @@ class BatStoreService:
             # per-product percent when set, else global percent
             pct = mval if has_value else global_percent
             return round(cost * (1 + pct / 100.0) + global_fixed, 2)
+        if mtype == "tiered":
+            tier_pct = BatStoreService.compute_tiered_margin(cost, global_percent)
+            return round(cost * (1 + tier_pct / 100.0) + global_fixed, 2)
         # no per-product type -> global defaults
         return round(cost * (1 + global_percent / 100.0) + global_fixed, 2)
+
+    @staticmethod
+    def compute_tiered_margin(cost: float, fallback_percent: float = 20.0) -> float:
+        """Dynamic margin curve: higher margin for cheaper items, lower for high-ticket items."""
+        if cost <= 10.0:
+            return 40.0
+        elif cost <= 50.0:
+            return 25.0
+        elif cost > 50.0:
+            return 15.0
+        return fallback_percent
 
     @staticmethod
     async def _global_margin(session: AsyncSession | Session) -> tuple[float, float, str]:

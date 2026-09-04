@@ -33,6 +33,7 @@ from models.batstore_order import BatStoreOrder
 from models.sam_payment import SamPayment
 from models.restock_subscription import RestockSubscription
 from models.stars_payment import StarsPayment
+from models.admin_audit_log import AdminAuditLog
 url = f"postgresql+asyncpg://{config.DB_USER}:{config.DB_PASS}@{config.DB_HOST}:{config.DB_PORT}/{config.DB_NAME}"
 engine = create_async_engine(
     url,

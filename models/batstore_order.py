@@ -1,7 +1,7 @@
 import datetime
 from pydantic import BaseModel
 from sqladmin import ModelView
-from sqlalchemy import Column, Integer, BigInteger, Float, Text, DateTime, JSON
+from sqlalchemy import Column, Integer, BigInteger, Float, Text, DateTime, JSON, Boolean
 from sqlalchemy.orm import relationship
 
 from models.base import Base
@@ -24,6 +24,8 @@ class BatStoreOrder(Base):
     customer_reference = Column(Text, nullable=True)
     details = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.datetime.now)
+    warranty_claimed = Column(Boolean, default=False, nullable=False)
+    warranty_claimed_at = Column(DateTime(timezone=True), nullable=True)
 
     def __repr__(self):
         return f"BatStoreOrder ID: {self.id}"
@@ -38,6 +40,8 @@ class BatStoreOrderDTO(BaseModel):
     customer_reference: str | None = None
     details: list | None = None
     created_at: datetime.datetime | None = None
+    warranty_claimed: bool = False
+    warranty_claimed_at: datetime.datetime | None = None
 
 
 class BatStoreOrderAdmin(ModelView, model=BatStoreOrder):

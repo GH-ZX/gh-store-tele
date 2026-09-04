@@ -13,6 +13,7 @@ from services.notification import NotificationService
 from utils.custom_filters import IsUserExistFilter
 
 cart_router = Router()
+from utils.telegram import safe_edit_message
 
 
 @cart_router.message(F.text.in_(KB.get_localized_set(KB.CART)), IsUserExistFilter())
@@ -32,7 +33,7 @@ async def show_cart(**kwargs):
         await NotificationService.answer_media(message, media, kb_builder.as_markup())
     elif isinstance(message, CallbackQuery):
         callback = message
-        await callback.message.edit_media(media=media, reply_markup=kb_builder.as_markup())
+        await safe_edit_message(callback, media, kb_builder.as_markup())
 
 
 async def show_cart_item(**kwargs):
@@ -41,7 +42,7 @@ async def show_cart_item(**kwargs):
     session: AsyncSession = kwargs.get("session")
     language: Language = kwargs.get("language")
     msg, kb_builder = await CartService.show_cart_item(callback_data, session, language)
-    await callback.message.edit_caption(caption=msg, reply_markup=kb_builder.as_markup())
+    await safe_edit_message(callback, msg, kb_builder.as_markup())
 
 
 async def checkout_processing(**kwargs):
@@ -51,7 +52,7 @@ async def checkout_processing(**kwargs):
     state: FSMContext = kwargs.get("state")
     language: Language = kwargs.get("language")
     msg, kb_builder = await CartService.checkout_processing(callback, callback_data, state, session, language)
-    await callback.message.edit_caption(caption=msg, reply_markup=kb_builder.as_markup())
+    await safe_edit_message(callback, msg, kb_builder.as_markup())
 
 
 async def buy_processing(**kwargs):
@@ -62,7 +63,7 @@ async def buy_processing(**kwargs):
     language: Language = kwargs.get("language")
     await callback.message.edit_reply_markup()
     msg, kb_builder = await CartService.buy_processing(callback, callback_data, state, session, language)
-    await callback.message.edit_caption(caption=msg, reply_markup=kb_builder.as_markup())
+    await safe_edit_message(callback, msg, kb_builder.as_markup())
 
 
 async def set_coupon(**kwargs):
@@ -71,7 +72,7 @@ async def set_coupon(**kwargs):
     state: FSMContext = kwargs.get("state")
     language: Language = kwargs.get("language")
     msg, kb_builder = await CartService.set_coupon(callback_data, state, language)
-    message = await callback.message.edit_caption(caption=msg, reply_markup=kb_builder.as_markup())
+    await safe_edit_message(callback, msg, kb_builder.as_markup())
     await state.update_data(msg_id=message.message_id, chat_id=message.chat.id)
 
 
@@ -80,7 +81,7 @@ async def set_shipping_address(**kwargs):
     state: FSMContext = kwargs.get("state")
     language: Language = kwargs.get("language")
     msg, kb_builder = await CartService.set_shipping_address(state, language)
-    message = await callback.message.edit_caption(caption=msg, reply_markup=kb_builder.as_markup())
+    await safe_edit_message(callback, msg, kb_builder.as_markup())
     await state.update_data(msg_id=message.message_id, chat_id=message.chat.id)
 
 
@@ -90,7 +91,7 @@ async def pick_shipping_option(**kwargs):
     language: Language = kwargs.get("language")
     session: AsyncSession = kwargs.get("session")
     msg, kb_builder = await CartService.get_shipping_options_paginated(callback_data.page, session, language)
-    await callback.message.edit_caption(caption=msg, reply_markup=kb_builder.as_markup())
+    await safe_edit_message(callback, msg, kb_builder.as_markup())
 
 
 @cart_router.message(F.text, IsUserExistFilter(), StateFilter(UserStates.coupon,
@@ -107,6 +108,10 @@ async def navigate_cart_process(callback: CallbackQuery,
                                 session: AsyncSession | Session,
                                 state: FSMContext,
                                 language: Language):
+    try:
+        await callback.answer()
+    except Exception:
+        pass
     current_level = callback_data.level
 
     levels = {
