@@ -41,6 +41,7 @@ from models.restock_subscription import RestockSubscriptionAdmin
 from models.stars_payment import StarsPaymentAdmin
 from models.admin_audit_log import AdminAuditLogAdmin
 from models.gift_voucher import GiftVoucherAdmin
+from models.storefront_category import StorefrontCategoryAdmin
 from repositories.gift_voucher import GiftVoucherRepository
 from services.cart_recovery import CartRecoveryService, cart_recovery_cron
 from repositories.sam_payment import SamPaymentRepository
@@ -268,6 +269,7 @@ admin.add_model_view(RestockSubscriptionAdmin)
 admin.add_model_view(StarsPaymentAdmin)
 admin.add_model_view(AdminAuditLogAdmin)
 admin.add_model_view(GiftVoucherAdmin)
+admin.add_model_view(StorefrontCategoryAdmin)
 app.include_router(processing_router)
 @app.get("/health")
 @app.get("/status")
@@ -306,25 +308,55 @@ async def health_check():
 async def get_tma_catalog():
     """API endpoint for Telegram Mini App storefront."""
     async with get_db_session() as session:
-        cats = await BatStoreProductRepository.get_categories(session)
+        from repositories.storefront_category import StorefrontCategoryRepository
+        from services.product_spec import ProductSpecParser
+
+        cats_db = await StorefrontCategoryRepository.get_all_visible(session)
+        cats_list = []
+        for c in cats_db:
+            cats_list.append({
+                "id": c.id,
+                "name": c.name,
+                "name_ar": c.name_ar,
+                "name_en": c.name_en,
+                "image_url": c.image_url,
+                "icon": c.icon or "📦",
+                "preview_ar": c.preview_ar,
+                "preview_en": c.preview_en,
+                "sort_order": c.sort_order,
+            })
+
+        if not cats_list:
+            raw_cats = await BatStoreProductRepository.get_categories(session)
+            cats_list = [{"id": i, "name": c, "name_ar": c, "name_en": c, "icon": "📦", "image_url": ""} for i, c in enumerate(raw_cats, 1)]
+
         products = await BatStoreProductRepository.get_visible(session)
         sym = config.CURRENCY.get_localized_symbol()
         data = []
         for p in products:
+            specs = ProductSpecParser.parse(p.name)
+            clean_title = p.custom_name or specs["clean_name"] or p.name
             data.append({
                 "id": p.product_id,
                 "name": p.name,
+                "clean_name": clean_title,
                 "category": p.category or "Other",
                 "price": p.sell_price_usd,
                 "sym": sym,
                 "description": p.description or "",
                 "description_ar": getattr(p, "description_ar", None) or "",
+                "duration_ar": specs["duration_ar"],
+                "duration_en": specs["duration_en"],
+                "warranty_ar": specs["warranty_ar"],
+                "warranty_en": specs["warranty_en"],
+                "type_ar": specs["type_ar"],
+                "type_en": specs["type_en"],
                 "emoji": p.emoji or "⚡",
                 "custom_emoji_id": p.custom_emoji_id,
                 "stock": p.stock,
                 "delivery_type": p.delivery_type or "stock",
             })
-    return {"categories": cats, "products": data}
+    return {"categories": cats_list, "products": data}
 
 
 _sse_subscribers: set[asyncio.Queue] = set()

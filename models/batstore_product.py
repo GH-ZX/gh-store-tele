@@ -157,6 +157,7 @@ class BatStoreProduct(Base):
     id = Column(Integer, primary_key=True)
     product_id = Column(Integer, unique=True, nullable=False, index=True)
     name = Column(String, nullable=False)
+    custom_name = Column(String, nullable=True)  # Admin-overridden clean display name
     description = Column(Text, nullable=True)
     description_ar = Column(Text, nullable=True)
     emoji = Column(String, nullable=True)
@@ -186,6 +187,7 @@ class BatStoreProductDTO(BaseModel):
     id: int | None = None
     product_id: int | None = None
     name: str | None = None
+    custom_name: str | None = None
     description: str | None = None
     description_ar: str | None = None
     emoji: str | None = None
@@ -212,6 +214,7 @@ class BatStoreProductAdmin(ModelView, model=BatStoreProduct):
 
     column_list = [BatStoreProduct.product_id,
                    BatStoreProduct.name,
+                   BatStoreProduct.custom_name,
                    BatStoreProduct.emoji,
                    BatStoreProduct.custom_emoji_id,
                    BatStoreProduct.category,
@@ -224,7 +227,8 @@ class BatStoreProductAdmin(ModelView, model=BatStoreProduct):
                    BatStoreProduct.hidden]
     column_labels = {
         BatStoreProduct.product_id: "Product ID",
-        BatStoreProduct.name: "Name",
+        BatStoreProduct.name: "Raw Name",
+        BatStoreProduct.custom_name: "Custom Display Name",
         BatStoreProduct.category: "Category",
         BatStoreProduct.cost_usd: "Cost (USD)",
         BatStoreProduct.sell_price_usd: "Sell (USD)",
@@ -244,8 +248,8 @@ class BatStoreProductAdmin(ModelView, model=BatStoreProduct):
                             BatStoreProduct.stock]
     column_default_sort = [(BatStoreProduct.name, True)]
 
-    form_columns = ["name", "category", "cost_usd", "sell_price_usd", "margin_type", "margin_value",
-                    "hidden", "delivery_type", "stock", "warranty_days", "description"]
+    form_columns = ["name", "custom_name", "category", "cost_usd", "sell_price_usd", "margin_type", "margin_value",
+                    "hidden", "delivery_type", "stock", "warranty_days", "description", "description_ar"]
 
     can_delete = False
     can_create = True

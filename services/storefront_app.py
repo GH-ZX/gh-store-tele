@@ -1,7 +1,8 @@
 """Telegram Mini App (TMA) Mobile-First Storefront.
 
 Features:
-- Clean Product Rows: Eliminated repetitive 'Instant Delivery' labels, rendering clean stock badges (🟢 In Stock, 🔴 Out of Stock) and subtle custom activation tags.
+- Dynamic Database Storefront Categories: Consumes categories, 3D images, bilingual titles, and previews from database via /api/catalog (editable in SQLAdmin).
+- Clean Product Names & Structured Spec Badges: Cleans raw supplier titles into standardized brand names and renders Duration, Warranty, and Account Type badges.
 - Stock Priority Sorting: In-stock products always appear first in every catalog and filtered view, with out-of-stock items sinking to the bottom.
 - Vector SVG Favorites: Replaced emoji hearts with sleek, animated vector SVG outline/fill heart icons with drop-shadow glow.
 - Syriatel Cash SYP Denomination: Highlights that Syriatel Cash receives Syrian Pounds (SYP only) and displays converted live approximate SYP amounts on recharge controls.
@@ -265,6 +266,45 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       transform: scale(1.12);
     }
 
+    /* Structured Spec Pills in Product Cards */
+    .prod-specs-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 5px;
+      margin-top: 5px;
+    }
+    .spec-pill {
+      display: inline-flex;
+      align-items: center;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 6px;
+      white-space: nowrap;
+      line-height: 1.25;
+    }
+    .spec-pill.duration {
+      background: rgba(56, 189, 248, 0.12);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.28);
+    }
+    .spec-pill.warranty {
+      background: rgba(16, 185, 129, 0.12);
+      color: #10b981;
+      border: 1px solid rgba(16, 185, 129, 0.28);
+    }
+    .spec-pill.warranty-none {
+      background: rgba(239, 68, 68, 0.12);
+      color: #ef4444;
+      border: 1px solid rgba(239, 68, 68, 0.28);
+    }
+    .spec-pill.type {
+      background: rgba(168, 85, 247, 0.12);
+      color: #c084fc;
+      border: 1px solid rgba(168, 85, 247, 0.28);
+    }
+
     /* Promotional Hero Banner */
     .hero-banner {
       background: linear-gradient(135deg, var(--card), var(--card-hover));
@@ -369,7 +409,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     .catalog-visual-overlay {
       position: absolute;
       inset: 0;
-      background: linear-gradient(180deg, rgba(0, 0, 0, 0.15) 0%, rgba(9, 14, 26, 0.9) 100%);
+      background: linear-gradient(180deg, rgba(9, 14, 26, 0.2) 0%, rgba(9, 14, 26, 0.5) 45%, rgba(9, 14, 26, 0.94) 100%);
       pointer-events: none;
     }
     .catalog-visual-top {
@@ -398,7 +438,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       font-size: 15px;
       font-weight: 800;
       color: #ffffff;
-      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.95);
       margin-bottom: 3px;
       line-height: 1.25;
     }
@@ -541,18 +581,12 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     }
     .prod-title {
       font-size: 15px;
-      font-weight: 600;
+      font-weight: 700;
       margin-bottom: 2px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-    }
-    .prod-desc {
-      font-size: 12px;
-      color: var(--hint);
-      display: flex;
-      align-items: center;
-      gap: 6px;
+      color: var(--text);
     }
     .prod-price-box {
       text-align: end;
@@ -1204,7 +1238,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     </div>
   </main>
 
-  <!-- DEDICATED IN-APP PRODUCT DETAIL PAGE (FIXED NAVIGATION & PRESERVED DOM) -->
+  <!-- DEDICATED IN-APP PRODUCT DETAIL PAGE -->
   <section id="view-product-detail" class="tab-view">
     <div class="subview-header">
       <button class="btn-back-catalog" onclick="closeProductDetailPage()">
@@ -1226,10 +1260,13 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       <div class="hero-cat" id="prod-hero-cat">حساب رقمي</div>
     </div>
 
-    <div class="badges-flex">
+    <!-- Structured Spec Badges in Product Detail -->
+    <div class="badges-flex" id="detail-badges-box">
       <div class="pill-badge" id="prod-delivery-badge">⚡ تسليم تلقائي فوري</div>
-      <div class="pill-badge" id="prod-warranty-badge">🛡️ ضمان 30 يوم</div>
       <div class="pill-badge" id="prod-stock-badge">🟢 متوفر</div>
+      <div class="pill-badge" id="prod-dur-badge" style="display: none;"></div>
+      <div class="pill-badge" id="prod-war-badge" style="display: none;"></div>
+      <div class="pill-badge" id="prod-typ-badge" style="display: none;"></div>
     </div>
 
     <div class="inset-card">
@@ -1795,8 +1832,8 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       });
     }
 
-    // Bilingual Collections Config with Curated HD Cyber & 3D Visual Pictures
-    const CATALOG_META = {
+    // Default Category Fallback Meta
+    const DEFAULT_CATALOG_META = {
       "AI & Chatbots": {
         arTitle: "🤖 الذكاء الاصطناعي",
         enTitle: "🤖 AI & Chatbots",
@@ -2279,8 +2316,13 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
       renderCatalogsGrid();
       if (activeCatalog) {
-        const meta = CATALOG_META[activeCatalog];
-        const dispTitle = (lang === 'ar' && meta?.arTitle) ? meta.arTitle : (meta?.enTitle || activeCatalog);
+        let catObj = categoriesList.find(c => (typeof c === 'object' ? c.name : c) === activeCatalog);
+        let dispTitle = activeCatalog;
+        if (catObj && typeof catObj === 'object') {
+          dispTitle = (lang === 'ar' ? catObj.name_ar : catObj.name_en) || activeCatalog;
+        } else if (DEFAULT_CATALOG_META[activeCatalog]) {
+          dispTitle = (lang === 'ar' ? DEFAULT_CATALOG_META[activeCatalog].arTitle : DEFAULT_CATALOG_META[activeCatalog].enTitle) || activeCatalog;
+        }
         setText('active-collection-title', dispTitle);
         let filtered = allProducts.filter(p => p.category === activeCatalog);
         filtered = filterAndSortProducts(filtered);
@@ -2373,39 +2415,46 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       renderCatalogsGrid();
     }
 
+    // DYNAMIC DATABASE-DRIVEN CATEGORIES RENDERING
     function renderCatalogsGrid() {
       const container = document.getElementById('catalogs-grid');
       if (!container) return;
-
-      const groups = {};
-      categoriesList.forEach(c => {
-        groups[c] = allProducts.filter(p => p.category === c);
-      });
 
       const d = I18N[currentAppLanguage] || I18N.ar;
       const isGrid = (currentCatalogViewMode === 'grid');
 
       container.className = `catalogs-grid ${isGrid ? 'grid-layout' : 'list-layout'}`;
 
-      container.innerHTML = Object.keys(groups).map(catName => {
-        const items = groups[catName];
+      container.innerHTML = categoriesList.map(catItem => {
+        const catName = (typeof catItem === 'object' && catItem.name) ? catItem.name : String(catItem);
+        const items = allProducts.filter(p => p.category === catName);
         if (!items || !items.length) return '';
-        const meta = CATALOG_META[catName] || {
-          arTitle: catName,
-          enTitle: catName,
-          icon: "📦",
-          image: "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=600&auto=format&fit=crop&q=80",
-          arPreview: "منتجات رقمية",
-          enPreview: "Digital goods"
-        };
+
+        // Prioritize dynamic DB category values, fallback to static defaults
+        let displayTitle = catName;
+        let displayPreview = '';
+        let imageUrl = '';
+        let icon = '📦';
+
+        if (typeof catItem === 'object' && catItem.image_url) {
+          displayTitle = (currentAppLanguage === 'ar' && catItem.name_ar) ? catItem.name_ar : (catItem.name_en || catName);
+          displayPreview = (currentAppLanguage === 'ar' && catItem.preview_ar) ? catItem.preview_ar : (catItem.preview_en || '');
+          imageUrl = catItem.image_url;
+          icon = catItem.icon || '📦';
+        } else {
+          const fallback = DEFAULT_CATALOG_META[catName] || {};
+          displayTitle = (currentAppLanguage === 'ar' && fallback.arTitle) ? fallback.arTitle : (fallback.enTitle || catName);
+          displayPreview = (currentAppLanguage === 'ar' && fallback.arPreview) ? fallback.arPreview : (fallback.enPreview || '');
+          imageUrl = fallback.image || 'https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?w=800&auto=format&fit=crop&q=85';
+          icon = fallback.icon || '📦';
+        }
+
         const minPrice = Math.min(...items.map(p => p.price || 999));
         const sym = items[0]?.sym || '$';
-        const displayTitle = (currentAppLanguage === 'ar' && meta.arTitle) ? meta.arTitle : (meta.enTitle || catName);
-        const displayPreview = (currentAppLanguage === 'ar' && meta.arPreview) ? meta.arPreview : (meta.enPreview || meta.arPreview);
 
         if (isGrid) {
           return `
-            <div class="catalog-visual-card" style="background-image: url('${meta.image}');" onclick="openCollection('${catName.replace(/'/g, "\\\\'")}')">
+            <div class="catalog-visual-card" style="background-image: url('${imageUrl}');" onclick="openCollection('${catName.replace(/'/g, "\\\\'")}')">
               <div class="catalog-visual-overlay"></div>
               <div class="catalog-visual-top">
                 <span class="catalog-visual-pill">${items.length} ${d.items_suffix}</span>
@@ -2425,7 +2474,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         return `
           <div class="catalog-list-card" onclick="openCollection('${catName.replace(/'/g, "\\\\'")}')">
             <div class="catalog-left">
-              <div class="catalog-icon-box">${meta.icon}</div>
+              <div class="catalog-icon-box">${icon}</div>
               <div class="catalog-info">
                 <div class="catalog-name">${displayTitle}</div>
                 <div class="catalog-sub">
@@ -2448,8 +2497,14 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       activeCatalog = catName;
       document.getElementById('catalogs-collection-mode').style.display = 'none';
       document.getElementById('products-catalog-mode').style.display = 'block';
-      const meta = CATALOG_META[catName];
-      const dispTitle = (currentAppLanguage === 'ar' && meta?.arTitle) ? meta.arTitle : (meta?.enTitle || catName);
+
+      let catObj = categoriesList.find(c => (typeof c === 'object' ? c.name : c) === catName);
+      let dispTitle = catName;
+      if (catObj && typeof catObj === 'object') {
+        dispTitle = (currentAppLanguage === 'ar' ? catObj.name_ar : catObj.name_en) || catName;
+      } else if (DEFAULT_CATALOG_META[catName]) {
+        dispTitle = (currentAppLanguage === 'ar' ? DEFAULT_CATALOG_META[catName].arTitle : DEFAULT_CATALOG_META[catName].enTitle) || catName;
+      }
       document.getElementById('active-collection-title').innerText = dispTitle;
 
       let filtered = allProducts.filter(p => p.category === catName);
@@ -2495,6 +2550,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       const q = (document.getElementById('store-search-input').value || '').trim().toLowerCase();
       if (q) {
         baseList = baseList.filter(p =>
+          (p.clean_name || p.name).toLowerCase().includes(q) ||
           p.name.toLowerCase().includes(q) ||
           (p.description || '').toLowerCase().includes(q) ||
           (p.description_ar || '').toLowerCase().includes(q) ||
@@ -2549,6 +2605,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         document.getElementById('active-collection-title').innerText = (currentAppLanguage === 'ar') ? `بحث: "${q}"` : `Search: "${q}"`;
 
         let matched = allProducts.filter(p =>
+          (p.clean_name || p.name).toLowerCase().includes(q) ||
           p.name.toLowerCase().includes(q) ||
           (p.description || '').toLowerCase().includes(q) ||
           (p.description_ar || '').toLowerCase().includes(q) ||
@@ -2573,7 +2630,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       returnToCollections();
     }
 
-    // Clean Product Rows: No repetitive 'Instant Delivery', clean stock status, vector SVG favorite icon
+    // Clean Product Rows: Clean Title + Structured Spec Badges (Duration, Warranty, Type)
     function renderProductItems(products) {
       const container = document.getElementById('catalog-products-list');
       if (!container) return;
@@ -2585,15 +2642,21 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       container.innerHTML = products.map(p => {
         const isFav = wishlistSet.has(Number(p.id));
         const isOutOfStock = (p.stock !== null && p.stock <= 0);
-        const isCustom = (p.delivery_type === 'activation');
 
+        // 1. Stock Badge
         const stockBadge = isOutOfStock
-          ? `<span style="color: var(--danger); font-weight: 700;">🔴 ${d.out_of_stock}</span>`
-          : `<span style="color: var(--success); font-weight: 600;">🟢 ${p.stock ? `${d.in_stock} (${p.stock})` : d.in_stock}</span>`;
+          ? `<span style="color: var(--danger); font-size: 11px; font-weight: 700;">🔴 ${d.out_of_stock}</span>`
+          : `<span style="color: var(--success); font-size: 11px; font-weight: 600;">🟢 ${p.stock ? `${d.in_stock} (${p.stock})` : d.in_stock}</span>`;
 
-        const customBadge = isCustom
-          ? ` · <span style="color: var(--warning); font-size: 11px; font-weight: 600;">⏳ ${d.custom_activation}</span>`
-          : '';
+        // 2. Structured Spec Pills
+        const durText = (currentAppLanguage === 'ar' ? p.duration_ar : p.duration_en) || null;
+        const warText = (currentAppLanguage === 'ar' ? p.warranty_ar : p.warranty_en) || null;
+        const typText = (currentAppLanguage === 'ar' ? p.type_ar : p.type_en) || null;
+
+        const durPill = durText ? `<span class="spec-pill duration">${durText}</span>` : '';
+        const isNoWar = warText && (warText.includes('بدون') || warText.includes('No'));
+        const warPill = warText ? `<span class="spec-pill ${isNoWar ? 'warranty-none' : 'warranty'}">${warText}</span>` : '';
+        const typPill = typText ? `<span class="spec-pill type">${typText}</span>` : '';
 
         const favSvg = `
           <svg class="fav-icon-svg ${isFav ? 'active' : ''}" viewBox="0 0 24 24" width="18" height="18">
@@ -2601,14 +2664,19 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
           </svg>
         `;
 
+        const displayTitle = p.clean_name || p.name;
+
         return `
           <div class="product-row" onclick="openProductDetail(${Number(p.id)})">
             <div class="prod-left">
               <div class="prod-icon">${p.emoji || '⚡'}</div>
               <div class="prod-details">
-                <div class="prod-title">${p.name}</div>
-                <div class="prod-desc">
-                  ${stockBadge}${customBadge}
+                <div class="prod-title">${displayTitle}</div>
+                <div class="prod-specs-row">
+                  ${stockBadge}
+                  ${durPill}
+                  ${warPill}
+                  ${typPill}
                 </div>
               </div>
             </div>
@@ -2645,8 +2713,9 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
           if (el) el.innerText = txt;
         };
 
+        const displayTitle = selectedProduct.clean_name || selectedProduct.name;
         setTxt('prod-hero-icon', selectedProduct.emoji || '⚡');
-        setTxt('prod-hero-name', selectedProduct.name);
+        setTxt('prod-hero-name', displayTitle);
         setTxt('prod-hero-cat', selectedProduct.category || 'Digital');
         setTxt('prod-qty-val', '1');
 
@@ -2666,6 +2735,28 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         setTxt('prod-stock-badge', isOutOfStock
           ? (currentAppLanguage === 'ar' ? '🔴 نفد المخزون' : '🔴 Out of Stock')
           : (selectedProduct.stock ? `${currentAppLanguage === 'ar' ? '🟢 متوفر' : '🟢 In Stock'} (${selectedProduct.stock})` : (currentAppLanguage === 'ar' ? '⚡ تسليم فوري' : '⚡ Instant Delivery')));
+
+        // Spec badges in product detail
+        const durEl = document.getElementById('prod-dur-badge');
+        const durVal = (currentAppLanguage === 'ar' ? selectedProduct.duration_ar : selectedProduct.duration_en);
+        if (durEl) {
+          if (durVal) { durEl.innerText = durVal; durEl.style.display = 'inline-block'; }
+          else durEl.style.display = 'none';
+        }
+
+        const warEl = document.getElementById('prod-war-badge');
+        const warVal = (currentAppLanguage === 'ar' ? selectedProduct.warranty_ar : selectedProduct.warranty_en);
+        if (warEl) {
+          if (warVal) { warEl.innerText = warVal; warEl.style.display = 'inline-block'; }
+          else warEl.style.display = 'none';
+        }
+
+        const typEl = document.getElementById('prod-typ-badge');
+        const typVal = (currentAppLanguage === 'ar' ? selectedProduct.type_ar : selectedProduct.type_en);
+        if (typEl) {
+          if (typVal) { typEl.innerText = typVal; typEl.style.display = 'inline-block'; }
+          else typEl.style.display = 'none';
+        }
 
         const restockBox = document.getElementById('restock-alert-box');
         const buyBtn = document.getElementById('btn-inapp-purchase');
@@ -2849,8 +2940,8 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       const botUser = userData?.bot_username || 'demo_aiogramshopbot';
       const shareUrl = `https://t.me/${botUser}?start=prod_${selectedProduct.id}_ref_${userId}`;
       const shareText = (currentAppLanguage === 'ar')
-        ? `تسوق ${selectedProduct.name} الآن بأفضل سعر على GH Store!`
-        : `Shop ${selectedProduct.name} now at best prices on GH Store!`;
+        ? `تسوق ${selectedProduct.clean_name || selectedProduct.name} الآن بأفضل سعر على GH Store!`
+        : `Shop ${selectedProduct.clean_name || selectedProduct.name} now at best prices on GH Store!`;
 
       if (tg?.shareToStory) {
         tg.shareToStory({
@@ -3112,7 +3203,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
             }
           });
         } else if (d.type === 'url' && d.url) {
-          // Open Payment Link Sheet with Browser & Copy options
           activeInvoiceUrl = d.url;
           openPaymentLinkSheet(d.url);
         } else {
@@ -3133,7 +3223,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         sheet.style.display = 'flex';
         haptic('pop');
       }
-      // Also trigger telegram openLink directly
       if (tg?.openLink) {
         try { tg.openLink(url); } catch (e) {}
       }
