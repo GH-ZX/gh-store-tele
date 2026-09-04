@@ -73,3 +73,5 @@ class BuysManagementStates(StatesGroup):
 
 class ResellerManagementStates(StatesGroup):
     margin_percent = State()
+    set_custom_emoji_keyword = State()
+    set_custom_emoji_icon = State()

@@ -63,9 +63,11 @@ def check_syntax_and_ast() -> int:
             rel_path = path.relative_to(ROOT)
             checked_files += 1
 
-            # 1. Compile check
+            # 1. In-memory syntax compile check (no disk write, no UID permission issues)
             try:
-                py_compile.compile(str(path), doraise=True)
+                with open(path, "r", encoding="utf-8") as src:
+                    source_code = src.read()
+                compile(source_code, str(rel_path), "exec")
             except Exception as e:
                 fail_msg(f"Syntax/compile error in {rel_path}: {e}")
                 failures += 1
@@ -73,12 +75,11 @@ def check_syntax_and_ast() -> int:
 
             # 2. AST parsing & basic unbound variable check
             try:
-                with open(path, "r", encoding="utf-8") as src:
-                    tree = ast.parse(src.read(), str(rel_path))
+                tree = ast.parse(source_code, str(rel_path))
             except Exception as e:
                 fail_msg(f"AST parse error in {rel_path}: {e}")
+                failures += 1
                 continue
-
             for node in ast.walk(tree):
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     local_vars = set()

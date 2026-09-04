@@ -14,6 +14,7 @@ from db import session_commit
 from models.batstore_product import BatStoreProduct, BatStoreProductDTO, MarginType, auto_categorize, auto_detect_icon, format_product_icon
 from repositories.batstore_product import BatStoreProductRepository
 from services.config import ConfigService
+from services.custom_emoji import CustomEmojiService
 from services.restock_notification import RestockNotificationService
 API_TEST_PRODUCT_ID = 2147483000
 
@@ -238,6 +239,7 @@ class BatStoreService:
         """
         global_percent, global_fixed, global_type = await BatStoreService._global_margin(session)
         products = await BatStoreService.list_products(session)
+        rules = await CustomEmojiService.get_rules(session)
         created = 0
         updated = 0
         restocked_products: list[tuple[int, str]] = []
@@ -251,7 +253,7 @@ class BatStoreService:
             cost = float(p.get("price_usd") or 0.0)
             product_name = p.get("name") or f"Product {pid}"
             existing = await BatStoreProductRepository.get_by_product_id(pid, session)
-            detected_emoji, detected_custom_id = auto_detect_icon(product_name)
+            detected_emoji, detected_custom_id = CustomEmojiService.detect_icon(product_name, rules)
             if existing is None:
                 dto = BatStoreProductDTO(
                     product_id=pid,
