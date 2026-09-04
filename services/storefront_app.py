@@ -1355,6 +1355,89 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     </div>
   </div>
 
+  <!-- ADMIN USER BALANCE ADJUSTMENT MODAL SHEET -->
+  <div class="admin-modal-overlay" id="admin-balance-modal">
+    <div class="admin-modal-sheet">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <h3 style="font-size: 17px; font-weight: 800;">💰 تعديل رصيد المستخدم</h3>
+        <button class="circle-icon-btn" onclick="closeAdminBalanceModal()">✕</button>
+      </div>
+      <input type="hidden" id="admin-bal-target-tgid">
+      <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 14px;">
+        <div style="font-size: 14px; font-weight: 700;" id="admin-bal-user-name">@username</div>
+        <div style="font-size: 11px; color: var(--hint); font-family: monospace; margin-top: 2px;" id="admin-bal-user-id">ID: 000000</div>
+        <div style="font-size: 12px; margin-top: 6px; border-top: 1px solid var(--border); padding-top: 6px;">
+          الرصيد الحالي: <strong style="color: var(--accent); font-size: 14px;" id="admin-bal-user-curr">$0.00</strong>
+        </div>
+      </div>
+
+      <!-- Action Type Toggle -->
+      <div class="theme-segmented-control" style="margin-bottom: 12px;">
+        <div class="theme-segment-btn active" id="admin-bal-btn-add" onclick="setAdminBalanceAction('add')">
+          <span>➕</span> <span>إضافة رصيد (Add)</span>
+        </div>
+        <div class="theme-segment-btn" id="admin-bal-btn-deduct" onclick="setAdminBalanceAction('deduct')">
+          <span>➖</span> <span>خصم رصيد (Deduct)</span>
+        </div>
+      </div>
+
+      <!-- Preset Amount Chips -->
+      <div class="quick-amounts-grid" style="margin-bottom: 10px;">
+        <div class="quick-amount-chip" onclick="setAdminBalAmount(5)">$5</div>
+        <div class="quick-amount-chip active" id="admin-bal-chip-10" onclick="setAdminBalAmount(10)">$10</div>
+        <div class="quick-amount-chip" onclick="setAdminBalAmount(25)">$25</div>
+        <div class="quick-amount-chip" onclick="setAdminBalAmount(50)">$50</div>
+        <div class="quick-amount-chip" onclick="setAdminBalAmount(100)">$100</div>
+        <div class="quick-amount-chip" onclick="setAdminBalAmount(250)">$250</div>
+      </div>
+
+      <!-- Custom Amount Input -->
+      <div class="custom-amount-box" style="margin-bottom: 16px;">
+        <span style="font-size: 16px; font-weight: 800; color: var(--accent);">$</span>
+        <input type="number" id="admin-bal-amount-input" step="any" placeholder="10.00" value="10.00">
+        <span style="font-size: 12px; color: var(--hint);">USD</span>
+      </div>
+
+      <button class="btn-action-primary" id="btn-submit-adjust-balance" onclick="submitAdminAdjustBalance()">
+        تأكيد إضافة الرصيد (+)
+      </button>
+    </div>
+  </div>
+
+  <!-- ADMIN USER CUSTOM DISCOUNT MODAL SHEET -->
+  <div class="admin-modal-overlay" id="admin-discount-modal">
+    <div class="admin-modal-sheet">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <h3 style="font-size: 17px; font-weight: 800;">🏷️ تخصيص نسبة خصم VIP</h3>
+        <button class="circle-icon-btn" onclick="closeAdminDiscountModal()">✕</button>
+      </div>
+      <input type="hidden" id="admin-disc-target-tgid">
+      <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 14px;">
+        <div style="font-size: 14px; font-weight: 700;" id="admin-disc-user-name">@username</div>
+        <div style="font-size: 11px; color: var(--hint); font-family: monospace; margin-top: 2px;" id="admin-disc-user-id">ID: 000000</div>
+      </div>
+
+      <div class="quick-amounts-grid" style="margin-bottom: 10px;">
+        <div class="quick-amount-chip" onclick="setAdminDiscVal(3)">3%</div>
+        <div class="quick-amount-chip" onclick="setAdminDiscVal(5)">5%</div>
+        <div class="quick-amount-chip" onclick="setAdminDiscVal(7)">7%</div>
+        <div class="quick-amount-chip" onclick="setAdminDiscVal(10)">10%</div>
+        <div class="quick-amount-chip" onclick="setAdminDiscVal(15)">15%</div>
+        <div class="quick-amount-chip" onclick="setAdminDiscVal(20)">20%</div>
+      </div>
+
+      <div class="admin-input-row" style="margin-bottom: 16px;">
+        <label class="admin-input-label">نسبة الخصم المخصصة لهذا المستخدم (0-100)%</label>
+        <input type="number" step="any" class="admin-text-input" id="admin-disc-input" placeholder="e.g. 15">
+      </div>
+
+      <div style="display: flex; gap: 8px;">
+        <button class="btn-action-secondary" onclick="clearAdminDiscount()" style="flex: 1; height: 44px;">إلغاء الخصم</button>
+        <button class="btn-action-primary" onclick="submitAdminDiscount()" style="flex: 2; height: 44px;">حفظ الخصم</button>
+      </div>
+    </div>
+  </div>
+
   <!-- External Browser Payment Link Modal / Sheet -->
   <div id="payment-link-sheet" style="position: fixed; inset: 0; background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); z-index: 200; display: none; align-items: flex-end; justify-content: center;">
     <div class="inset-card" style="width: 100%; max-width: 480px; margin: 0; border-radius: 24px 24px 0 0; padding: 24px 20px calc(var(--safe-bottom) + 20px) 20px; box-shadow: 0 -8px 32px rgba(0,0,0,0.5);">
@@ -3670,9 +3753,8 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
               <span>الرتبة: <strong>${u.vip_tier}</strong></span>
             </div>
             <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
-              <button class="admin-edit-badge-btn" onclick="promptAdjustBalance(${u.telegram_id}, 'add')">+ إضافة رصيد</button>
-              <button class="admin-edit-badge-btn" onclick="promptAdjustBalance(${u.telegram_id}, 'deduct')">- خصم رصيد</button>
-              <button class="admin-edit-badge-btn" onclick="promptSetDiscount(${u.telegram_id})">تخصيص خصم %</button>
+              <button class="admin-edit-badge-btn" onclick="openAdminBalanceModal(${u.telegram_id}, '${u.username || ''}', ${u.balance})">💰 تعديل الرصيد</button>
+              <button class="admin-edit-badge-btn" onclick="openAdminDiscountModal(${u.telegram_id}, '${u.username || ''}', ${u.custom_discount_pct !== null && u.custom_discount_pct !== undefined ? u.custom_discount_pct : u.vip_discount})">🏷️ تخصيص خصم</button>
               <button class="admin-edit-badge-btn" style="color:${u.is_banned ? '#10b981' : '#ef4444'};" onclick="submitToggleBan(${u.telegram_id})">
                 ${u.is_banned ? 'فك الحظر' : 'حظر الحساب'}
               </button>
@@ -3684,24 +3766,143 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       }
     }
 
-    async function promptAdjustBalance(targetTgId, actionType) {
-      const amtStr = prompt(actionType === 'add' ? 'أدخل المبلغ بالدولار ($) المراد إضافته:' : 'أدخل المبلغ بالدولار ($) المراد خصمه:');
-      if (!amtStr) return;
-      const amt = parseFloat(amtStr);
-      if (isNaN(amt) || amt <= 0) return;
+    let adminBalAction = 'add';
+
+    function openAdminBalanceModal(targetTgId, username, currBal) {
+      haptic('pop');
+      document.getElementById('admin-bal-target-tgid').value = targetTgId;
+      document.getElementById('admin-bal-user-name').innerText = username ? '@' + username : `User (${targetTgId})`;
+      document.getElementById('admin-bal-user-id').innerText = `ID: ${targetTgId}`;
+      document.getElementById('admin-bal-user-curr').innerText = `$${parseFloat(currBal || 0).toFixed(2)}`;
+      document.getElementById('admin-bal-amount-input').value = '10.00';
+      setAdminBalanceAction('add');
+      document.getElementById('admin-balance-modal').style.display = 'flex';
+    }
+
+    function closeAdminBalanceModal() {
+      document.getElementById('admin-balance-modal').style.display = 'none';
+    }
+
+    function setAdminBalanceAction(act) {
+      haptic('light');
+      adminBalAction = act;
+      document.getElementById('admin-bal-btn-add').classList.toggle('active', act === 'add');
+      document.getElementById('admin-bal-btn-deduct').classList.toggle('active', act === 'deduct');
+      const submitBtn = document.getElementById('btn-submit-adjust-balance');
+      if (submitBtn) {
+        submitBtn.innerText = act === 'add' ? 'تأكيد إضافة الرصيد (+)' : 'تأكيد خصم الرصيد (-)';
+      }
+    }
+
+    function setAdminBalAmount(amt) {
+      haptic('light');
+      document.getElementById('admin-bal-amount-input').value = amt.toFixed(2);
+    }
+
+    async function submitAdminAdjustBalance() {
+      const targetTgId = parseInt(document.getElementById('admin-bal-target-tgid')?.value);
+      const amt = parseFloat(document.getElementById('admin-bal-amount-input')?.value);
+      if (!targetTgId || isNaN(amt) || amt <= 0) {
+        showToast('يرجى إدخال مبلغ صحيح');
+        return;
+      }
+      haptic('light');
+      const btn = document.getElementById('btn-submit-adjust-balance');
+      if (btn) btn.disabled = true;
+
       try {
         const res = await fetch('/api/admin/users/adjust-balance', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ admin_tg_id: userId, target_tg_id: targetTgId, amount: amt, action: actionType })
+          body: JSON.stringify({
+            admin_tg_id: userId,
+            target_tg_id: targetTgId,
+            amount: amt,
+            action: adminBalAction
+          })
+        });
+        const d = await res.json();
+        if (btn) btn.disabled = false;
+
+        if (d.status === 'ok') {
+          haptic('success');
+          showToast(`تم تعديل الرصيد بنجاح! الرصيد الجديد: $${d.new_balance.toFixed(2)}`);
+          closeAdminBalanceModal();
+          executeAdminUserSearch();
+          loadUserData();
+        } else {
+          showToast(d.error || 'فشل تعديل الرصيد');
+        }
+      } catch (e) {
+        if (btn) btn.disabled = false;
+        showToast('خطأ في الاتصال بالخادم');
+      }
+    }
+
+    // Admin Custom Discount Modal
+    function openAdminDiscountModal(targetTgId, username, currentDisc) {
+      haptic('pop');
+      document.getElementById('admin-disc-target-tgid').value = targetTgId;
+      document.getElementById('admin-disc-user-name').innerText = username ? '@' + username : `User (${targetTgId})`;
+      document.getElementById('admin-disc-user-id').innerText = `ID: ${targetTgId}`;
+      document.getElementById('admin-disc-input').value = (currentDisc !== null && currentDisc !== undefined) ? currentDisc : '';
+      document.getElementById('admin-discount-modal').style.display = 'flex';
+    }
+
+    function closeAdminDiscountModal() {
+      document.getElementById('admin-discount-modal').style.display = 'none';
+    }
+
+    function setAdminDiscVal(val) {
+      haptic('light');
+      document.getElementById('admin-disc-input').value = val;
+    }
+
+    async function submitAdminDiscount() {
+      const targetTgId = parseInt(document.getElementById('admin-disc-target-tgid')?.value);
+      const discVal = parseFloat(document.getElementById('admin-disc-input')?.value);
+      if (!targetTgId || isNaN(discVal) || discVal < 0 || discVal > 100) {
+        showToast('يرجى إدخال نسبة خصم صحيحة بين 0 و 100');
+        return;
+      }
+      haptic('light');
+      try {
+        const res = await fetch('/api/admin/users/set-discount', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_tg_id: userId, target_tg_id: targetTgId, discount_pct: discVal })
         });
         const d = await res.json();
         if (d.status === 'ok') {
-          showToast(`تم تعديل الرصيد بنجاح! الرصيد الجديد: $${d.new_balance.toFixed(2)}`);
+          haptic('success');
+          showToast('تم حفظ نسبة الخصم بنجاح!');
+          closeAdminDiscountModal();
           executeAdminUserSearch();
         }
       } catch (e) {
-        showToast('فشل تعديل الرصيد');
+        showToast('فشل حفظ نسبة الخصم');
+      }
+    }
+
+    async function clearAdminDiscount() {
+      const targetTgId = parseInt(document.getElementById('admin-disc-target-tgid')?.value);
+      if (!targetTgId) return;
+      haptic('light');
+      try {
+        const res = await fetch('/api/admin/users/set-discount', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_tg_id: userId, target_tg_id: targetTgId, discount_pct: null })
+        });
+        const d = await res.json();
+        if (d.status === 'ok') {
+          haptic('success');
+          showToast('تم إلغاء الخصم المخصص');
+          closeAdminDiscountModal();
+          executeAdminUserSearch();
+        }
+      } catch (e) {
+        showToast('فشل إلغاء الخصم');
       }
     }
 
@@ -3722,25 +3923,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       }
     }
 
-    async function promptSetDiscount(targetTgId) {
-      const discStr = prompt('أدخل نسبة الخصم الخاصة المخصصة لهذا المستخدم (0-100)% أو اتركه فارغاً للإلغاء:');
-      if (discStr === null) return;
-      const disc = discStr === '' ? null : parseFloat(discStr);
-      try {
-        const res = await fetch('/api/admin/users/set-discount', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ admin_tg_id: userId, target_tg_id: targetTgId, discount_pct: disc })
-        });
-        const d = await res.json();
-        if (d.status === 'ok') {
-          showToast('تم تحديث نسبة الخصم الخاصة بنجاح!');
-          executeAdminUserSearch();
-        }
-      } catch (e) {
-        showToast('فشل تعيين الخصم');
-      }
-    }
 
     // Admin Orders Modal
     function openAdminOrdersModal() {
