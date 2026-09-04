@@ -834,14 +834,11 @@ async def create_tma_topup_invoice(request: Request):
             provider = "syriatelcash" if method in ("syriatelcash", "syriatel") or body.get("provider") in ("syriatel", "syriatelcash") else "shamcash"
             try:
                 from services.sam import SamService
-                # Check provider-specific wallet identifier or fall back to main wallet
-                wallet_key = "SAM_RECEIVING_WALLET_SYRIATEL" if provider == "syriatelcash" else "SAM_RECEIVING_WALLET_SHAMCASH"
-                identifier = await ConfigService.get(session, wallet_key, env_fallback=os.environ.get(wallet_key))
-                if not identifier:
-                    identifier = await ConfigService.get(session, "SAM_RECEIVING_WALLET", env_fallback=config.SAM_RECEIVING_WALLET)
-
                 invoice = await SamService.create_invoice(
-                    session, provider, identifier or "wallet", amount, "USD",
+                    session=session,
+                    method=provider,
+                    amount=amount,
+                    currency="USD",
                     webhook_url=config.get_sam_webhook_url()
                 )
                 return {
@@ -852,8 +849,12 @@ async def create_tma_topup_invoice(request: Request):
                     "amount": amount
                 }
             except Exception as e:
+                err_str = str(e)
                 logging.error("Failed to create invoice for provider %s: %s", provider, e)
-                return JSONResponse({"error": "payment_creation_failed", "detail": str(e)}, status_code=502)
+                if "NOT_FOUND" in err_str or "المحفظة غير موجودة" in err_str:
+                    user_msg = "بوابة سيرياتيل كاش قيد الصيانة حالياً. يرجى استخدام شام كاش أو نجوم تيليجرام أو العملات الرقمية." if provider == "syriatelcash" else "محفظة شام كاش غير متوفرة حالياً. يرجى تجربة طريقة شحن أخرى."
+                    return JSONResponse({"status": "error", "error": user_msg}, status_code=400)
+                return JSONResponse({"status": "error", "error": "تعذر إنشاء فاتورة الشحن حالياً. يرجى إعادة المحاولة.", "detail": err_str}, status_code=502)
     return JSONResponse({"error": "unknown_method"}, status_code=400)
 
 

@@ -63,20 +63,70 @@ class SamService:
             headers["Authorization"] = f"Bearer {key}"
         return headers
 
+    # ------------------------------------------------------------------ wallets
+
+    @staticmethod
+    async def list_wallets(session: AsyncSession | Session) -> list[dict]:
+        """Fetch registered wallets from sam-api.pro /v1/wallets."""
+        base, key = await SamService._resolve(session)
+        async with await SamService._client() as client:
+            try:
+                resp = await client.get(f"{base}/v1/wallets", headers=SamService._headers(key))
+                if resp.status_code == 200:
+                    return resp.json()
+            except Exception as e:
+                logging.warning("Failed to fetch wallets from sam-api: %s", e)
+        return []
+
+    @staticmethod
+    async def resolve_wallet_identifier(session: AsyncSession | Session,
+                                        provider: str,
+                                        candidate: str | None = None) -> str:
+        """Resolve the valid wallet identifier (32-hex address, UUID, or phone)."""
+        prov = "syriatel" if provider in ("syriatel", "syriatelcash") else "shamcash"
+
+        # 1. If candidate is already a 32-hex address or UUID, use it directly
+        if candidate and (len(candidate) >= 32 or "-" in candidate):
+            return candidate
+
+        # 2. Query sam-api.pro /v1/wallets
+        try:
+            wallets = await SamService.list_wallets(session)
+            for w in wallets:
+                if w.get("provider") == prov and w.get("status") == "active":
+                    if prov == "shamcash":
+                        return w.get("walletAddress") or w.get("id") or w.get("accountNumber")
+                    else:
+                        return w.get("phone") or w.get("walletAddress") or w.get("id")
+            if wallets:
+                first = wallets[0]
+                if prov == "shamcash":
+                    return first.get("walletAddress") or first.get("id") or first.get("accountNumber")
+                return first.get("phone") or first.get("walletAddress") or first.get("id")
+        except Exception as e:
+            logging.warning("Could not auto-resolve wallet identifier: %s", e)
+
+        if candidate:
+            return candidate
+        fallback = await ConfigService.get(session, "SAM_RECEIVING_WALLET", env_fallback=config.SAM_RECEIVING_WALLET)
+        return fallback or "wallet"
+
     # ------------------------------------------------------------------ invoices
 
     @staticmethod
     async def create_invoice(session: AsyncSession | Session,
                              method: str,
-                             identifier: str,
-                             amount: str | float,
+                             identifier: str | None = None,
+                             amount: str | float = 10.0,
                              currency: str = "USD",
                              webhook_url: str | None = None) -> dict:
         base, key = await SamService._resolve(session)
+        method_clean = "syriatel" if method in ("syriatel", "syriatelcash") else "shamcash"
+        wallet_id = await SamService.resolve_wallet_identifier(session, method_clean, identifier)
         webhook = webhook_url or config.BATSTORE_WEBHOOK_URL
         payload = {
-            "method": method,
-            "identifier": identifier,
+            "method": method_clean,
+            "identifier": wallet_id,
             "amount": str(amount),
             "currency": currency,
             "webhookUrl": webhook,
