@@ -1,4 +1,5 @@
 import logging
+import uuid
 
 from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery, LabeledPrice, PreCheckoutQuery, InlineKeyboardButton
@@ -102,11 +103,26 @@ async def stars_successful_payment(message: Message, session: AsyncSession,
     usd = 0.0
     stars = 0
     tg_id = message.from_user.id
+    parts = sp.invoice_payload.split(":")
+    is_inapp = parts[0] == "stars_inapp"
+    product_id = None
+    qty = 1
     try:
-        _, tg_id_s, stars_s, usd_s = sp.invoice_payload.split(":")
-        tg_id = int(tg_id_s)
-        stars = int(stars_s)
-        usd = round(float(usd_s), 2)
+        if is_inapp and len(parts) >= 6:
+            # stars_inapp:tg_id:product_id:qty:stars:amount
+            _, tg_id_s, pid_s, qty_s, stars_s, usd_s = parts[:6]
+            tg_id = int(tg_id_s)
+            product_id = int(pid_s)
+            qty = int(qty_s)
+            stars = int(stars_s)
+            usd = round(float(usd_s), 2)
+        elif len(parts) >= 4:
+            # stars_topup:tg_id:stars:amount or stars:tg_id:stars:amount
+            tg_id = int(parts[1])
+            stars = int(parts[2])
+            usd = round(float(parts[3]), 2)
+        else:
+            raise ValueError(f"unrecognized stars payload format: {sp.invoice_payload}")
     except Exception as e:
         logging.warning("Failed to parse Stars payload '%s': %s", sp.invoice_payload, e)
         usd = round((sp.total_amount / 1000000) * rate, 2)
@@ -124,6 +140,34 @@ async def stars_successful_payment(message: Message, session: AsyncSession,
             usd_amount=usd,
             invoice_payload=sp.invoice_payload,
         ), session)
+
+    if is_inapp and product_id:
+        from repositories.batstore_product import BatStoreProductRepository
+        from repositories.batstore_order import BatStoreOrderRepository
+        from models.batstore_order import BatStoreOrderDTO
+        from services.batstore import BatStoreService
+        product = await BatStoreProductRepository.get_by_product_id(product_id, session)
+        customer_ref = f"stars-{tg_id}-{uuid.uuid4().hex[:8]}"
+        try:
+            placed = await BatStoreService.place_order(session, product_id, qty, customer_reference=customer_ref, idempotency_key=customer_ref)
+            order_obj = placed.get("order", {}) or {}
+            items = order_obj.get("items") or []
+            goods_list = [it.get("value") or it.get("data") or str(it) for it in items] if items else []
+            order_status = "completed" if (product and product.delivery_type in ("stock", "supplier_api")) else "pending_fulfillment"
+            order = await BatStoreOrderRepository.create(BatStoreOrderDTO(
+                telegram_id=tg_id, total_sell=usd, status=order_status,
+                external_order_ref=str(placed.get("order", {}).get("id") or placed.get("order_id") or ""),
+                customer_reference=customer_ref,
+                details=[{"product_id": product_id, "name": product.name if product else "Product", "quantity": qty, "cost_usd": product.cost_usd if product else 0.0, "sell_usd": usd, "delivery_goods": goods_list}],
+            ), session)
+            await session_commit(session)
+            goods_lines = "\n".join(f"• <code>{g}</code>" for g in goods_list[:5]) if goods_list else "Delivered shortly."
+            await message.answer(f"🎉 <b>Stars Purchase Successful!</b>\n\nOrder #{order.id}: {qty}× {product.name if product else 'Item'}\n\n📦 <b>Delivered Goods:</b>\n{goods_lines}\n\n<i>(Tap credentials above to copy)</i>")
+            await NotificationService.send_to_admins(f"⭐ Stars Direct Buy Order #{order.id}: tg:{tg_id} · {stars}⭐ (${usd})", None)
+            return
+        except Exception as e:
+            logging.error("Failed to fulfill stars_inapp order directly; crediting balance: %s", e)
+
 
     await ReferralService.apply_deposit_referral(usd, user, session)
     await session_commit(session)

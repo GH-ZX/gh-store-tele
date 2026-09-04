@@ -136,6 +136,18 @@ async def _startup() -> None:
             logging.info("Telegram Mini App menu button configured: %s", tma_url)
     except Exception as e:
         logging.warning("Could not set chat menu button: %s", e)
+    try:
+        from aiogram.types import BotCommand
+        commands = [
+            BotCommand(command="start", description="🛍️ Open Store & Main Menu"),
+            BotCommand(command="search", description="🔍 Find Digital Accounts & Keys"),
+            BotCommand(command="redeem", description="🎟️ Redeem Gift Voucher Code"),
+            BotCommand(command="help", description="💬 Support & Help"),
+        ]
+        await bot.set_my_commands(commands)
+        logging.info("Telegram Bot command menu set successfully")
+    except Exception as e:
+        logging.warning("Could not set bot commands: %s", e)
     from services.order_polling import poll_pending_orders, periodic_catalog_sync, periodic_balance_monitor
     _polling_task = asyncio.create_task(poll_pending_orders())
     _sync_loop_task = asyncio.create_task(periodic_catalog_sync())
@@ -695,6 +707,84 @@ async def create_tma_stars_invoice(request: Request):
             return JSONResponse({"error": "invoice_creation_failed", "detail": str(e)}, status_code=502)
 
 
+@app.post("/api/invoice/topup")
+async def create_tma_topup_invoice(request: Request):
+    """Generate in-app top-up invoice or payment link for Stars, Crypto, or SAM."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+
+    tg_id = int(body.get("tg_id") or 0)
+    amount = float(body.get("amount") or 10.0)
+    method = (body.get("method") or "stars").lower()
+
+    if not tg_id or amount <= 0:
+        return JSONResponse({"error": "invalid_params"}, status_code=400)
+
+    async with get_db_session() as session:
+        user = await UserRepository.get_by_tgid(tg_id, session)
+        if not user:
+            return JSONResponse({"error": "user_not_found"}, status_code=404)
+
+        if method == "stars":
+            stars_rate = float(config.GHSTORE_STARS_TO_USD or 0.01)
+            stars = max(1, int(amount / stars_rate))
+            from aiogram.types import LabeledPrice
+            title = f"GH Store ${amount:.2f} Top-up"
+            description = f"Add ${amount:.2f} USD to your spendable bot balance"
+            payload = f"stars_topup:{tg_id}:{stars}:{amount:.2f}"
+
+            try:
+                invoice_link = await bot.create_invoice_link(
+                    title=title,
+                    description=description,
+                    payload=payload,
+                    provider_token="",
+                    currency="XTR",
+                    prices=[LabeledPrice(label=f"{stars} ⭐", amount=stars)],
+                )
+                return {"status": "ok", "type": "stars", "invoice_link": invoice_link, "stars": stars, "amount": amount}
+            except Exception as e:
+                logging.error("Failed to generate Stars top-up invoice: %s", e)
+                return JSONResponse({"error": "invoice_failed", "detail": str(e)}, status_code=502)
+
+        elif method == "crypto":
+            try:
+                from crypto_api.CryptoApiWrapper import CryptoApiWrapper
+                from enums.currency import Currency
+                from enums.cryptocurrency import Cryptocurrency
+                from models.payment import PaymentType, ProcessingPaymentDTO
+                payment = await CryptoApiWrapper.create_invoice(ProcessingPaymentDTO(
+                    paymentType=PaymentType.PAYMENT,
+                    fiatCurrency=Currency.USD,
+                    fiatAmount=amount,
+                    cryptoCurrency=Cryptocurrency.USDT_BEP20,
+                    callbackUrl=f"{(config.WEBHOOK_HOST or '').rstrip('/')}{config.WEBHOOK_PATH}cryptoprocessing/event",
+                    callbackSecret="secret",
+                ))
+                return {"status": "ok", "type": "url", "url": payment.paymentUrl or payment.address}
+            except Exception as e:
+                logging.error("Failed to create crypto invoice: %s", e)
+                return JSONResponse({"error": "crypto_failed", "detail": str(e)}, status_code=502)
+
+        elif method == "sam":
+            provider = body.get("provider", "shamcash")
+            try:
+                from services.sam import SamService
+                identifier = await ConfigService.get(session, "SAM_RECEIVING_WALLET", env_fallback=config.SAM_RECEIVING_WALLET)
+                invoice = await SamService.create_invoice(
+                    session, provider, identifier or "wallet", amount, "USD",
+                    webhook_url=config.get_sam_webhook_url()
+                )
+                return {"status": "ok", "type": "url", "url": invoice.get("paymentUrl")}
+            except Exception as e:
+                logging.error("Failed to create SAM invoice: %s", e)
+                return JSONResponse({"error": "sam_failed", "detail": str(e)}, status_code=502)
+
+    return JSONResponse({"error": "unknown_method"}, status_code=400)
+
+
 @app.post("/api/voucher/redeem")
 async def tma_redeem_voucher(request: Request):
     """Redeem a prepaid digital gift voucher code."""
@@ -730,6 +820,38 @@ async def tma_redeem_voucher(request: Request):
         "message": f"Successfully credited {amount:.2f}{sym} to your balance!",
     }
 
+
+
+@app.post("/api/reviews/submit")
+async def tma_submit_review(request: Request):
+    """Submit customer star rating and review directly from the Mini App."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+
+    tg_id = int(body.get("tg_id") or 0)
+    rating = int(body.get("rating") or 5)
+    text = (body.get("text") or "").strip()
+    order_id = body.get("order_id")
+
+    if not tg_id or rating < 1 or rating > 5:
+        return JSONResponse({"error": "invalid_rating"}, status_code=400)
+
+    async with get_db_session() as session:
+        from models.review import Review
+        review = Review(
+            rating=rating,
+            text=text or "Instant delivery, key activated smoothly!",
+        )
+        session.add(review)
+        await session_commit(session)
+        await NotificationService.send_to_admins(
+            f"⭐ <b>New Review via Mini App</b>\n\n• Rating: {'⭐' * rating} ({rating}/5)\n• From: tg:{tg_id}\n• Order: #{order_id or 'N/A'}\n• Comment: {text or 'No comment'}",
+            None
+        )
+
+    return {"status": "success"}
 
 
 @app.get("/app", response_class=HTMLResponse)
