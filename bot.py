@@ -1169,7 +1169,14 @@ async def admin_adjust_balance(request: Request):
         if action_type == "add":
             user.top_up_amount = (user.top_up_amount or 0.0) + amount
         else:
-            user.consume_records = (user.consume_records or 0.0) + amount
+            # Admin deducting/removing balance:
+            # Deduct from user.top_up_amount down to a minimum of user.consume_records (balance >= 0).
+            # NEVER touch consume_records, which strictly represents actual customer purchases (المشتريات).
+            current_top_up = user.top_up_amount or 0.0
+            consumed = user.consume_records or 0.0
+            current_bal = max(0.0, current_top_up - consumed)
+            new_bal = max(0.0, current_bal - amount)
+            user.top_up_amount = consumed + new_bal
         await UserRepository.update(user, session)
         from models.admin_audit_log import AdminAuditLog
         session.add(AdminAuditLog(
@@ -1184,7 +1191,7 @@ async def admin_adjust_balance(request: Request):
             await bot.send_message(
                 target_tg_id,
                 f"💳 <b>إشعار تعديل الرصيد من الإدارة:</b>\n"
-                f"تم { 'إضافة' if action_type == 'add' else 'خصم' } <b>{sign}${amount:.2f}</b> إلى رصيدك."
+                f"تم { 'إضافة' if action_type == 'add' else 'خصم' } <b>{sign}${amount:.2f}</b> { 'إلى' if action_type == 'add' else 'من' } رصيدك."
             )
         except Exception:
             pass

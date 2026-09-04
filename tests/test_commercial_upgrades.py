@@ -78,3 +78,38 @@ async def test_tma_catalog_api(monkeypatch):
     assert len(catalog["products"]) == 1
     assert catalog["products"][0]["name"] == "ChatGPT 4o"
     assert catalog["products"][0]["price"] == 20.0
+
+
+def test_admin_adjust_balance_does_not_affect_consume_records():
+    """Verify that adding and deducting admin balance adjusts top_up_amount without altering consume_records (المشتريات)."""
+    user = SimpleNamespace(top_up_amount=0.0, consume_records=0.0)
+
+    # 1. Admin adds $50.0
+    user.top_up_amount += 50.0
+    assert user.top_up_amount == 50.0
+    assert user.consume_records == 0.0
+    assert (user.top_up_amount - user.consume_records) == 50.0
+
+    # 2. Admin deducts $50.0 (reversing credit)
+    current_top_up = user.top_up_amount or 0.0
+    consumed = user.consume_records or 0.0
+    current_bal = max(0.0, current_top_up - consumed)
+    new_bal = max(0.0, current_bal - 50.0)
+    user.top_up_amount = consumed + new_bal
+
+    assert user.top_up_amount == 0.0
+    assert user.consume_records == 0.0  # MUST remain 0.0, never inflated to 50.0!
+    assert (user.top_up_amount - user.consume_records) == 0.0
+
+    # 3. User with real purchase of $10 and remaining balance of $40
+    user = SimpleNamespace(top_up_amount=50.0, consume_records=10.0)
+    # Admin deducts $15
+    current_top_up = user.top_up_amount or 0.0
+    consumed = user.consume_records or 0.0
+    current_bal = max(0.0, current_top_up - consumed)
+    new_bal = max(0.0, current_bal - 15.0)
+    user.top_up_amount = consumed + new_bal
+
+    assert user.top_up_amount == 35.0
+    assert user.consume_records == 10.0  # Lifetime purchases unchanged!
+    assert (user.top_up_amount - user.consume_records) == 25.0

@@ -87,7 +87,11 @@ class UserManagementService:
                 await session_commit(session)
                 msg = get_text(language, BotEntity.ADMIN, "credit_management_added_success")
             else:
-                user.consume_records += float(message.text)
+                current_top_up = user.top_up_amount or 0.0
+                consumed = user.consume_records or 0.0
+                current_bal = max(0.0, current_top_up - consumed)
+                new_bal = max(0.0, current_bal - amount)
+                user.top_up_amount = consumed + new_bal
                 await UserRepository.update(user, session)
                 await session_commit(session)
                 msg = get_text(language, BotEntity.ADMIN, "credit_management_reduced_success")
