@@ -1,6 +1,7 @@
 """Telegram Mini App (TMA) Mobile-First Storefront.
 
 Features:
+- Completely Removed Emojis from Product Cards: Eliminated the box/emoji icon container entirely, stripped emojis from titles, and styled spec badges with pure, clean text.
 - Dynamic Database Storefront Categories: Consumes categories, 3D images, bilingual titles, and previews from database via /api/catalog (editable in SQLAdmin).
 - Clean Product Names & Structured Spec Badges: Cleans raw supplier titles into standardized brand names and renders Duration, Warranty, and Account Type badges.
 - Stock Priority Sorting: In-stock products always appear first in every catalog and filtered view, with out-of-stock items sinking to the bottom.
@@ -266,7 +267,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       transform: scale(1.12);
     }
 
-    /* Structured Spec Pills in Product Cards */
+    /* Structured Spec Pills in Product Cards (No Emojis) */
     .prod-specs-row {
       display: flex;
       flex-wrap: wrap;
@@ -277,12 +278,23 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     .spec-pill {
       display: inline-flex;
       align-items: center;
-      font-size: 10px;
+      font-size: 10.5px;
       font-weight: 700;
-      padding: 2px 7px;
+      padding: 2.5px 8px;
       border-radius: 6px;
       white-space: nowrap;
       line-height: 1.25;
+      letter-spacing: -0.1px;
+    }
+    .spec-pill.in-stock {
+      background: rgba(16, 185, 129, 0.12);
+      color: #10b981;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .spec-pill.stock-out {
+      background: rgba(239, 68, 68, 0.12);
+      color: #ef4444;
+      border: 1px solid rgba(239, 68, 68, 0.3);
     }
     .spec-pill.duration {
       background: rgba(56, 189, 248, 0.12);
@@ -537,12 +549,12 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     }
     .btn-back-catalog:active { opacity: 0.7; }
 
-    /* Product Row Item */
+    /* Product Row Item (Clean, No Emojis, No Box Icon) */
     .product-row {
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 14px;
-      padding: 14px;
+      padding: 14px 16px;
       margin-bottom: 8px;
       display: flex;
       align-items: center;
@@ -559,30 +571,14 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     }
     .prod-left {
       display: flex;
-      align-items: center;
-      gap: 12px;
-      flex: 1;
-      overflow: hidden;
-    }
-    .prod-icon {
-      font-size: 24px;
-      width: 42px;
-      height: 42px;
-      border-radius: 12px;
-      background: var(--input-bg);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-    }
-    .prod-details {
+      flex-direction: column;
       flex: 1;
       overflow: hidden;
     }
     .prod-title {
       font-size: 15px;
       font-weight: 700;
-      margin-bottom: 2px;
+      margin-bottom: 1px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -606,18 +602,29 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       margin-top: 2px;
     }
 
-    /* IN-APP DEDICATED PRODUCT DETAIL PAGE */
+    /* IN-APP DEDICATED PRODUCT DETAIL PAGE (Clean Hero, No Emojis) */
     .page-hero {
       text-align: center;
-      padding: 20px 0;
+      padding: 24px 16px 18px 16px;
       background: radial-gradient(circle at center, rgba(56, 189, 248, 0.12), transparent 70%);
       border-radius: 18px;
       margin-bottom: 14px;
       position: relative;
     }
-    .hero-icon { font-size: 54px; margin-bottom: 8px; }
-    .hero-name { font-size: 22px; font-weight: 800; letter-spacing: -0.3px; margin-bottom: 4px; }
-    .hero-cat { font-size: 12px; color: var(--accent); text-transform: uppercase; font-weight: 700; }
+    .hero-name {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.3px;
+      margin-bottom: 6px;
+      color: var(--text);
+    }
+    .hero-cat {
+      font-size: 12px;
+      color: var(--accent);
+      text-transform: uppercase;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
     .hero-actions-bar {
       position: absolute;
       top: 14px;
@@ -651,7 +658,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     }
     .badges-flex {
       display: flex;
-      gap: 8px;
+      gap: 6px;
       margin-bottom: 14px;
       flex-wrap: wrap;
     }
@@ -1133,7 +1140,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
   <div id="payment-link-sheet" style="position: fixed; inset: 0; background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); z-index: 200; display: none; align-items: flex-end; justify-content: center;">
     <div class="inset-card" style="width: 100%; max-width: 480px; margin: 0; border-radius: 24px 24px 0 0; padding: 24px 20px calc(var(--safe-bottom) + 20px) 20px; box-shadow: 0 -8px 32px rgba(0,0,0,0.5);">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
-        <h3 style="font-size: 18px; font-weight: 800;" id="sheet-payment-title">⚡ إتمام عملية الشحن</h3>
+        <h3 style="font-size: 18px; font-weight: 800;" id="sheet-payment-title">إتمام عملية الشحن</h3>
         <button class="circle-icon-btn" onclick="closePaymentLinkSheet()">✕</button>
       </div>
       <p style="font-size: 13px; color: var(--hint); margin-bottom: 18px; line-height: 1.5;" id="sheet-payment-desc">
@@ -1141,10 +1148,10 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       </p>
       <div style="display: flex; flex-direction: column; gap: 10px;">
         <button class="btn-action-primary" id="sheet-btn-open-browser" onclick="openPaymentInExternalBrowser()">
-          <span>🌐</span> <span id="sheet-label-open">فتح صفحة الدفع في المتصفح</span>
+          <span id="sheet-label-open">فتح صفحة الدفع في المتصفح</span>
         </button>
         <button class="btn-action-secondary" id="sheet-btn-copy-link" onclick="copyPaymentInvoiceLink()" style="height: 48px;">
-          <span>📋</span> <span id="sheet-label-copy">نسخ رابط الفاتورة المباشر</span>
+          <span id="sheet-label-copy">نسخ رابط الفاتورة المباشر</span>
         </button>
       </div>
     </div>
@@ -1194,15 +1201,15 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         <svg class="fav-icon-svg active" viewBox="0 0 24 24" width="14" height="14" style="filter:none;"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
         <span id="label-filter-wishlist">المفضلة</span>
       </div>
-      <div class="filter-chip" id="filter-stock" onclick="applyCatalogFilter('stock')">🟢 متوفر فقط</div>
-      <div class="filter-chip" id="filter-instant" onclick="applyCatalogFilter('instant')">⚡ تسليم فوري</div>
-      <div class="filter-chip" id="filter-lowprice" onclick="applyCatalogFilter('lowprice')">🪙 الأقل سعراً</div>
+      <div class="filter-chip" id="filter-stock" onclick="applyCatalogFilter('stock')">متوفر فقط</div>
+      <div class="filter-chip" id="filter-instant" onclick="applyCatalogFilter('instant')">تسليم فوري</div>
+      <div class="filter-chip" id="filter-lowprice" onclick="applyCatalogFilter('lowprice')">الأقل سعراً</div>
     </div>
 
     <!-- Promotional Hero Banner -->
     <div class="hero-banner">
       <div class="banner-badge" id="banner-badge-text">تحديثات المتجر</div>
-      <div class="banner-title" id="banner-title-text">✨ اشتراكات كلود وجيميني متوفرة فورياً</div>
+      <div class="banner-title" id="banner-title-text">اشتراكات كلود وجيميني متوفرة فورياً</div>
       <div class="banner-sub" id="banner-sub-text">تسليم تلقائي فوري للمفاتيح والحسابات على مدار الساعة</div>
     </div>
 
@@ -1212,10 +1219,10 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         <div class="section-title" id="title-collections">التصنيفات المميزة</div>
         <div class="view-toggle-capsule">
           <button class="view-toggle-btn active" id="btn-view-grid" onclick="setCatalogViewMode('grid')">
-            <span>🖼️</span> <span id="label-view-grid">شبكة</span>
+            <span id="label-view-grid">شبكة</span>
           </button>
           <button class="view-toggle-btn" id="btn-view-list" onclick="setCatalogViewMode('list')">
-            <span>📋</span> <span id="label-view-list">قائمة</span>
+            <span id="label-view-list">قائمة</span>
           </button>
         </div>
       </div>
@@ -1238,7 +1245,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     </div>
   </main>
 
-  <!-- DEDICATED IN-APP PRODUCT DETAIL PAGE -->
+  <!-- DEDICATED IN-APP PRODUCT DETAIL PAGE (Clean Hero, No Emojis) -->
   <section id="view-product-detail" class="tab-view">
     <div class="subview-header">
       <button class="btn-back-catalog" onclick="closeProductDetailPage()">
@@ -1255,15 +1262,14 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         </button>
         <button class="circle-icon-btn" onclick="shareCurrentProduct()" title="مشاركة">↗️</button>
       </div>
-      <div class="hero-icon" id="prod-hero-icon">⚡</div>
       <h2 class="hero-name" id="prod-hero-name">اسم المنتج</h2>
       <div class="hero-cat" id="prod-hero-cat">حساب رقمي</div>
     </div>
 
     <!-- Structured Spec Badges in Product Detail -->
     <div class="badges-flex" id="detail-badges-box">
-      <div class="pill-badge" id="prod-delivery-badge">⚡ تسليم تلقائي فوري</div>
-      <div class="pill-badge" id="prod-stock-badge">🟢 متوفر</div>
+      <div class="pill-badge" id="prod-delivery-badge">تسليم تلقائي فوري</div>
+      <div class="pill-badge" id="prod-stock-badge">متوفر</div>
       <div class="pill-badge" id="prod-dur-badge" style="display: none;"></div>
       <div class="pill-badge" id="prod-war-badge" style="display: none;"></div>
       <div class="pill-badge" id="prod-typ-badge" style="display: none;"></div>
@@ -1301,24 +1307,24 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       </div>
 
       <div id="insufficient-funds-alert" style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 10px; padding: 10px; text-align: center; font-size: 13px; color: #fca5a5; margin-bottom: 12px; display: none;">
-        ⚠️ الرصيد المتاح غير كافٍ لهذا الطلب.
+        الرصيد المتاح غير كافٍ لهذا الطلب.
       </div>
 
       <!-- Out-of-Stock Restock Alert Button -->
       <div id="restock-alert-box" style="display: none; margin-bottom: 10px;">
         <button class="btn-action-warning" onclick="triggerInAppRestockSubscribe()">
-          <span id="btn-restock-text">🔔 نبهني فور التوفر (Restock Alert)</span>
+          <span id="btn-restock-text">نبهني فور التوفر</span>
         </button>
       </div>
 
-      <!-- In-App Purchase Action Button (Stable child tags preserved) -->
+      <!-- In-App Purchase Action Button -->
       <button class="btn-action-primary" id="btn-inapp-purchase" onclick="executeProductBuy()">
-        <span id="btn-buy-action-label">⚡ شراء فوري</span>
+        <span id="btn-buy-action-label">شراء فوري</span>
         <span id="btn-price-tag">($0.00)</span>
       </button>
 
       <button class="btn-stars-checkout" id="btn-stars-purchase" onclick="executeStarsDirectBuy()">
-        <span id="btn-stars-action-label">⭐ الدفع عبر نجوم تيليجرام</span>
+        <span id="btn-stars-action-label">الدفع عبر نجوم تيليجرام</span>
       </button>
     </div>
   </section>
@@ -1326,7 +1332,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
   <!-- IN-APP ORDER SUCCESS VIEW -->
   <section id="view-order-success" class="tab-view">
     <div style="text-align: center; padding: 24px 0 16px 0;">
-      <div style="font-size: 60px; margin-bottom: 8px;">🎉</div>
       <h2 style="font-size: 22px; font-weight: 800; margin-bottom: 4px;" id="success-view-title">تم الطلب بنجاح!</h2>
       <p style="font-size: 13px; color: var(--hint);" id="success-meta-sub">طلب #000 · تم التسليم</p>
     </div>
@@ -1340,8 +1345,8 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     </div>
 
     <div style="display: flex; gap: 10px;">
-      <button class="btn-action-secondary" id="btn-success-view-orders" onclick="switchTab('orders')" style="flex: 1; height: 48px;">📦 عرض في طلباتي</button>
-      <button class="btn-action-primary" id="btn-success-continue" onclick="switchTab('store')" style="flex: 1; height: 48px;">🛍️ متابعة التسوق</button>
+      <button class="btn-action-secondary" id="btn-success-view-orders" onclick="switchTab('orders')" style="flex: 1; height: 48px;">عرض في طلباتي</button>
+      <button class="btn-action-primary" id="btn-success-continue" onclick="switchTab('store')" style="flex: 1; height: 48px;">متابعة التسوق</button>
     </div>
   </section>
 
@@ -1444,7 +1449,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
     <!-- Step 3: Action Button with Loading State -->
     <button class="btn-action-primary" id="btn-execute-recharge" onclick="executeSelectedRecharge()" style="margin-top: 14px; height: 52px;">
-      <span id="recharge-btn-icon">⚡</span>
       <span id="recharge-btn-text">شحن 10.00$ عبر نجوم تيليجرام</span>
     </button>
 
@@ -1474,14 +1478,12 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
     <!-- Appearance: Dark / Light Mode Toggle -->
     <div class="inset-card">
-      <div class="section-title" style="margin-top: 0;" id="label-theme-title">🌓 المظهر / Appearance</div>
+      <div class="section-title" style="margin-top: 0;" id="label-theme-title">المظهر / Appearance</div>
       <div class="theme-segmented-control">
         <div class="theme-segment-btn active" id="theme-btn-dark" onclick="setAppTheme('dark')">
-          <span>🌙</span>
           <span id="label-theme-dark">داكن (Dark)</span>
         </div>
         <div class="theme-segment-btn" id="theme-btn-light" onclick="setAppTheme('light')">
-          <span>☀️</span>
           <span id="label-theme-light">فاتح (Light)</span>
         </div>
       </div>
@@ -1489,18 +1491,18 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
     <!-- Install PWA Button -->
     <div class="inset-card">
-      <div class="section-title" style="margin-top: 0;" id="label-install-title">📲 تثبيت التطبيق</div>
+      <div class="section-title" style="margin-top: 0;" id="label-install-title">تثبيت التطبيق</div>
       <div style="font-size: 12px; color: var(--hint); margin-bottom: 8px;" id="label-install-desc">
         أضف أيقونة متجر GH Store إلى شاشة هاتفك الرئيسية لتصفح العروض فورياً!
       </div>
       <button class="btn-action-secondary" id="btn-install-app" onclick="promptAddToHomeScreen()" style="width: 100%; height: 42px;">
-        📲 إضافة إلى الشاشة الرئيسية
+        إضافة إلى الشاشة الرئيسية
       </button>
     </div>
 
     <!-- Currency Picker -->
     <div class="inset-card">
-      <div class="section-title" style="margin-top: 0;" id="label-currency-title">💱 عملة العرض المفضلة</div>
+      <div class="section-title" style="margin-top: 0;" id="label-currency-title">عملة العرض المفضلة</div>
       <div style="display: flex; gap: 8px; flex-wrap: wrap;" id="currency-picker-chips">
         <div class="filter-chip" onclick="selectDisplayCurrency('USD')">USD ($)</div>
         <div class="filter-chip" onclick="selectDisplayCurrency('EUR')">EUR (€)</div>
@@ -1511,7 +1513,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
     <!-- Language Picker -->
     <div class="inset-card">
-      <div class="section-title" style="margin-top: 0;" id="label-lang-title">🌐 اللغة / Language</div>
+      <div class="section-title" style="margin-top: 0;" id="label-lang-title">اللغة / Language</div>
       <div style="display: flex; gap: 8px; flex-wrap: wrap;" id="language-picker-chips">
         <div class="filter-chip active" id="lang-chip-ar" onclick="changeStoreLanguage('ar')">العربية</div>
         <div class="filter-chip" id="lang-chip-en" onclick="changeStoreLanguage('en')">English</div>
@@ -1525,7 +1527,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
     <!-- Referral Program (Comprehensive Details & Breakdown) -->
     <div class="inset-card">
-      <div class="section-title" style="margin-top: 0;" id="label-referral-title">🎁 برنامج الإحالة والأرباح</div>
+      <div class="section-title" style="margin-top: 0;" id="label-referral-title">برنامج الإحالة والأرباح</div>
       <div style="font-size: 12px; color: var(--hint); margin-bottom: 12px;" id="label-referral-desc">
         شارك رابط الإحالة الخاص بك واحصل على <strong>0.2% عمولة أرباح</strong> مباشرة من هامش كل عملية شراء يقوم بها أصدقاؤك!
       </div>
@@ -1554,7 +1556,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
       <!-- Breakdown of Invited Friends & Individual Earnings -->
       <div style="font-size: 13px; font-weight: 700; margin-bottom: 8px;" id="label-ref-breakdown-title">
-        👥 سجل الأصدقاء المدعوين والأرباح
+        سجل الأصدقاء المدعوين والأرباح
       </div>
       <div id="referrals-breakdown-list" style="display: flex; flex-direction: column; gap: 6px;"></div>
     </div>
@@ -1835,96 +1837,96 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     // Default Category Fallback Meta
     const DEFAULT_CATALOG_META = {
       "AI & Chatbots": {
-        arTitle: "🤖 الذكاء الاصطناعي",
-        enTitle: "🤖 AI & Chatbots",
+        arTitle: "الذكاء الاصطناعي",
+        enTitle: "AI & Chatbots",
         icon: "🤖",
         image: "https://images.unsplash.com/photo-1620712943543-bcc4688e7485?w=800&auto=format&fit=crop&q=85",
         arPreview: "كلود · شات جي بي تي · جيميني · جروك",
         enPreview: "Claude · ChatGPT · Gemini · Grok"
       },
       "Streaming & Entertainment": {
-        arTitle: "🎬 البث والترفيه",
-        enTitle: "🎬 Streaming & Media",
+        arTitle: "البث والترفيه",
+        enTitle: "Streaming & Media",
         icon: "🎬",
         image: "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=800&auto=format&fit=crop&q=85",
         arPreview: "نتفلكس · بيكوك · شاهد · أبل تي في",
         enPreview: "Netflix · Peacock · Shahid · Apple TV"
       },
       "VPN & Security": {
-        arTitle: "🛡️ الحماية والـ VPN",
-        enTitle: "🛡️ VPN & Security",
+        arTitle: "الحماية والـ VPN",
+        enTitle: "VPN & Security",
         icon: "🛡️",
         image: "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=800&auto=format&fit=crop&q=85",
         arPreview: "نورد في بي ان · سيرف شارك · بروتون",
         enPreview: "NordVPN · Surfshark · Proton VPN"
       },
       "Design & Creative": {
-        arTitle: "🎨 التصميم والإبداع",
-        enTitle: "🎨 Design & Creative",
+        arTitle: "التصميم والإبداع",
+        enTitle: "Design & Creative",
         icon: "🎨",
         image: "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=800&auto=format&fit=crop&q=85",
         arPreview: "كانفا · أدوبي · فيجما · فريمر",
         enPreview: "Canva · Adobe · Figma · Framer"
       },
       "Productivity": {
-        arTitle: "📝 الإنتاجية والأدوات",
-        enTitle: "📝 Productivity & Tools",
+        arTitle: "الإنتاجية والأدوات",
+        enTitle: "Productivity & Tools",
         icon: "📝",
         image: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=800&auto=format&fit=crop&q=85",
         arPreview: "نوشن · كاب كات · أوفيس",
         enPreview: "Notion · CapCut · MS Office 365"
       },
       "Office & Productivity": {
-        arTitle: "💼 برامج الأوفيس والأعمال",
-        enTitle: "💼 Office & Business",
+        arTitle: "برامج الأوفيس والأعمال",
+        enTitle: "Office & Business",
         icon: "💼",
         image: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&auto=format&fit=crop&q=85",
         arPreview: "مايكروسوفت 365 · إكسيل · وورد",
         enPreview: "Microsoft 365 · Word · Excel"
       },
       "Accounts & Email": {
-        arTitle: "📧 الحسابات والبريد الإلكتروني",
-        enTitle: "📧 Accounts & Email",
+        arTitle: "الحسابات والبريد الإلكتروني",
+        enTitle: "Accounts & Email",
         icon: "📧",
         image: "https://images.unsplash.com/photo-1596526131083-e8c633c948d2?w=800&auto=format&fit=crop&q=85",
         arPreview: "جي ميل قديم · بريد أعمال موثق",
         enPreview: "Aged Gmail · Business Mail"
       },
       "Education": {
-        arTitle: "🎓 التعليم والمنصات الدراسية",
-        enTitle: "🎓 Education & Learning",
+        arTitle: "التعليم والمنصات الدراسية",
+        enTitle: "Education & Learning",
         icon: "🎓",
         image: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&auto=format&fit=crop&q=85",
         arPreview: "كورسيرا · كويزلت · أوتوديسك",
         enPreview: "Coursera · Quizlet · Autodesk"
       },
       "Communication": {
-        arTitle: "💬 برامج التواصل والمحادثات",
-        enTitle: "💬 Communication",
+        arTitle: "برامج التواصل والمحادثات",
+        enTitle: "Communication",
         icon: "💬",
         image: "https://images.unsplash.com/photo-1516251193007-45ef944ab0c6?w=800&auto=format&fit=crop&q=85",
         arPreview: "زوم برو · ميرو · مكالمات فيديو",
         enPreview: "Zoom Pro · Miro · Team Chats"
       },
       "Social Media": {
-        arTitle: "📱 وسائل التواصل الاجتماعي",
-        enTitle: "📱 Social Media",
+        arTitle: "وسائل التواصل الاجتماعي",
+        enTitle: "Social Media",
         icon: "📱",
         image: "https://images.unsplash.com/photo-1611162617474-5b21e879e113?w=800&auto=format&fit=crop&q=85",
         arPreview: "سناب شات بلس · قنوات موثقة",
         enPreview: "Snapchat+ · Social Boost"
       },
       "Software Keys": {
-        arTitle: "🔑 مفاتيح وتراخيص البرامج",
-        enTitle: "🔑 Software Licenses",
+        arTitle: "مفاتيح وتراخيص البرامج",
+        enTitle: "Software Licenses",
         icon: "🔑",
         image: "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=800&auto=format&fit=crop&q=85",
         arPreview: "ويندوز 10/11 برو · جيت برينز",
         enPreview: "Windows 10/11 Pro · JetBrains"
       },
       "Other": {
-        arTitle: "📦 منتجات رقمية متنوعة",
-        enTitle: "📦 Digital Subscriptions",
+        arTitle: "منتجات رقمية متنوعة",
+        enTitle: "Digital Subscriptions",
         icon: "📦",
         image: "https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?w=800&auto=format&fit=crop&q=85",
         arPreview: "تراخيص، مفاتيح واشتراكات",
@@ -1973,7 +1975,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     // Structured Credential Splitter
     function renderStructuredCredentials(goods) {
       if (!goods || !goods.length) {
-        return '<div style="padding: 12px; color: var(--warning); text-align: center;">⏳ جاري التفعيل، سيتم التسليم قريباً.</div>';
+        return '<div style="padding: 12px; color: var(--warning); text-align: center;">جاري التفعيل، سيتم التسليم قريباً.</div>';
       }
 
       return goods.map(raw => {
@@ -1988,9 +1990,9 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         if (parts.length >= 2) {
           const rows = parts.map((part, idx) => {
             let label = (currentAppLanguage === 'ar') ? "بيانات" : "Credential";
-            if (idx === 0) label = part.includes('@') ? (currentAppLanguage === 'ar' ? "📧 البريد / المستخدم" : "📧 Email / User") : (currentAppLanguage === 'ar' ? "👤 اسم المستخدم" : "👤 Username");
-            else if (idx === 1) label = (currentAppLanguage === 'ar') ? "🔑 كلمة المرور" : "🔑 Password";
-            else if (idx === 2) label = (currentAppLanguage === 'ar') ? "🛡️ كود 2FA / الأمان" : "🛡️ 2FA / Security Key";
+            if (idx === 0) label = part.includes('@') ? (currentAppLanguage === 'ar' ? "البريد / المستخدم" : "Email / User") : (currentAppLanguage === 'ar' ? "اسم المستخدم" : "Username");
+            else if (idx === 1) label = (currentAppLanguage === 'ar') ? "كلمة المرور" : "Password";
+            else if (idx === 2) label = (currentAppLanguage === 'ar') ? "كود 2FA / الأمان" : "2FA / Security Key";
             else label = (currentAppLanguage === 'ar') ? `معلومة ${idx + 1}` : `Field ${idx + 1}`;
 
             return `
@@ -2008,7 +2010,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
             <div class="cred-grid">
               ${rows}
               <div style="text-align: left; margin-top: 2px;">
-                <button class="btn-copy-mini" style="font-size: 10px;" onclick="copyCredText('${line.replace(/'/g, "\\\\'")}')">${currentAppLanguage === 'ar' ? '📋 نسخ السطر كاملاً' : '📋 Copy Full Line'}</button>
+                <button class="btn-copy-mini" style="font-size: 10px;" onclick="copyCredText('${line.replace(/'/g, "\\\\'")}')">${currentAppLanguage === 'ar' ? 'نسخ السطر كاملاً' : 'Copy Full Line'}</button>
               </div>
             </div>
           `;
@@ -2026,7 +2028,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       }).join('');
     }
 
-    // Complete i18n Translation Dictionary (Zero API names exposed)
+    // Complete i18n Translation Dictionary (Zero API names exposed, clean text without emojis)
     const I18N = {
       ar: {
         store: "المتجر",
@@ -2037,13 +2039,13 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         search: "ابحث عن كلود، جيميني، نتفلكس، في بي ان...",
         filter_all: "الكل",
         filter_wishlist: "المفضلة",
-        filter_stock: "🟢 متوفر فقط",
-        filter_instant: "⚡ تسليم فوري",
-        filter_lowprice: "🪙 الأقل سعراً",
+        filter_stock: "متوفر فقط",
+        filter_instant: "تسليم فوري",
+        filter_lowprice: "الأقل سعراً",
         banner_badge: "تحديثات المتجر",
-        banner_title: "✨ اشتراكات كلود وجيميني متوفرة فورياً",
+        banner_title: "اشتراكات كلود وجيميني متوفرة فورياً",
         banner_sub: "تسليم تلقائي فوري للمفاتيح والحسابات على مدار الساعة",
-        pwa_title: "📲 أضف التطبيق للشاشة الرئيسية",
+        pwa_title: "أضف التطبيق للشاشة الرئيسية",
         pwa_sub: "لوصول فوري ومباشر دون فتح تيليجرام",
         pwa_btn: "إضافة الآن",
         collections: "التصنيفات المميزة",
@@ -2055,25 +2057,25 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         view_grid: "شبكة",
         view_list: "قائمة",
         product: "المنتج",
-        instant_delivery: "⚡ تسليم تلقائي فوري",
+        instant_delivery: "تسليم تلقائي فوري",
         custom_activation: "تفعيل مخصص",
-        warranty_30d: "🛡️ ضمان 30 يوم",
+        warranty_30d: "ضمان 30 يوم",
         in_stock: "متوفر",
         out_of_stock: "نفد المخزون",
         desc: "الوصف",
         promo_code_label: "كود الخصم / Promo Code",
         apply: "تطبيق",
         total: "السعر الإجمالي",
-        insufficient_balance: "⚠️ الرصيد المتاح غير كافٍ لهذا الطلب.",
-        topup_to_continue: "💳 شحن الرصيد للمتابعة",
-        buy_now: "⚡ شراء فوري",
-        stars_buy: "⭐ الدفع عبر نجوم تيليجرام",
-        restock_alert: "🔔 نبهني فور التوفر (Restock Alert)",
+        insufficient_balance: "الرصيد المتاح غير كافٍ لهذا الطلب.",
+        topup_to_continue: "شحن الرصيد للمتابعة",
+        buy_now: "شراء فوري",
+        stars_buy: "الدفع عبر نجوم تيليجرام",
+        restock_alert: "نبهني فور التوفر",
         order_success: "تم الطلب بنجاح!",
         delivered_keys: "بيانات الحساب / المفاتيح المسلمة",
         copy_hint: "انقر على أي كود بالأعلى للنسخ الفوري!",
-        view_orders: "📦 عرض في طلباتي",
-        continue_shopping: "🛍️ متابعة التسوق",
+        view_orders: "عرض في طلباتي",
+        continue_shopping: "متابعة التسوق",
         orders_title: "سجل الطلبات والمشتريات",
         orders_empty_title: "لا توجد طلبات بعد",
         orders_empty_sub: "تصفح التصنيفات واطلب الحسابات والمفاتيح بضغطة واحدة!",
@@ -2081,7 +2083,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         step_placed: "تم الطلب",
         step_processing: "قيد المعالجة",
         step_delivered: "تم التسليم",
-        claim_warranty: "🛡️ طلب تعويض الضمان",
+        claim_warranty: "طلب تعويض الضمان",
         wallet_balance_title: "الرصيد المتاح للشراء",
         wallet_ready: "جاهز للشراء الفوري",
         vip_progress: "التقدم نحو رتبة",
@@ -2098,23 +2100,23 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         custom_amount_placeholder: "أدخل المبلغ ($)... e.g. 15",
         voucher_section_title: "شحن عبر كرت هدية (Voucher)",
         voucher_btn: "شحن الكرت",
-        theme_section_title: "🌓 المظهر / Appearance",
+        theme_section_title: "المظهر / Appearance",
         theme_dark: "داكن (Dark)",
         theme_light: "فاتح (Light)",
-        install_section_title: "📲 تثبيت التطبيق",
+        install_section_title: "تثبيت التطبيق",
         install_desc: "أضف أيقونة متجر GH Store إلى شاشة هاتفك الرئيسية لتصفح العروض فورياً!",
-        install_btn: "📲 إضافة إلى الشاشة الرئيسية",
-        currency_title: "💱 عملة العرض المفضلة",
-        lang_title: "🌐 اللغة / Language",
-        referral_title: "🎁 برنامج الإحالة والأرباح",
+        install_btn: "إضافة إلى الشاشة الرئيسية",
+        currency_title: "عملة العرض المفضلة",
+        lang_title: "اللغة / Language",
+        referral_title: "برنامج الإحالة والأرباح",
         referral_desc: "شارك رابط الإحالة الخاص بك واحصل على <strong>0.2% عمولة أرباح</strong> مباشرة من هامش كل عملية شراء يقوم بها أصدقاؤك!",
         ref_stat_count: "المدعوون",
         ref_stat_earned: "إجمالي الأرباح",
         ref_stat_rate: "نسبة العمولة",
-        ref_breakdown_title: "👥 سجل الأصدقاء المدعوين والأرباح",
+        ref_breakdown_title: "سجل الأصدقاء المدعوين والأرباح",
         copy: "نسخ",
         orders_word: "طلب",
-        sheet_payment_title: "⚡ إتمام عملية الشحن",
+        sheet_payment_title: "إتمام عملية الشحن",
         sheet_payment_desc: "تم إنشاء فاتورة الشحن بنجاح. يمكنك المتابعة في المتصفح الخارجي لإتمام الدفع، أو نسخ رابط الفاتورة المباشر:",
         sheet_open_btn: "فتح صفحة الدفع في المتصفح",
         sheet_copy_btn: "نسخ رابط الفاتورة المباشر"
@@ -2128,13 +2130,13 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         search: "Search Claude, Gemini, Netflix, VPN...",
         filter_all: "All",
         filter_wishlist: "Favorites",
-        filter_stock: "🟢 In Stock",
-        filter_instant: "⚡ Instant Delivery",
-        filter_lowprice: "🪙 Lowest Price",
+        filter_stock: "In Stock",
+        filter_instant: "Instant Delivery",
+        filter_lowprice: "Lowest Price",
         banner_badge: "STORE UPDATES",
-        banner_title: "✨ Instant Claude & Gemini Accounts Ready",
+        banner_title: "Instant Claude & Gemini Accounts Ready",
         banner_sub: "Automated 24/7 key & account delivery with instant activation",
-        pwa_title: "📲 Add App to Home Screen",
+        pwa_title: "Add App to Home Screen",
         pwa_sub: "Direct instant launch without opening Telegram",
         pwa_btn: "Add Now",
         collections: "Featured Catalogs",
@@ -2146,25 +2148,25 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         view_grid: "Grid",
         view_list: "List",
         product: "Product",
-        instant_delivery: "⚡ Instant Automated Delivery",
+        instant_delivery: "Instant Automated Delivery",
         custom_activation: "Custom Activation",
-        warranty_30d: "🛡️ 30 Days Warranty",
+        warranty_30d: "30 Days Warranty",
         in_stock: "In Stock",
         out_of_stock: "Out of Stock",
         desc: "Description",
         promo_code_label: "Promo Code / Coupon",
         apply: "Apply",
         total: "Total Price",
-        insufficient_balance: "⚠️ Insufficient balance for this order.",
-        topup_to_continue: "💳 Top Up Balance to Continue",
-        buy_now: "⚡ Instant Buy",
-        stars_buy: "⭐ Pay with Telegram Stars",
-        restock_alert: "🔔 Notify When Available (Restock Alert)",
+        insufficient_balance: "Insufficient balance for this order.",
+        topup_to_continue: "Top Up Balance to Continue",
+        buy_now: "Instant Buy",
+        stars_buy: "Pay with Telegram Stars",
+        restock_alert: "Notify When Available (Restock Alert)",
         order_success: "Order Successful!",
         delivered_keys: "Delivered Credentials / Keys",
         copy_hint: "Tap any code above to copy instantly!",
-        view_orders: "📦 View in Orders",
-        continue_shopping: "🛍️ Continue Shopping",
+        view_orders: "View in Orders",
+        continue_shopping: "Continue Shopping",
         orders_title: "Order History & Purchases",
         orders_empty_title: "No orders yet",
         orders_empty_sub: "Browse catalogs and order accounts & keys in 1 tap!",
@@ -2172,7 +2174,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         step_placed: "Placed",
         step_processing: "Processing",
         step_delivered: "Delivered",
-        claim_warranty: "🛡️ Claim Warranty",
+        claim_warranty: "Claim Warranty",
         wallet_balance_title: "Available Balance",
         wallet_ready: "Ready for instant purchase",
         vip_progress: "Progress to",
@@ -2189,23 +2191,23 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         custom_amount_placeholder: "Enter amount ($)... e.g. 15",
         voucher_section_title: "Redeem Gift Card (Voucher)",
         voucher_btn: "Redeem Card",
-        theme_section_title: "🌓 Theme & Appearance",
+        theme_section_title: "Theme & Appearance",
         theme_dark: "Dark Mode",
         theme_light: "Light Mode",
-        install_section_title: "📲 Install App",
+        install_section_title: "Install App",
         install_desc: "Add GH Store to your phone home screen for instant access!",
-        install_btn: "📲 Add to Home Screen",
-        currency_title: "💱 Preferred Display Currency",
-        lang_title: "🌐 Language",
-        referral_title: "🎁 Referral Program & Earnings",
+        install_btn: "Add to Home Screen",
+        currency_title: "Preferred Display Currency",
+        lang_title: "Language",
+        referral_title: "Referral Program & Earnings",
         referral_desc: "Share your referral link and earn <strong>0.2% profit margin commission</strong> on every purchase made by friends!",
         ref_stat_count: "Invited",
         ref_stat_earned: "Total Earned",
         ref_stat_rate: "Commission",
-        ref_breakdown_title: "👥 Referred Friends & Earnings Breakdown",
+        ref_breakdown_title: "Referred Friends & Earnings Breakdown",
         copy: "Copy",
         orders_word: "orders",
-        sheet_payment_title: "⚡ Complete Payment",
+        sheet_payment_title: "Complete Payment",
         sheet_payment_desc: "Invoice created successfully. You can proceed in your mobile browser or copy the direct payment link:",
         sheet_open_btn: "Open Payment Page in Browser",
         sheet_copy_btn: "Copy Direct Payment Link"
@@ -2630,7 +2632,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       returnToCollections();
     }
 
-    // Clean Product Rows: Clean Title + Structured Spec Badges (Duration, Warranty, Type)
+    // Clean Product Rows: NO EMOJIS, Clean Title + Structured Spec Badges (Duration, Warranty, Type)
     function renderProductItems(products) {
       const container = document.getElementById('catalog-products-list');
       if (!container) return;
@@ -2643,12 +2645,12 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         const isFav = wishlistSet.has(Number(p.id));
         const isOutOfStock = (p.stock !== null && p.stock <= 0);
 
-        // 1. Stock Badge
+        // 1. Clean Stock Badge (No emojis)
         const stockBadge = isOutOfStock
-          ? `<span style="color: var(--danger); font-size: 11px; font-weight: 700;">🔴 ${d.out_of_stock}</span>`
-          : `<span style="color: var(--success); font-size: 11px; font-weight: 600;">🟢 ${p.stock ? `${d.in_stock} (${p.stock})` : d.in_stock}</span>`;
+          ? `<span class="spec-pill stock-out">${d.out_of_stock}</span>`
+          : `<span class="spec-pill in-stock">${p.stock ? `${d.in_stock} (${p.stock})` : d.in_stock}</span>`;
 
-        // 2. Structured Spec Pills
+        // 2. Structured Spec Pills (No emojis)
         const durText = (currentAppLanguage === 'ar' ? p.duration_ar : p.duration_en) || null;
         const warText = (currentAppLanguage === 'ar' ? p.warranty_ar : p.warranty_en) || null;
         const typText = (currentAppLanguage === 'ar' ? p.type_ar : p.type_en) || null;
@@ -2666,18 +2668,16 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
         const displayTitle = p.clean_name || p.name;
 
+        // Clean row layout without clunky box icon on left
         return `
           <div class="product-row" onclick="openProductDetail(${Number(p.id)})">
             <div class="prod-left">
-              <div class="prod-icon">${p.emoji || '⚡'}</div>
-              <div class="prod-details">
-                <div class="prod-title">${displayTitle}</div>
-                <div class="prod-specs-row">
-                  ${stockBadge}
-                  ${durPill}
-                  ${warPill}
-                  ${typPill}
-                </div>
+              <div class="prod-title">${displayTitle}</div>
+              <div class="prod-specs-row">
+                ${stockBadge}
+                ${durPill}
+                ${warPill}
+                ${typPill}
               </div>
             </div>
             <div class="prod-price-box">
@@ -2694,7 +2694,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       }).join('');
     }
 
-    // DEDICATED IN-APP PRODUCT DETAIL PAGE (FIXED NAVIGATION & PRESERVED DOM)
+    // DEDICATED IN-APP PRODUCT DETAIL PAGE (Clean Hero, No Emojis)
     function openProductDetail(productId) {
       haptic('light');
       selectedProduct = allProducts.find(p => Number(p.id) === Number(productId));
@@ -2714,7 +2714,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         };
 
         const displayTitle = selectedProduct.clean_name || selectedProduct.name;
-        setTxt('prod-hero-icon', selectedProduct.emoji || '⚡');
         setTxt('prod-hero-name', displayTitle);
         setTxt('prod-hero-cat', selectedProduct.category || 'Digital');
         setTxt('prod-qty-val', '1');
@@ -2729,12 +2728,12 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         const isOutOfStock = (selectedProduct.stock !== null && selectedProduct.stock <= 0);
 
         setTxt('prod-delivery-badge', isInstant
-          ? (currentAppLanguage === 'ar' ? '⚡ تسليم تلقائي فوري' : '⚡ Instant Automated Delivery')
-          : (currentAppLanguage === 'ar' ? '⏳ تفعيل مخصص' : '⏳ Custom Activation'));
+          ? (currentAppLanguage === 'ar' ? 'تسليم تلقائي فوري' : 'Instant Automated Delivery')
+          : (currentAppLanguage === 'ar' ? 'تفعيل مخصص' : 'Custom Activation'));
 
         setTxt('prod-stock-badge', isOutOfStock
-          ? (currentAppLanguage === 'ar' ? '🔴 نفد المخزون' : '🔴 Out of Stock')
-          : (selectedProduct.stock ? `${currentAppLanguage === 'ar' ? '🟢 متوفر' : '🟢 In Stock'} (${selectedProduct.stock})` : (currentAppLanguage === 'ar' ? '⚡ تسليم فوري' : '⚡ Instant Delivery')));
+          ? (currentAppLanguage === 'ar' ? 'نفد المخزون' : 'Out of Stock')
+          : (selectedProduct.stock ? `${currentAppLanguage === 'ar' ? 'متوفر' : 'In Stock'} (${selectedProduct.stock})` : (currentAppLanguage === 'ar' ? 'تسليم فوري' : 'Instant Delivery')));
 
         // Spec badges in product detail
         const durEl = document.getElementById('prod-dur-badge');
@@ -2897,8 +2896,8 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         if (alertBox) {
           alertBox.style.display = 'block';
           alertBox.innerHTML = (currentAppLanguage === 'ar')
-            ? `⚠️ الرصيد المتاح غير كافٍ (تحتاج ${total.toFixed(2)}${sym}، رصيدك $${userBalance.toFixed(2)}).`
-            : `⚠️ Insufficient balance (Requires ${total.toFixed(2)}${sym}, available $${userBalance.toFixed(2)}).`;
+            ? `الرصيد المتاح غير كافٍ (تحتاج ${total.toFixed(2)}${sym}، رصيدك $${userBalance.toFixed(2)}).`
+            : `Insufficient balance (Requires ${total.toFixed(2)}${sym}, available $${userBalance.toFixed(2)}).`;
         }
         if (buyLabel) buyLabel.innerText = d.topup_to_continue;
         if (priceTag) priceTag.style.display = 'none';
@@ -2924,7 +2923,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         const d = await res.json();
         if (d.status === 'success') {
           haptic('success');
-          showToast('🔔 ' + (currentAppLanguage === 'ar' ? d.message : 'Subscribed to restock alerts!'));
+          showToast(currentAppLanguage === 'ar' ? d.message : 'Subscribed to restock alerts!');
         } else {
           showToast(currentAppLanguage === 'ar' ? 'تعذر الاشتراك في التنبيه' : 'Failed to subscribe to alert');
         }
@@ -2947,7 +2946,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         tg.shareToStory({
           media_url: selectedProduct.image_url || 'https://bot.gh-store.me/static/banner.png',
           text: shareText,
-          widget_link: { url: shareUrl, name: "🛍️ GH Store" }
+          widget_link: { url: shareUrl, name: "GH Store" }
         });
         return;
       }
@@ -3003,7 +3002,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       const buyBtn = document.getElementById('btn-inapp-purchase');
       if (buyBtn) {
         buyBtn.disabled = true;
-        buyBtn.innerHTML = `<span>${currentAppLanguage === 'ar' ? '⏳ جاري معالجة الطلب...' : '⏳ Processing Order...'}</span>`;
+        buyBtn.innerHTML = `<span>${currentAppLanguage === 'ar' ? 'جاري معالجة الطلب...' : 'Processing Order...'}</span>`;
       }
 
       const payload = {
@@ -3146,15 +3145,15 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         const sypRate = 392.0;
         const sypEst = Math.round(selectedRechargeAmount * sypRate);
         if (currentAppLanguage === 'ar') {
-          btn.innerHTML = `<span>⚡</span> <span>شحن ${amtStr}$ (≈ ${sypEst.toLocaleString()} ل.س) عبر ${methodName}</span>`;
+          btn.innerHTML = `<span>شحن ${amtStr}$ (≈ ${sypEst.toLocaleString()} ل.س) عبر ${methodName}</span>`;
         } else {
-          btn.innerHTML = `<span>⚡</span> <span>Recharge $${amtStr} (≈ ${sypEst.toLocaleString()} SYP) via ${methodName}</span>`;
+          btn.innerHTML = `<span>Recharge $${amtStr} (≈ ${sypEst.toLocaleString()} SYP) via ${methodName}</span>`;
         }
       } else {
         if (currentAppLanguage === 'ar') {
-          btn.innerHTML = `<span>⚡</span> <span>شحن ${amtStr}$ عبر ${methodName}</span>`;
+          btn.innerHTML = `<span>شحن ${amtStr}$ عبر ${methodName}</span>`;
         } else {
-          btn.innerHTML = `<span>⚡</span> <span>Recharge $${amtStr} via ${methodName}</span>`;
+          btn.innerHTML = `<span>Recharge $${amtStr} via ${methodName}</span>`;
         }
       }
     }
@@ -3173,7 +3172,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       const btn = document.getElementById('btn-execute-recharge');
       if (btn) {
         btn.disabled = true;
-        const loadingText = (currentAppLanguage === 'ar') ? '⏳ جاري تجهيز الفاتورة...' : '⏳ Generating invoice...';
+        const loadingText = (currentAppLanguage === 'ar') ? 'جاري تجهيز الفاتورة...' : 'Generating invoice...';
         btn.innerHTML = `<span>${loadingText}</span>`;
       }
 
@@ -3432,7 +3431,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       const d = I18N[currentAppLanguage] || I18N.ar;
       container.innerHTML = `
         <div style="text-align: center; padding: 40px 16px; color: var(--hint);">
-          <div style="font-size: 40px; margin-bottom: 8px;">📦</div>
           <div style="font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 4px;">${d.orders_empty_title}</div>
           <p style="font-size: 13px; margin-bottom: 16px;">${d.orders_empty_sub}</p>
           <button class="btn-action-primary" onclick="switchTab('store')" style="width: auto; padding: 0 24px; margin: 0 auto; height: 42px;">${d.browse_store}</button>

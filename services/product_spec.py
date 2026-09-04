@@ -75,33 +75,33 @@ class ProductSpecParser:
         token_tag = None
         m_tok = re.search(r"(\d+[MmkK]?)\s*(Token|Tokens|Credit|Credits)", name, re.IGNORECASE)
         if m_tok:
-            token_tag = f"⚡ {m_tok.group(1).upper()} Token"
+            token_tag = f"{m_tok.group(1).upper()} Token"
 
-        # 2. Extract Warranty
+        # 2. Extract Warranty (pure text, no emojis)
         warranty_ar = None
         warranty_en = None
         if re.search(r"\b(NW|No\s*warranty|without\s*warranty)\b", name, re.IGNORECASE):
-            warranty_ar = "⚠️ بدون ضمان"
-            warranty_en = "⚠️ No Warranty"
+            warranty_ar = "بدون ضمان"
+            warranty_en = "No Warranty"
         elif re.search(r"\b(FW|Full\s*warranty)\b", name, re.IGNORECASE):
-            warranty_ar = "🛡️ ضمان كامل"
-            warranty_en = "🛡️ Full Warranty"
+            warranty_ar = "ضمان كامل"
+            warranty_en = "Full Warranty"
         else:
             m_w = re.search(r"\(?W(\d+)([DH])\)?", name, re.IGNORECASE)
             if m_w:
                 num, unit = m_w.group(1), m_w.group(2).upper()
-                warranty_ar = f"🛡️ ضمان {num} يوم" if unit == "D" else f"🛡️ ضمان {num} ساعة"
-                warranty_en = f"🛡️ {num}D Warranty" if unit == "D" else f"🛡️ {num}H Warranty"
+                warranty_ar = f"ضمان {num} يوم" if unit == "D" else f"ضمان {num} ساعة"
+                warranty_en = f"{num}D Warranty" if unit == "D" else f"{num}H Warranty"
             else:
                 m_w2 = re.search(r"(\d+)\s*([dD]|day|month|year)s?\s*warranty", name, re.IGNORECASE)
                 if m_w2:
                     num, unit = m_w2.group(1), m_w2.group(2).lower()
                     if "d" in unit:
-                        warranty_ar = f"🛡️ ضمان {num} يوم"
-                        warranty_en = f"🛡️ {num}D Warranty"
+                        warranty_ar = f"ضمان {num} يوم"
+                        warranty_en = f"{num}D Warranty"
                     elif "month" in unit:
-                        warranty_ar = f"🛡️ ضمان {num} شهر"
-                        warranty_en = f"🛡️ {num}M Warranty"
+                        warranty_ar = f"ضمان {num} شهر"
+                        warranty_en = f"{num}M Warranty"
 
         # 3. Extract Duration
         duration_ar = None
@@ -109,52 +109,53 @@ class ProductSpecParser:
         name_no_tokens = re.sub(r"\d+[MmkK]?\s*(Token|Tokens|Credit|Credits)", "", name, flags=re.IGNORECASE)
 
         if re.search(r"\b(lifetime)\b", name, re.IGNORECASE):
-            duration_ar = "⏳ مدى الحياة"
-            duration_en = "⏳ Lifetime"
+            duration_ar = "مدى الحياة"
+            duration_en = "Lifetime"
         else:
             m_dur = re.search(r"\b(\d+)\s*(months?|m|yrs?|years?|days?|d)\b", name_no_tokens, re.IGNORECASE)
             if m_dur:
                 val, unit = int(m_dur.group(1)), m_dur.group(2).lower()
                 if unit in ("m", "month", "months"):
                     if val == 1:
-                        duration_ar = "⏳ شهر واحد"
-                        duration_en = "⏳ 1 Month"
+                        duration_ar = "شهر واحد"
+                        duration_en = "1 Month"
                     elif val == 12:
-                        duration_ar = "⏳ سنة كاملة"
-                        duration_en = "⏳ 1 Year"
+                        duration_ar = "سنة كاملة"
+                        duration_en = "1 Year"
                     else:
-                        duration_ar = f"⏳ {val} أشهر" if val <= 10 else f"⏳ {val} شهراً"
-                        duration_en = f"⏳ {val} Months"
+                        duration_ar = f"{val} أشهر" if val <= 10 else f"{val} شهراً"
+                        duration_en = f"{val} Months"
                 elif unit in ("y", "yr", "yrs", "year", "years"):
-                    duration_ar = f"⏳ {val} سنة" if val == 1 else f"⏳ {val} سنوات"
-                    duration_en = f"⏳ {val} Year" if val == 1 else f"⏳ {val} Years"
+                    duration_ar = f"{val} سنة" if val == 1 else f"{val} سنوات"
+                    duration_en = f"{val} Year" if val == 1 else f"{val} Years"
                 elif unit in ("d", "day", "days"):
-                    duration_ar = f"⏳ {val} يوم"
-                    duration_en = f"⏳ {val} Days"
+                    duration_ar = f"{val} يوم"
+                    duration_en = f"{val} Days"
 
         # 4. Extract Account / Delivery Type
         type_ar = None
         type_en = None
         if re.search(r"\b(invite|invitation|slot|family)\b", name, re.IGNORECASE):
-            type_ar = "👥 دعوة عائلية"
-            type_en = "👥 Family Invite"
+            type_ar = "دعوة عائلية"
+            type_en = "Family Invite"
         elif re.search(r"\b(key|retail)\b", name, re.IGNORECASE):
-            type_ar = "🔑 مفتاح ترخيص"
-            type_en = "🔑 License Key"
+            type_ar = "مفتاح ترخيص"
+            type_en = "License Key"
         elif token_tag:
             type_ar = token_tag
             type_en = token_tag
         elif re.search(r"\b(private|admin|ready\s*account)\b", name, re.IGNORECASE):
-            type_ar = "🔒 حساب خاص"
-            type_en = "🔒 Private Account"
+            type_ar = "حساب خاص"
+            type_en = "Private Account"
         elif re.search(r"(\d+)\s*profile", name, re.IGNORECASE):
             num_prof = re.search(r"(\d+)\s*profile", name, re.IGNORECASE).group(1)
-            type_ar = f"👥 {num_prof} شاشات"
-            type_en = f"👥 {num_prof} Profiles"
+            type_ar = f"{num_prof} شاشات"
+            type_en = f"{num_prof} Profiles"
 
         # 5. Clean Title
         clean = name
         clean = re.sub(r"[\U00010000-\U0010ffff]", "", clean)
+        clean = re.sub(r"[\u2000-\u3300]", "", clean)
         clean = re.sub(r"<tg-emoji[^>]*>.*?</tg-emoji>", "", clean)
         clean = re.sub(r"\(?W\d+[DH]\)?", "", clean, flags=re.IGNORECASE)
         clean = re.sub(
