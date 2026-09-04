@@ -318,6 +318,7 @@ async def get_tma_catalog():
                 "price": p.sell_price_usd,
                 "sym": sym,
                 "description": p.description or "",
+                "description_ar": getattr(p, "description_ar", None) or "",
                 "emoji": p.emoji or "⚡",
                 "custom_emoji_id": p.custom_emoji_id,
                 "stock": p.stock,
@@ -525,6 +526,19 @@ async def tma_instant_buy(request: Request):
         if vol_disc_pct > 0:
             vol_disc = round(total * (vol_disc_pct / 100.0), 2)
             total = max(0.01, round(total - vol_disc, 2))
+        coupon_code = (body.get("coupon_code") or "").strip()
+        if coupon_code:
+            from repositories.coupon import CouponRepository
+            from enums.coupon_type import CouponType
+            coupon = await CouponRepository.get_by_code(coupon_code, session)
+            if coupon and coupon.is_active:
+                if not (coupon.usage_limit and coupon.usage_count >= coupon.usage_limit):
+                    if coupon.type == CouponType.PERCENT:
+                        c_disc = total * (float(coupon.value) / 100.0)
+                    else:
+                        c_disc = float(coupon.value)
+                    total = max(0.01, round(total - c_disc, 2))
+                    await CouponRepository.increment_usage(coupon.id, session)
 
         # 1. Atomically debit customer balance
         debited = await UserRepository.try_debit_balance(user.telegram_id, total, session)
@@ -783,6 +797,81 @@ async def create_tma_topup_invoice(request: Request):
                 return JSONResponse({"error": "sam_failed", "detail": str(e)}, status_code=502)
 
     return JSONResponse({"error": "unknown_method"}, status_code=400)
+
+
+@app.post("/api/restock/subscribe")
+async def tma_restock_subscribe(request: Request):
+    """Subscribe user to in-app restock notification when out-of-stock product returns."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+
+    tg_id = int(body.get("tg_id") or 0)
+    product_id = int(body.get("product_id") or 0)
+    if not tg_id or not product_id:
+        return JSONResponse({"error": "missing_parameters"}, status_code=400)
+
+    async with get_db_session() as session:
+        user = await UserRepository.get_by_tgid(tg_id, session)
+        user_id = user.id if user else None
+        lang = user.language if user and user.language else "ar"
+
+        from repositories.restock_subscription import RestockSubscriptionRepository
+        await RestockSubscriptionRepository.subscribe(
+            telegram_id=tg_id,
+            user_id=user_id,
+            batstore_product_id=product_id,
+            subcategory_id=None,
+            language=lang,
+            session=session
+        )
+        await session_commit(session)
+
+    return {"status": "success", "message": "تم تفعيل التنبيه فور توفر المنتج بنجاح!"}
+
+
+@app.post("/api/coupon/validate")
+async def tma_validate_coupon(request: Request):
+    """Validate a promo/coupon code and compute discount for Mini App checkout."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+
+    code = (body.get("code") or "").strip()
+    subtotal = float(body.get("subtotal") or 0.0)
+    if not code:
+        return JSONResponse({"error": "missing_code"}, status_code=400)
+
+    from repositories.coupon import CouponRepository
+    from enums.coupon_type import CouponType
+    async with get_db_session() as session:
+        coupon = await CouponRepository.get_by_code(code, session)
+        if not coupon or not coupon.is_active:
+            return JSONResponse({"valid": False, "error": "كود الخصم غير صالح أو منتهي الصلاحية"}, status_code=400)
+        
+        if coupon.usage_limit and coupon.usage_count >= coupon.usage_limit:
+            return JSONResponse({"valid": False, "error": "تم استنفاد الحد الأقصى لاستخدام هذا الكود"}, status_code=400)
+
+        discount = 0.0
+        if coupon.type == CouponType.PERCENT:
+            discount = round(subtotal * (float(coupon.value) / 100.0), 2)
+        else:
+            discount = round(float(coupon.value), 2)
+
+        discount = min(discount, subtotal)
+        new_total = max(0.01, round(subtotal - discount, 2))
+
+    return {
+        "valid": True,
+        "code": coupon.code,
+        "type": coupon.type.value if hasattr(coupon.type, "value") else str(coupon.type),
+        "value": float(coupon.value),
+        "discount": discount,
+        "new_total": new_total,
+        "message": f"تم تطبيق كود الخصم بنجاح (-${discount:.2f})!"
+    }
 
 
 @app.post("/api/voucher/redeem")

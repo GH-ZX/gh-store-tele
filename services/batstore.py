@@ -109,8 +109,9 @@ class BatStoreService:
         return data
 
     @staticmethod
-    async def list_products(session: AsyncSession | Session) -> list[dict]:
-        resp = await BatStoreService._request("GET", "/api/reseller/products", session)
+    async def list_products(session: AsyncSession | Session, lang: str | None = None) -> list[dict]:
+        params = {"lang": lang} if lang else None
+        resp = await BatStoreService._request("GET", "/api/reseller/products", session, params=params)
         if resp.status_code != 200:
             raise BatStoreAPIError(f"GET /products {resp.status_code}: {resp.text[:200]}")
         data = resp.json()
@@ -288,6 +289,14 @@ class BatStoreService:
         """
         global_percent, global_fixed, global_type = await BatStoreService._global_margin(session)
         products = await BatStoreService.list_products(session)
+        ar_desc_map: dict[int, str] = {}
+        try:
+            ar_products = await BatStoreService.list_products(session, lang="ar")
+            for arp in ar_products:
+                if arp.get("id") and arp.get("description"):
+                    ar_desc_map[int(arp["id"])] = arp["description"]
+        except Exception as e:
+            logging.warning("Failed to fetch Arabic descriptions from reseller API: %s", e)
         rules = await CustomEmojiService.get_rules(session)
         created = 0
         updated = 0
@@ -308,6 +317,7 @@ class BatStoreService:
                     product_id=pid,
                     name=product_name,
                     description=p.get("description"),
+                    description_ar=ar_desc_map.get(pid),
                     emoji=p.get("emoji") or detected_emoji,
                     custom_emoji_id=detected_custom_id,
                     image_url=p.get("image_url"),
@@ -350,6 +360,7 @@ class BatStoreService:
                     product_id=pid,
                     name=p.get("name") or existing.name,
                     description=p.get("description") or existing.description,
+                    description_ar=ar_desc_map.get(pid) or existing.description_ar,
                     emoji=existing.emoji or p.get("emoji") or detected_emoji,
                     custom_emoji_id=existing.custom_emoji_id or detected_custom_id,
                     image_url=p.get("image_url") or existing.image_url,

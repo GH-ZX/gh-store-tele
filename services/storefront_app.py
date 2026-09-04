@@ -1,15 +1,17 @@
 """Telegram Mini App (TMA) Mobile-First Storefront.
 
 Features:
-- Floating Liquid Glass Flyout Navbar (translucent, glossy reflection, smooth active pill, safe-area).
-- Arabic First by default with full RTL support (plus English, German, Spanish, French, Italian, Chinese).
-- Homepage Catalog Cards Grid (AI & Chatbots, Streaming, VPN, Design, Productivity) with item counts, starting prices, and '← All Catalogs' drill-down.
-- Robust Markdown & HTML Product Description Formatter (handles **bold**, *italic*, bullets, line breaks, <tg-emoji>).
-- Fixed Product Exploration (Number-safe matching so entering any product never breaks navigating others).
-- Dedicated In-App Product Page with live balance check, quantity stepper, volume discounts, and instant in-app checkout (POST /api/buy) — no text chat redirect!
-- In-App Order Success Screen with copyable credentials and confetti particle burst.
-- Real Telegram profile picture via bot.get_user_profile_photos().
-- Orders page with timeline stepper, 1-tap copy, in-app warranty claim, and in-app review dialog.
+- SWR (Stale-While-Revalidate) instant 0ms launch cache via localStorage.
+- Native Arabic product descriptions from API (?lang=ar) when app language is Arabic.
+- Wishlist / Favorites synchronized via Telegram CloudStorage with localStorage fallback.
+- In-App 1-Tap Restock Notification button ('🔔 نبهني فور التوفر') via POST /api/restock/subscribe.
+- Structured Credential Splitter for delivered accounts (email:pass:2fa) with discrete copy pills.
+- Add to Home Screen integration (tg.addToHomeScreen).
+- 1-Tap Telegram Product & Story Sharing with referral tracking.
+- Catalog Quick Filters (Instant Only, In-Stock, Low-to-High Price, Favorites).
+- Web Audio zero-asset synthesized micro-clicks, pops, and celebratory chimes.
+- In-App Checkout Coupon / Promo Code Input & validation (POST /api/coupon/validate).
+- Floating Liquid Glass Flyout Navbar with safe-area and active pill indicator.
 """
 
 STOREFRONT_HTML = r"""<!DOCTYPE html>
@@ -103,6 +105,11 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       padding: 2px 6px;
       border-radius: 6px;
     }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
     .header-balance-btn {
       background: rgba(56, 189, 248, 0.12);
       border: 1px solid rgba(56, 189, 248, 0.35);
@@ -134,7 +141,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     /* Search Bar */
     .search-box {
       position: relative;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
     }
     .search-box input {
       width: 100%;
@@ -172,29 +179,33 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     }
     [dir="ltr"] .clear-search { left: auto; right: 14px; }
 
-    /* Trending Quick Search Chips */
-    .trending-chips {
+    /* Quick Filter Chips */
+    .filter-chips-row {
       display: flex;
       gap: 8px;
       overflow-x: auto;
       padding-bottom: 8px;
-      margin-bottom: 14px;
+      margin-bottom: 10px;
       scrollbar-width: none;
     }
-    .trending-chips::-webkit-scrollbar { display: none; }
-    .trend-chip {
+    .filter-chips-row::-webkit-scrollbar { display: none; }
+    .filter-chip {
       background: var(--card);
       border: 1px solid var(--border);
       color: var(--hint);
       font-size: 12px;
       font-weight: 600;
-      padding: 6px 13px;
-      border-radius: 16px;
+      padding: 5px 12px;
+      border-radius: 14px;
       white-space: nowrap;
       cursor: pointer;
       transition: all 0.15s;
     }
-    .trend-chip:active { background: rgba(56, 189, 248, 0.18); color: #fff; border-color: var(--accent); }
+    .filter-chip.active {
+      background: rgba(56, 189, 248, 0.18);
+      color: #38bdf8;
+      border-color: var(--accent);
+    }
 
     /* Promotional Hero Banner */
     .hero-banner {
@@ -337,6 +348,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       justify-content: space-between;
       gap: 12px;
       cursor: pointer;
+      position: relative;
       transition: transform 0.15s, border-color 0.15s;
     }
     .product-row:active {
@@ -384,8 +396,11 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     .prod-price-box {
       text-align: left;
       flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
     }
-    [dir="ltr"] .prod-price-box { text-align: right; }
+    [dir="ltr"] .prod-price-box { text-align: right; align-items: flex-start; }
     .prod-price {
       font-size: 16px;
       font-weight: 800;
@@ -396,6 +411,16 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       color: var(--hint);
       margin-top: 2px;
     }
+    .wishlist-btn-card {
+      background: transparent;
+      border: none;
+      font-size: 18px;
+      cursor: pointer;
+      padding: 4px;
+      line-height: 1;
+      transition: transform 0.15s;
+    }
+    .wishlist-btn-card:active { transform: scale(1.3); }
 
     /* IN-APP DEDICATED PRODUCT DETAIL PAGE */
     .page-hero {
@@ -404,10 +429,34 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       background: radial-gradient(circle at center, rgba(56, 189, 248, 0.12), transparent 70%);
       border-radius: 18px;
       margin-bottom: 14px;
+      position: relative;
     }
     .hero-icon { font-size: 54px; margin-bottom: 8px; }
     .hero-name { font-size: 22px; font-weight: 800; letter-spacing: -0.3px; margin-bottom: 4px; }
     .hero-cat { font-size: 12px; color: var(--accent); text-transform: uppercase; font-weight: 700; }
+    .hero-actions-bar {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      display: flex;
+      gap: 8px;
+    }
+    [dir="ltr"] .hero-actions-bar { right: auto; left: 14px; }
+    .circle-icon-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--border);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    .circle-icon-btn:active { background: rgba(56, 189, 248, 0.2); }
+
     .inset-card {
       background: var(--card);
       border: 1px solid var(--border);
@@ -482,7 +531,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     .stepper-divider { width: 1px; height: 20px; background: var(--border); }
     .stepper-val { padding: 0 14px; font-size: 15px; font-weight: 700; }
 
-    /* iPhone Action Buttons */
+    /* Action Buttons */
     .btn-action-primary {
       width: 100%;
       height: 50px;
@@ -502,6 +551,23 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       transition: opacity 0.15s, transform 0.15s;
     }
     .btn-action-primary:active { opacity: 0.8; transform: scale(0.98); }
+    .btn-action-warning {
+      width: 100%;
+      height: 50px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      color: #ffffff;
+      font-size: 16px;
+      font-weight: 700;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: 0 4px 16px rgba(245, 158, 11, 0.35);
+    }
+    .btn-action-warning:active { opacity: 0.8; transform: scale(0.98); }
     .btn-action-secondary {
       background: rgba(120, 120, 128, 0.18);
       color: var(--accent);
@@ -579,20 +645,54 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     }
     .node-label { font-size: 10px; color: var(--hint); font-weight: 600; }
 
-    /* Copyable Code Box */
-    .copyable-box {
-      background: rgba(0, 0, 0, 0.4);
-      border: 1px dashed rgba(56, 189, 248, 0.4);
+    /* Structured Credential Splitter Cards */
+    .cred-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin: 8px 0;
+    }
+    .cred-pill-row {
+      background: rgba(0, 0, 0, 0.38);
+      border: 1px solid var(--border);
       border-radius: 10px;
-      padding: 12px;
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .cred-meta {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .cred-type-tag {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--hint);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .cred-val-text {
       font-family: ui-monospace, SFMono-Regular, monospace;
       font-size: 13px;
       color: #38bdf8;
       word-break: break-all;
-      margin: 8px 0;
-      cursor: pointer;
     }
-    .copyable-box:active { background: rgba(56, 189, 248, 0.15); }
+    .btn-copy-mini {
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      color: var(--accent);
+      border-radius: 8px;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .btn-copy-mini:active { background: rgba(56, 189, 248, 0.25); }
 
     /* FLOATING LIQUID GLASS BOTTOM NAVBAR (Flyout Island) */
     .liquid-glass-nav {
@@ -691,6 +791,19 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
     }
     .toast-pill.show { transform: translateX(-50%) translateY(0); }
+
+    /* Home Screen Banner */
+    .pwa-banner {
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.15), rgba(99, 102, 241, 0.15));
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 14px;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
   </style>
 </head>
 <body>
@@ -708,14 +821,25 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         <span id="top-sub-caption">المتجر الرقمي المعتمد</span>
       </div>
     </div>
-    <div class="header-balance-btn" onclick="switchTab('wallet')">
-      <span id="top-balance-str">$0.00</span>
-      <span>➕</span>
+    <div class="header-actions">
+      <div class="header-balance-btn" onclick="switchTab('wallet')">
+        <span id="top-balance-str">$0.00</span>
+        <span>➕</span>
+      </div>
     </div>
   </header>
 
   <!-- TAB 1: STORE VIEW -->
   <main id="view-store" class="tab-view active">
+    <!-- Home Screen Pin Banner (Bot API 8.0) -->
+    <div class="pwa-banner" id="home-screen-banner" style="display: none;">
+      <div style="font-size: 13px;">
+        <strong>📲 أضف التطبيق للشاشة الرئيسية</strong>
+        <div style="font-size: 11px; color: var(--hint);">لوصول فوري ومباشر دون فتح تيليجرام</div>
+      </div>
+      <button class="btn-copy-mini" onclick="promptAddToHomeScreen()">إضافة الآن</button>
+    </div>
+
     <!-- Search Bar -->
     <div class="search-box">
       <span class="search-icon">🔍</span>
@@ -723,13 +847,13 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       <span class="clear-search" id="store-clear-btn" onclick="clearSearch()">✕</span>
     </div>
 
-    <!-- Trending Quick Chips -->
-    <div class="trending-chips" id="trending-chips">
-      <div class="trend-chip" onclick="applyTrend('Claude')">🧠 Claude 3.5</div>
-      <div class="trend-chip" onclick="applyTrend('Gemini')">✨ Gemini Pro</div>
-      <div class="trend-chip" onclick="applyTrend('ChatGPT')">🤖 ChatGPT 4o</div>
-      <div class="trend-chip" onclick="applyTrend('Netflix')">🎬 Netflix 4K</div>
-      <div class="trend-chip" onclick="applyTrend('VPN')">🛡️ NordVPN</div>
+    <!-- Quick Filters & Sorting -->
+    <div class="filter-chips-row" id="quick-filters-row">
+      <div class="filter-chip active" id="filter-all" onclick="applyCatalogFilter('all')">الكل</div>
+      <div class="filter-chip" id="filter-wishlist" onclick="applyCatalogFilter('wishlist')">❤️ المفضلة</div>
+      <div class="filter-chip" id="filter-stock" onclick="applyCatalogFilter('stock')">🟢 متوفر فقط</div>
+      <div class="filter-chip" id="filter-instant" onclick="applyCatalogFilter('instant')">⚡ تسليم فوري</div>
+      <div class="filter-chip" id="filter-lowprice" onclick="applyCatalogFilter('lowprice')">🪙 الأقل سعراً</div>
     </div>
 
     <!-- Promotional Hero Banner -->
@@ -772,6 +896,10 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     </div>
 
     <div class="page-hero">
+      <div class="hero-actions-bar">
+        <button class="circle-icon-btn" id="btn-detail-wishlist" onclick="toggleCurrentProductWishlist()" title="المفضلة">🤍</button>
+        <button class="circle-icon-btn" onclick="shareCurrentProduct()" title="مشاركة">↗️</button>
+      </div>
       <div class="hero-icon" id="prod-hero-icon">⚡</div>
       <h2 class="hero-name" id="prod-hero-name">اسم المنتج</h2>
       <div class="hero-cat" id="prod-hero-cat">حساب رقمي</div>
@@ -789,6 +917,16 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     </div>
 
     <div class="inset-card">
+      <!-- Direct Coupon / Promo Code Input -->
+      <div style="margin-bottom: 14px;">
+        <div style="font-size: 12px; color: var(--hint); margin-bottom: 6px;">كود الخصم / Promo Code</div>
+        <div style="display: flex; gap: 8px;">
+          <input type="text" id="coupon-code-input" placeholder="SAVE10" style="flex: 1; background: rgba(0,0,0,0.35); border: 1px solid var(--border); border-radius: 10px; color: #fff; padding: 8px 12px; font-family: monospace; font-size: 13px; text-transform: uppercase; outline: none;">
+          <button class="btn-action-secondary" onclick="applyCheckoutCoupon()" style="padding: 6px 14px;">تطبيق</button>
+        </div>
+        <div id="coupon-applied-note" style="font-size: 12px; color: var(--success); font-weight: 700; margin-top: 4px; display: none;"></div>
+      </div>
+
       <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
         <div>
           <div style="font-size: 12px; color: var(--hint);" id="label-total-title">السعر الإجمالي</div>
@@ -806,6 +944,13 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
       <div id="insufficient-funds-alert" style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 10px; padding: 10px; text-align: center; font-size: 13px; color: #fca5a5; margin-bottom: 12px; display: none;">
         ⚠️ الرصيد المتاح غير كافٍ لهذا الطلب.
+      </div>
+
+      <!-- Out-of-Stock Restock Alert Button -->
+      <div id="restock-alert-box" style="display: none; margin-bottom: 10px;">
+        <button class="btn-action-warning" onclick="triggerInAppRestockSubscribe()">
+          <span>🔔 نبهني فور التوفر (Restock Alert)</span>
+        </button>
       </div>
 
       <button class="btn-action-primary" id="btn-inapp-purchase" onclick="executeProductBuy()">
@@ -932,25 +1077,35 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     </div>
 
     <div class="inset-card">
+      <div class="section-title" style="margin-top: 0;">📲 تثبيت التطبيق</div>
+      <div style="font-size: 12px; color: var(--hint); margin-bottom: 8px;">
+        أضف أيقونة متجر GH Store إلى شاشة هاتفك الرئيسية لتصفح العروض فورياً!
+      </div>
+      <button class="btn-action-secondary" onclick="promptAddToHomeScreen()" style="width: 100%; height: 40px;">
+        📲 إضافة إلى الشاشة الرئيسية
+      </button>
+    </div>
+
+    <div class="inset-card">
       <div class="section-title" style="margin-top: 0;">💱 عملة العرض المفضلة</div>
       <div style="display: flex; gap: 8px; flex-wrap: wrap;" id="currency-picker-chips">
-        <div class="trend-chip" onclick="selectDisplayCurrency('USD')">USD ($)</div>
-        <div class="trend-chip" onclick="selectDisplayCurrency('EUR')">EUR (€)</div>
-        <div class="trend-chip" onclick="selectDisplayCurrency('SYP')">SYP (ل.س)</div>
-        <div class="trend-chip" onclick="selectDisplayCurrency('XTR')">Stars (⭐)</div>
+        <div class="filter-chip" onclick="selectDisplayCurrency('USD')">USD ($)</div>
+        <div class="filter-chip" onclick="selectDisplayCurrency('EUR')">EUR (€)</div>
+        <div class="filter-chip" onclick="selectDisplayCurrency('SYP')">SYP (ل.س)</div>
+        <div class="filter-chip" onclick="selectDisplayCurrency('XTR')">Stars (⭐)</div>
       </div>
     </div>
 
     <div class="inset-card">
       <div class="section-title" style="margin-top: 0;">🌐 اللغة / Language</div>
       <div style="display: flex; gap: 8px; flex-wrap: wrap;" id="language-picker-chips">
-        <div class="trend-chip" onclick="changeStoreLanguage('ar')">العربية</div>
-        <div class="trend-chip" onclick="changeStoreLanguage('en')">English</div>
-        <div class="trend-chip" onclick="changeStoreLanguage('de')">Deutsch</div>
-        <div class="trend-chip" onclick="changeStoreLanguage('es')">Español</div>
-        <div class="trend-chip" onclick="changeStoreLanguage('fr')">Français</div>
-        <div class="trend-chip" onclick="changeStoreLanguage('it')">Italiano</div>
-        <div class="trend-chip" onclick="changeStoreLanguage('zh')">中文</div>
+        <div class="filter-chip" onclick="changeStoreLanguage('ar')">العربية</div>
+        <div class="filter-chip" onclick="changeStoreLanguage('en')">English</div>
+        <div class="filter-chip" onclick="changeStoreLanguage('de')">Deutsch</div>
+        <div class="filter-chip" onclick="changeStoreLanguage('es')">Español</div>
+        <div class="filter-chip" onclick="changeStoreLanguage('fr')">Français</div>
+        <div class="filter-chip" onclick="changeStoreLanguage('it')">Italiano</div>
+        <div class="filter-chip" onclick="changeStoreLanguage('zh')">中文</div>
       </div>
     </div>
 
@@ -998,13 +1153,81 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       } catch (e) {}
     }
 
+    // Zero-Asset Synthesized Web Audio Micro-Clicks
+    let audioCtx = null;
+    function initAudio() {
+      if (!audioCtx) {
+        const AudioCtor = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtor) audioCtx = new AudioCtor();
+      }
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+    function playAudioTick() {
+      try {
+        initAudio();
+        if (!audioCtx) return;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(1200, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.015);
+        gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.015);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.016);
+      } catch (e) {}
+    }
+    function playAudioPop() {
+      try {
+        initAudio();
+        if (!audioCtx) return;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(220, audioCtx.currentTime + 0.025);
+        gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.025);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.026);
+      } catch (e) {}
+    }
+    function playAudioChime() {
+      try {
+        initAudio();
+        if (!audioCtx) return;
+        [523.25, 659.25].forEach((freq, idx) => {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, audioCtx.currentTime + idx * 0.1);
+          gain.gain.setValueAtTime(0.15, audioCtx.currentTime + idx * 0.1);
+          gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + idx * 0.1 + 0.25);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(audioCtx.currentTime + idx * 0.1);
+          osc.stop(audioCtx.currentTime + idx * 0.1 + 0.26);
+        });
+      } catch (e) {}
+    }
+
     function haptic(type = 'light') {
       try {
+        if (type === 'pop') { playAudioPop(); }
+        else if (type === 'success') { playAudioChime(); }
+        else { playAudioTick(); }
+
         if (tg?.HapticFeedback) {
           if (type === 'success' || type === 'error' || type === 'warning') {
             tg.HapticFeedback.notificationOccurred(type);
           } else {
-            tg.HapticFeedback.impactOccurred(type);
+            tg.HapticFeedback.impactOccurred(type === 'pop' ? 'light' : 'medium');
           }
         }
       } catch (e) {}
@@ -1071,11 +1294,72 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     let selectedQty = 1;
     let activeTab = 'store';
     let currentAppLanguage = 'ar'; // Arabic First
+    let activeCatalogFilter = 'all';
+    let appliedCoupon = null;
+    let wishlistSet = new Set();
 
     // Telegram User ID Resolution
     const urlParams = new URLSearchParams(window.location.search);
     const tgUser = tg?.initDataUnsafe?.user;
     const userId = tgUser?.id || Number(urlParams.get('tg_id') || 0);
+
+    // Wishlist Sync (CloudStorage + localStorage)
+    function initWishlist() {
+      try {
+        const local = localStorage.getItem('ghstore_wishlist');
+        if (local) wishlistSet = new Set(JSON.parse(local));
+      } catch (e) {}
+
+      if (tg?.CloudStorage) {
+        tg.CloudStorage.getItem('ghstore_wishlist', (err, val) => {
+          if (!err && val) {
+            try {
+              wishlistSet = new Set(JSON.parse(val));
+              if (activeCatalogFilter === 'wishlist') applyCatalogFilter('wishlist');
+            } catch (e) {}
+          }
+        });
+      }
+    }
+
+    function saveWishlist() {
+      const arr = Array.from(wishlistSet);
+      try { localStorage.setItem('ghstore_wishlist', JSON.stringify(arr)); } catch (e) {}
+      if (tg?.CloudStorage) {
+        tg.CloudStorage.setItem('ghstore_wishlist', JSON.stringify(arr), () => {});
+      }
+    }
+
+    function toggleWishlist(productId, e) {
+      if (e) e.stopPropagation();
+      haptic('pop');
+      const id = Number(productId);
+      if (wishlistSet.has(id)) {
+        wishlistSet.delete(id);
+        showToast('تمت الإزالة من المفضلة');
+      } else {
+        wishlistSet.add(id);
+        showToast('❤️ تمت الإضافة للمفضلة!');
+      }
+      saveWishlist();
+      updateWishlistUI();
+    }
+
+    function toggleCurrentProductWishlist() {
+      if (!selectedProduct) return;
+      toggleWishlist(selectedProduct.id);
+    }
+
+    function updateWishlistUI() {
+      const btn = document.getElementById('btn-detail-wishlist');
+      if (btn && selectedProduct) {
+        btn.innerText = wishlistSet.has(Number(selectedProduct.id)) ? '❤️' : '🤍';
+      }
+      document.querySelectorAll('.wishlist-btn-card').forEach(b => {
+        const pid = Number(b.dataset.pid);
+        b.innerText = wishlistSet.has(pid) ? '❤️' : '🤍';
+      });
+    }
 
     // Bilingual Collections Config (Arabic First)
     const CATALOG_META = {
@@ -1133,6 +1417,65 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       });
 
       return text;
+    }
+
+    // Structured Credential Splitter
+    function renderStructuredCredentials(goods) {
+      if (!goods || !goods.length) {
+        return '<div style="padding: 12px; color: var(--warning); text-align: center;">⏳ جاري التفعيل، سيتم التسليم قريباً.</div>';
+      }
+
+      return goods.map(raw => {
+        const line = String(raw).trim();
+        let parts = [];
+        let delimiter = null;
+        if (line.includes(' | ')) { parts = line.split(' | '); delimiter = 'pipe'; }
+        else if (line.includes(' / ')) { parts = line.split(' / '); delimiter = 'slash'; }
+        else if (line.includes(':') && line.split(':').length >= 2 && !line.startsWith('http')) {
+          parts = line.split(':');
+          delimiter = 'colon';
+        }
+
+        if (parts.length >= 2) {
+          const rows = parts.map((part, idx) => {
+            let label = "بيانات";
+            if (idx === 0) label = part.includes('@') ? "📧 البريد / المستخدم" : "👤 اسم المستخدم";
+            else if (idx === 1) label = "🔑 كلمة المرور";
+            else if (idx === 2) label = "🛡️ كود 2FA / الأمان";
+            else label = `معلومة ${idx + 1}`;
+
+            return `
+              <div class="cred-pill-row">
+                <div class="cred-meta">
+                  <span class="cred-type-tag">${label}</span>
+                  <span class="cred-val-text">${part.trim()}</span>
+                </div>
+                <button class="btn-copy-mini" onclick="copyCredText('${part.trim().replace(/'/g, "\\\\'")}')">نسخ</button>
+              </div>
+            `;
+          }).join('');
+
+          return `
+            <div class="cred-grid">
+              ${rows}
+              <div style="text-align: left; margin-top: 2px;">
+                <button class="btn-copy-mini" style="font-size: 10px;" onclick="copyCredText('${line.replace(/'/g, "\\\\'")}')">📋 نسخ السطر كاملاً</button>
+              </div>
+            </div>
+          `;
+        }
+
+        // Single key or token
+        return `
+          <div class="cred-pill-row" style="margin: 6px 0;">
+            <div class="cred-meta">
+              <span class="cred-type-tag">مفتاح / كود التفعيل</span>
+              <span class="cred-val-text">${line}</span>
+            </div>
+            <button class="btn-copy-mini" onclick="copyCredText('${line.replace(/'/g, "\\\\'")}')">نسخ</button>
+          </div>
+        `;
+      }).join('');
     }
 
     // Client-side i18n
@@ -1209,7 +1552,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
     // Tab Navigation
     function switchTab(tab) {
-      haptic('light');
+      haptic('pop');
       activeTab = tab;
       document.querySelectorAll('.tab-view').forEach(el => el.classList.remove('active'));
       document.querySelectorAll('.liquid-tab-item').forEach(el => el.classList.remove('active'));
@@ -1228,16 +1571,39 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       }
     }
 
-    // Catalog Data Fetching
+    // SWR Cache Storage & Fetching
+    function loadFromCache() {
+      try {
+        const catCache = localStorage.getItem('ghstore_catalog_cache');
+        if (catCache) {
+          const parsed = JSON.parse(catCache);
+          allProducts = parsed.products || [];
+          categoriesList = parsed.categories || [];
+          renderCatalogsGrid();
+        }
+        const userCache = localStorage.getItem('ghstore_user_cache');
+        if (userCache) {
+          userData = JSON.parse(userCache);
+          updateBalancePills();
+        }
+      } catch (e) {}
+    }
+
     async function fetchCatalogData() {
       try {
         const res = await fetch('/api/catalog');
         const d = await res.json();
         allProducts = d.products || [];
         categoriesList = d.categories || [];
+        try { localStorage.setItem('ghstore_catalog_cache', JSON.stringify(d)); } catch (e) {}
         renderCatalogsGrid();
+        if (activeCatalog) {
+          openCollection(activeCatalog);
+        }
       } catch (e) {
-        document.getElementById('catalogs-grid').innerHTML = '<div style="color: var(--hint); text-align: center; padding: 30px;">فشل تحميل التصنيفات.</div>';
+        if (!allProducts.length) {
+          document.getElementById('catalogs-grid').innerHTML = '<div style="color: var(--hint); text-align: center; padding: 30px;">فشل تحميل التصنيفات.</div>';
+        }
       }
     }
 
@@ -1278,14 +1644,15 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     }
 
     function openCollection(catName) {
-      haptic('medium');
+      haptic('light');
       activeCatalog = catName;
       document.getElementById('catalogs-collection-mode').style.display = 'none';
       document.getElementById('products-catalog-mode').style.display = 'block';
       const meta = CATALOG_META[catName];
       document.getElementById('active-collection-title').innerText = (currentAppLanguage === 'ar' && meta?.arTitle) ? meta.arTitle : catName;
 
-      const filtered = allProducts.filter(p => p.category === catName);
+      let filtered = allProducts.filter(p => p.category === catName);
+      filtered = filterAndSortProducts(filtered);
       renderProductItems(filtered);
     }
 
@@ -1298,9 +1665,50 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       document.getElementById('catalogs-collection-mode').style.display = 'block';
     }
 
-    function applyTrend(kw) {
-      document.getElementById('store-search-input').value = kw;
-      handleSearch();
+    // Quick Filters & Sorting Logic
+    function applyCatalogFilter(filterKey) {
+      haptic('pop');
+      activeCatalogFilter = filterKey;
+      document.querySelectorAll('#quick-filters-row .filter-chip').forEach(el => el.classList.remove('active'));
+      const activeEl = document.getElementById('filter-' + filterKey);
+      if (activeEl) activeEl.classList.add('active');
+
+      if (filterKey === 'all' && !document.getElementById('store-search-input').value.trim()) {
+        returnToCollections();
+        return;
+      }
+
+      // Enter collection/results mode
+      document.getElementById('catalogs-collection-mode').style.display = 'none';
+      document.getElementById('products-catalog-mode').style.display = 'block';
+
+      let baseList = activeCatalog ? allProducts.filter(p => p.category === activeCatalog) : allProducts;
+      const q = (document.getElementById('store-search-input').value || '').trim().toLowerCase();
+      if (q) {
+        baseList = baseList.filter(p =>
+          p.name.toLowerCase().includes(q) ||
+          (p.description || '').toLowerCase().includes(q) ||
+          (p.category || '').toLowerCase().includes(q)
+        );
+      }
+
+      const filtered = filterAndSortProducts(baseList);
+      document.getElementById('active-collection-title').innerText = filterKey === 'wishlist' ? '❤️ المفضلة' : 'النتائج المصفاة';
+      renderProductItems(filtered);
+    }
+
+    function filterAndSortProducts(list) {
+      let result = [...list];
+      if (activeCatalogFilter === 'wishlist') {
+        result = result.filter(p => wishlistSet.has(Number(p.id)));
+      } else if (activeCatalogFilter === 'stock') {
+        result = result.filter(p => p.stock === null || p.stock > 0);
+      } else if (activeCatalogFilter === 'instant') {
+        result = result.filter(p => p.delivery_type !== 'activation');
+      } else if (activeCatalogFilter === 'lowprice') {
+        result.sort((a, b) => (a.price || 0) - (b.price || 0));
+      }
+      return result;
     }
 
     function handleSearch() {
@@ -1313,15 +1721,17 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         document.getElementById('products-catalog-mode').style.display = 'block';
         document.getElementById('active-collection-title').innerText = `بحث: "${q}"`;
 
-        const matched = allProducts.filter(p =>
+        let matched = allProducts.filter(p =>
           p.name.toLowerCase().includes(q) ||
           (p.description || '').toLowerCase().includes(q) ||
           (p.category || '').toLowerCase().includes(q)
         );
+        matched = filterAndSortProducts(matched);
         renderProductItems(matched);
       } else {
         clearBtn.style.display = 'none';
-        returnToCollections();
+        if (activeCatalogFilter === 'all') returnToCollections();
+        else applyCatalogFilter(activeCatalogFilter);
       }
     }
 
@@ -1333,49 +1743,81 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     function renderProductItems(products) {
       const container = document.getElementById('catalog-products-list');
       if (!products.length) {
-        container.innerHTML = '<div style="text-align: center; padding: 40px; color: var(--hint);">لا توجد منتجات مطابقة في هذا التصنيف.</div>';
+        container.innerHTML = '<div style="text-align: center; padding: 40px; color: var(--hint);">لا توجد منتجات مطابقة لهذا الفلتر.</div>';
         return;
       }
-      container.innerHTML = products.map(p => `
-        <div class="product-row" onclick="openProductDetail(${Number(p.id)})">
-          <div class="prod-left">
-            <div class="prod-icon">${p.emoji || '⚡'}</div>
-            <div class="prod-details">
-              <div class="prod-title">${p.name}</div>
-              <div class="prod-desc">
-                <span>${p.stock ? 'متوفر (' + p.stock + ')' : 'تسليم فوري'}</span> ·
-                <span>${p.delivery_type === 'activation' ? 'تفعيل مخصص' : 'تسليم تلقائي'}</span>
+      container.innerHTML = products.map(p => {
+        const isFav = wishlistSet.has(Number(p.id));
+        const isOutOfStock = (p.stock !== null && p.stock <= 0);
+        return `
+          <div class="product-row" onclick="openProductDetail(${Number(p.id)})">
+            <div class="prod-left">
+              <div class="prod-icon">${p.emoji || '⚡'}</div>
+              <div class="prod-details">
+                <div class="prod-title">${p.name}</div>
+                <div class="prod-desc">
+                  <span style="${isOutOfStock ? 'color: var(--danger); font-weight:700;' : ''}">${isOutOfStock ? 'نفد المخزون' : p.stock ? 'متوفر (' + p.stock + ')' : 'تسليم فوري'}</span> ·
+                  <span>${p.delivery_type === 'activation' ? 'تفعيل مخصص' : 'تسليم تلقائي'}</span>
+                </div>
+              </div>
+            </div>
+            <div class="prod-price-box">
+              <div class="prod-price">${p.price ? p.price.toFixed(2) + p.sym : 'N/A'}</div>
+              <div style="display: flex; align-items: center; gap: 4px; margin-top: 2px;">
+                <button class="wishlist-btn-card" data-pid="${p.id}" onclick="toggleWishlist(${p.id}, event)">${isFav ? '❤️' : '🤍'}</button>
+                <div class="prod-tap-hint">عرض ‹</div>
               </div>
             </div>
           </div>
-          <div class="prod-price-box">
-            <div class="prod-price">${p.price ? p.price.toFixed(2) + p.sym : 'N/A'}</div>
-            <div class="prod-tap-hint">عرض التفاصيل ‹</div>
-          </div>
-        </div>
-      `).join('');
+        `;
+      }).join('');
     }
 
     // DEDICATED IN-APP PRODUCT DETAIL PAGE
     function openProductDetail(productId) {
-      haptic('medium');
-      // Number-safe comparison prevents navigation breaking
+      haptic('light');
       selectedProduct = allProducts.find(p => Number(p.id) === Number(productId));
       if (!selectedProduct) return;
       selectedQty = 1;
+      appliedCoupon = null;
+      document.getElementById('coupon-code-input').value = '';
+      document.getElementById('coupon-applied-note').style.display = 'none';
 
       document.getElementById('prod-hero-icon').innerText = selectedProduct.emoji || '⚡';
       document.getElementById('prod-hero-name').innerText = selectedProduct.name;
       document.getElementById('prod-hero-cat').innerText = selectedProduct.category || 'منتج رقمي';
       document.getElementById('detail-category-header').innerText = selectedProduct.category || 'المنتج';
 
-      // Rich formatted description (Markdown + HTML)
-      document.getElementById('prod-rich-desc').innerHTML = formatRichDescription(selectedProduct.description);
+      // Native Arabic description from API if available
+      const rawDesc = (currentAppLanguage === 'ar' && selectedProduct.description_ar)
+        ? selectedProduct.description_ar
+        : (selectedProduct.description || '');
+      document.getElementById('prod-rich-desc').innerHTML = formatRichDescription(rawDesc);
 
       const isInstant = selectedProduct.delivery_type !== 'activation';
-      document.getElementById('prod-delivery-badge').innerText = isInstant ? '⚡ تسليم تلقائي فوري' : '⏳ تفعيل مخصص';
-      document.getElementById('prod-stock-badge').innerText = selectedProduct.stock ? `🟢 متوفر (${selectedProduct.stock})` : '⚡ تسليم فوري';
+      const isOutOfStock = (selectedProduct.stock !== null && selectedProduct.stock <= 0);
 
+      document.getElementById('prod-delivery-badge').innerText = isInstant ? '⚡ تسليم تلقائي فوري' : '⏳ تفعيل مخصص';
+      document.getElementById('prod-stock-badge').innerText = isOutOfStock
+        ? '🔴 نفد المخزون'
+        : (selectedProduct.stock ? `🟢 متوفر (${selectedProduct.stock})` : '⚡ تسليم فوري');
+
+      // Restock Alert Button visibility
+      const restockBox = document.getElementById('restock-alert-box');
+      const buyBtn = document.getElementById('btn-inapp-purchase');
+      const starsBtn = document.getElementById('btn-stars-purchase');
+
+      if (isOutOfStock) {
+        restockBox.style.display = 'block';
+        buyBtn.style.display = 'none';
+        starsBtn.style.display = 'none';
+      } else {
+        restockBox.style.display = 'none';
+        buyBtn.style.display = 'flex';
+        starsBtn.style.display = 'flex';
+      }
+
+      updateWishlistUI();
       updateDetailPagePrice();
 
       document.querySelectorAll('.tab-view').forEach(el => el.classList.remove('active'));
@@ -1393,6 +1835,39 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       selectedQty = Math.max(1, Math.min(10, selectedQty + delta));
       document.getElementById('prod-qty-val').innerText = selectedQty;
       updateDetailPagePrice();
+    }
+
+    // In-App Coupon Validation
+    async function applyCheckoutCoupon() {
+      const code = (document.getElementById('coupon-code-input').value || '').trim();
+      if (!code || !selectedProduct) return;
+      haptic('light');
+      const unit = selectedProduct.price || 0.0;
+      const subtotal = unit * selectedQty;
+
+      try {
+        const res = await fetch('/api/coupon/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: code, subtotal: subtotal })
+        });
+        const d = await res.json();
+        if (d.valid) {
+          appliedCoupon = d;
+          haptic('success');
+          const note = document.getElementById('coupon-applied-note');
+          note.innerText = d.message;
+          note.style.display = 'block';
+          updateDetailPagePrice();
+        } else {
+          appliedCoupon = null;
+          showToast(d.error || 'كود الخصم غير صالح');
+          document.getElementById('coupon-applied-note').style.display = 'none';
+          updateDetailPagePrice();
+        }
+      } catch (e) {
+        showToast('فشل التحقق من كود الخصم');
+      }
     }
 
     function updateDetailPagePrice() {
@@ -1414,8 +1889,16 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       if (totalDiscount > 0) {
         const discVal = total * (totalDiscount / 100);
         total = Math.max(0.01, total - discVal);
-        discountText = `خصم مطبق: -${totalDiscount}%!`;
+        discountText = `خصم تلقائي: -${totalDiscount}%!`;
       }
+
+      // Coupon discount
+      if (appliedCoupon) {
+        const cDisc = appliedCoupon.discount || 0.0;
+        total = Math.max(0.01, total - cDisc);
+        discountText += ` (كوبون: -${cDisc.toFixed(2)}${sym})`;
+      }
+
       document.getElementById('prod-discount-tag').innerText = discountText;
       document.getElementById('prod-total-price').innerText = `${total.toFixed(2)}${sym}`;
       document.getElementById('btn-price-tag').innerText = `(${total.toFixed(2)}${sym})`;
@@ -1434,6 +1917,73 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         alertBox.style.display = 'none';
         buyBtn.innerHTML = `<span>⚡ شراء فوري</span> <span>(${total.toFixed(2)}${sym})</span>`;
         buyBtn.onclick = executeProductBuy;
+      }
+    }
+
+    // 1-Tap Restock Notification Subscribe
+    async function triggerInAppRestockSubscribe() {
+      if (!selectedProduct || !userId) return;
+      haptic('light');
+      try {
+        const res = await fetch('/api/restock/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tg_id: userId, product_id: selectedProduct.id })
+        });
+        const d = await res.json();
+        if (d.status === 'success') {
+          haptic('success');
+          showToast('🔔 ' + d.message);
+        } else {
+          showToast('تعذر الاشتراك في التنبيه');
+        }
+      } catch (e) {
+        showToast('خطأ في إرسال طلب التنبيه');
+      }
+    }
+
+    // 1-Tap Product Sharing (Telegram Link & Stories)
+    function shareCurrentProduct() {
+      if (!selectedProduct) return;
+      haptic('light');
+      const botUser = userData?.bot_username || 'demo_aiogramshopbot';
+      const shareUrl = `https://t.me/${botUser}?start=prod_${selectedProduct.id}_ref_${userId}`;
+      const shareText = `تسوق ${selectedProduct.name} الآن بأفضل سعر على GH Store!`;
+
+      // If client supports story sharing
+      if (tg?.shareToStory) {
+        tg.shareToStory({
+          media_url: selectedProduct.image_url || 'https://bot.gh-store.me/static/banner.png',
+          text: shareText,
+          widget_link: { url: shareUrl, name: "🛍️ GH Store" }
+        });
+        return;
+      }
+
+      // Default native share deep link
+      const tgShareLink = `https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(shareText)}`;
+      if (tg?.openTelegramLink) tg.openTelegramLink(tgShareLink);
+      else window.open(tgShareLink, '_blank');
+    }
+
+    // Add to Home Screen (Bot API 8.0)
+    function promptAddToHomeScreen() {
+      haptic('pop');
+      if (tg?.addToHomeScreen) {
+        tg.addToHomeScreen();
+      } else {
+        showToast('انقر على القائمة بالأعلى (⋮) واختر "إضافة إلى الشاشة الرئيسية"');
+      }
+    }
+
+    function checkHomeScreenCapability() {
+      if (tg?.checkHomeScreenStatus) {
+        tg.checkHomeScreenStatus((status) => {
+          const banner = document.getElementById('home-screen-banner');
+          if (banner && status === 'missed') {
+            banner.style.display = 'flex';
+          }
+        });
       }
     }
 
@@ -1459,20 +2009,23 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     }
 
     async function processOrderPlacement() {
-      haptic('medium');
+      haptic('light');
       const buyBtn = document.getElementById('btn-inapp-purchase');
       buyBtn.disabled = true;
       buyBtn.innerHTML = '<span>⏳ جاري معالجة الطلب...</span>';
+
+      const payload = {
+        tg_id: userId,
+        product_id: selectedProduct.id,
+        quantity: selectedQty
+      };
+      if (appliedCoupon?.code) payload.coupon_code = appliedCoupon.code;
 
       try {
         const res = await fetch('/api/buy', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            tg_id: userId,
-            product_id: selectedProduct.id,
-            quantity: selectedQty
-          })
+          body: JSON.stringify(payload)
         });
         const d = await res.json();
         buyBtn.disabled = false;
@@ -1484,21 +2037,13 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
           if (userData) {
             userData.balance = Math.max(0, userData.balance - d.total_paid);
             updateBalancePills();
+            try { localStorage.setItem('ghstore_user_cache', JSON.stringify(userData)); } catch (e) {}
           }
 
-          // Show in-app success screen
+          // Show in-app success screen with structured credential splitter
           document.getElementById('success-meta-sub').innerText = `طلب #${d.order_id} · ${d.product_name} (${d.quantity}×)`;
           const keysBox = document.getElementById('success-delivered-keys');
-          if (d.goods && d.goods.length) {
-            keysBox.innerHTML = d.goods.map(g => `
-              <div class="copyable-box" onclick="copyCredText('${g.replace(/'/g, "\\\\'")}')">
-                <code>${g}</code>
-                <div style="font-size: 10px; color: var(--hint); margin-top: 4px;">📋 انقر للنسخ الفوري</div>
-              </div>
-            `).join('');
-          } else {
-            keysBox.innerHTML = '<div style="padding: 12px; color: var(--warning); text-align: center;">⏳ جاري التفعيل، سيتم التسليم قريباً.</div>';
-          }
+          keysBox.innerHTML = renderStructuredCredentials(d.goods);
 
           document.querySelectorAll('.tab-view').forEach(el => el.classList.remove('active'));
           document.getElementById('view-order-success').classList.add('active');
@@ -1518,7 +2063,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     // Direct Telegram Stars Invoice (openInvoice)
     async function executeStarsDirectBuy() {
       if (!selectedProduct || !userId) return;
-      haptic('medium');
+      haptic('light');
       try {
         const res = await fetch('/api/invoice/stars', {
           method: 'POST',
@@ -1550,7 +2095,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
     // Top-Up Rails (Native openInvoice & openLink)
     async function triggerQuickTopup(amount) {
-      haptic('medium');
+      haptic('light');
       if (!userId) return;
       try {
         const res = await fetch('/api/invoice/topup', {
@@ -1574,7 +2119,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     }
 
     async function triggerRailPayment(rail) {
-      haptic('medium');
+      haptic('light');
       if (!userId) return;
       try {
         const res = await fetch('/api/invoice/topup', {
@@ -1602,7 +2147,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     async function submitVoucherRedeem() {
       const code = (document.getElementById('voucher-code-input').value || '').trim();
       if (!code || !userId) return;
-      haptic('medium');
+      haptic('light');
       try {
         const res = await fetch('/api/voucher/redeem', {
           method: 'POST',
@@ -1637,6 +2182,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
           return;
         }
         userData = d;
+        try { localStorage.setItem('ghstore_user_cache', JSON.stringify(d)); } catch (e) {}
         updateBalancePills();
 
         // Real Profile Picture (Telegram Bot API or Initial)
@@ -1674,10 +2220,10 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         document.getElementById('referral-link-display').innerText = refLink;
 
         // Active Chips
-        document.querySelectorAll('#currency-picker-chips .trend-chip').forEach(el => {
+        document.querySelectorAll('#currency-picker-chips .filter-chip').forEach(el => {
           el.classList.toggle('active', el.innerText.includes(d.currency_preference));
         });
-        document.querySelectorAll('#language-picker-chips .trend-chip').forEach(el => {
+        document.querySelectorAll('#language-picker-chips .filter-chip').forEach(el => {
           el.classList.toggle('active', el.getAttribute('onclick')?.includes(`'${d.language}'`));
         });
 
@@ -1749,18 +2295,13 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
             </div>
           </div>
 
-          ${o.goods && o.goods.length ? o.goods.map(g => `
-            <div class="copyable-box" onclick="copyCredText('${g.replace(/'/g, "\\\\'")}')">
-              <code>${g}</code>
-              <div style="font-size: 10px; color: var(--hint); margin-top: 4px;">📋 انقر للنسخ الفوري</div>
-            </div>
-          `).join('') : ''}
+          <!-- Structured Credential Splitter -->
+          ${renderStructuredCredentials(o.goods)}
 
           <div style="display: flex; gap: 8px; margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px;">
             ${o.warranty_days && !o.warranty_claimed && o.status === 'completed' ? `
               <button class="btn-action-secondary" onclick="claimOrderWarranty(${o.id})">🛡️ طلب تعويض الضمان</button>
             ` : ''}
-            <button class="btn-action-secondary" onclick="reportOrderProblem(${o.id})">⚠️ إبلاغ عن مشكلة</button>
           </div>
         </div>
       `).join('');
@@ -1768,7 +2309,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
     function copyCredText(text) {
       navigator.clipboard.writeText(text).then(() => {
-        showToast('تم نسخ بيانات الحساب بنجاح!');
+        showToast('تم النسخ بنجاح!');
       });
     }
 
@@ -1781,7 +2322,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
     async function selectDisplayCurrency(code) {
       haptic('light');
-      document.querySelectorAll('#currency-picker-chips .trend-chip').forEach(el => {
+      document.querySelectorAll('#currency-picker-chips .filter-chip').forEach(el => {
         el.classList.toggle('active', el.innerText.includes(code));
       });
       if (userId) {
@@ -1810,7 +2351,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     }
 
     async function claimOrderWarranty(orderId) {
-      haptic('medium');
+      haptic('light');
       try {
         const res = await fetch('/api/warranty/claim', {
           method: 'POST',
@@ -1830,12 +2371,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       }
     }
 
-    function reportOrderProblem(orderId) {
-      haptic('medium');
-      switchTab('settings');
-      showToast('يرجى مراسلة الدعم الفني وتزويدهم برقم الطلب #' + orderId);
-    }
-
     // Real-Time Server-Sent Events (SSE)
     function initSSE() {
       try {
@@ -1848,11 +2383,14 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       } catch (e) {}
     }
 
-    // Initial Startup: Arabic First
+    // Initial Startup Sequence: SWR Instant 0ms Load & Arabic First
     applyLanguage('ar');
+    initWishlist();
+    loadFromCache();
     fetchCatalogData();
     loadUserData();
     initSSE();
+    checkHomeScreenCapability();
   </script>
 </body>
 </html>

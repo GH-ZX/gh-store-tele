@@ -113,8 +113,12 @@ async def check_all_tables_exist(session: AsyncSession | Session, schema: str = 
 
 async def create_db_and_tables():
     async with get_db_session() as session:
-        if await check_all_tables_exist(session):
-            pass
-        else:
+        if not await check_all_tables_exist(session):
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
+        # Ensure new schema columns exist in existing deployments
+        try:
+            await session.execute(text("ALTER TABLE batstore_products ADD COLUMN IF NOT EXISTS description_ar TEXT;"))
+            await session_commit(session)
+        except Exception:
+            pass

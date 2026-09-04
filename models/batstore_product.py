@@ -158,6 +158,7 @@ class BatStoreProduct(Base):
     product_id = Column(Integer, unique=True, nullable=False, index=True)
     name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
+    description_ar = Column(Text, nullable=True)
     emoji = Column(String, nullable=True)
     custom_emoji_id = Column(String, nullable=True)
     image_url = Column(String, nullable=True)
@@ -186,6 +187,7 @@ class BatStoreProductDTO(BaseModel):
     product_id: int | None = None
     name: str | None = None
     description: str | None = None
+    description_ar: str | None = None
     emoji: str | None = None
     custom_emoji_id: str | None = None
     image_url: str | None = None

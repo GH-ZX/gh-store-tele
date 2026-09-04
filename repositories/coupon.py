@@ -55,3 +55,8 @@ class CouponRepository:
         if coupon is not None:
             coupon = CouponDTO.model_validate(coupon, from_attributes=True)
         return coupon
+
+    @staticmethod
+    async def increment_usage(coupon_id: int, session: AsyncSession) -> None:
+        stmt = update(Coupon).where(Coupon.id == coupon_id).values(usage_count=Coupon.usage_count + 1)
+        await session_execute(stmt, session)
