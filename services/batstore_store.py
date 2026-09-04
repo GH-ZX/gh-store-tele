@@ -21,6 +21,7 @@ from repositories.user import UserRepository
 from services.batstore import BatStoreService
 from services.notification import NotificationService
 from utils.utils import get_text
+from utils.telegram import clean_tg_emojis
 
 CART_KEY = "batstore_cart"
 PAGE_SIZE = 8
@@ -124,7 +125,7 @@ class BatStoreStoreService:
         display_name = f"🔴 {icon_html} {product.name} {get_text(language, BotEntity.USER, 'product_out_of_stock_badge')}" if is_oos else f"{icon_html} {product.name}"
         caption = get_text(language, BotEntity.USER, "batstore_detail").format(
             name=display_name,
-            description=product.description or "",
+            description=clean_tg_emojis(product.description),
             price=f"{product.sell_price_usd:.2f}" if product.sell_price_usd is not None else "-",
             sym=sym,
             delivery=delivery,

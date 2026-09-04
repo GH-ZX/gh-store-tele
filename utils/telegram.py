@@ -86,3 +86,18 @@ async def safe_edit_message(
         except Exception:
             pass
         await callback.message.answer(text=text, reply_markup=reply_markup)
+
+
+import re
+
+def clean_tg_emojis(raw: str | None) -> str:
+    """Strip Telegram <tg-emoji> markup and placeholder leaks, preserving native UTF-8 emojis."""
+    if not raw:
+        return ""
+    text = str(raw)
+    # 1. Extract unicode emoji from <tg-emoji emoji-id="...">📱</tg-emoji>
+    text = re.sub(r"<tg-emoji[^>]*>(.*?)</tg-emoji>", r"\1", text, flags=re.DOTALL)
+    # 2. Strip any placeholder leaks like TG_EMOJI_0, __TG_EMOJI_1__, TGemoji1, etc.
+    text = re.sub(r"_*TG_?EMOJI_\d+_*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bTG_?emoji\d+\b", "", text, flags=re.IGNORECASE)
+    return text.strip()

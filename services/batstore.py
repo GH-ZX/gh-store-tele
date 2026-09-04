@@ -16,6 +16,7 @@ from repositories.batstore_product import BatStoreProductRepository
 from services.config import ConfigService
 from services.custom_emoji import CustomEmojiService
 from services.restock_notification import RestockNotificationService
+from utils.telegram import clean_tg_emojis
 API_TEST_PRODUCT_ID = 2147483000
 
 
@@ -316,8 +317,8 @@ class BatStoreService:
                 dto = BatStoreProductDTO(
                     product_id=pid,
                     name=product_name,
-                    description=p.get("description"),
-                    description_ar=ar_desc_map.get(pid),
+                    description=clean_tg_emojis(p.get("description")),
+                    description_ar=clean_tg_emojis(ar_desc_map.get(pid)),
                     emoji=p.get("emoji") or detected_emoji,
                     custom_emoji_id=detected_custom_id,
                     image_url=p.get("image_url"),
@@ -359,9 +360,8 @@ class BatStoreService:
                     id=existing.id,
                     product_id=pid,
                     name=p.get("name") or existing.name,
-                    description=p.get("description") or existing.description,
-                    description_ar=ar_desc_map.get(pid) or existing.description_ar,
-                    emoji=existing.emoji or p.get("emoji") or detected_emoji,
+                    description=clean_tg_emojis(p.get("description") or existing.description),
+                    description_ar=clean_tg_emojis(ar_desc_map.get(pid) or existing.description_ar),
                     custom_emoji_id=existing.custom_emoji_id or detected_custom_id,
                     image_url=p.get("image_url") or existing.image_url,
                     cost_usd=cost,

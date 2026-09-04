@@ -12,6 +12,7 @@ from redis.asyncio import Redis
 from sqladmin import Admin
 
 import config
+from utils.telegram import clean_tg_emojis
 from aiogram import Dispatcher
 from fastapi import FastAPI, Request, status, HTTPException
 from sqlalchemy import select, func, text
@@ -346,8 +347,8 @@ async def get_tma_catalog():
                 "category": p.category or "Other",
                 "price": p.sell_price_usd,
                 "sym": sym,
-                "description": p.description or "",
-                "description_ar": getattr(p, "description_ar", None) or "",
+                "description": clean_tg_emojis(p.description),
+                "description_ar": clean_tg_emojis(getattr(p, "description_ar", None)),
                 "duration_ar": specs["duration_ar"],
                 "duration_en": specs["duration_en"],
                 "warranty_ar": specs["warranty_ar"],

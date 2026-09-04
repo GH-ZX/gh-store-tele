@@ -2316,12 +2316,14 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       const entityMap = { '&lt;': '<', '&gt;': '>', '&quot;': '"', '&apos;': "'", '&amp;': '&' };
       text = text.replace(/&(lt|gt|quot|apos|amp);/g, (m) => entityMap[m] || m);
 
-      const emojis = [];
-      text = text.replace(/<tg-emoji[^>]*emoji-id="([^"]+)"[^>]*>(.*?)<\/tg-emoji>/gi, (m, id, char) => {
-        const placeholder = `__TG_EMOJI_${emojis.length}__`;
-        emojis.push(`<span style="display:inline-flex; align-items:center; vertical-align:middle;">${char}</span>`);
-        return placeholder;
-      });
+      // 1. Direct Telegram custom emoji tag resolution: extract standard UTF-8 emoji
+      text = text.replace(/<tg-emoji[^>]*>(.*?)<\/tg-emoji>/gis, '$1');
+      text = text.replace(/<tg-emoji[^>]*\/>/gi, '');
+
+      // 2. Eradicate any leaked TGemoji / TG_EMOJI placeholder artifacts
+      text = text.replace(/_*TG_?EMOJI_\d+_*/gi, '');
+      text = text.replace(/\bTG_?emoji\d+\b/gi, '');
+      text = text.replace(/<u>\s*<\/u>/gi, '');
 
       text = text.replace(/^###\s*(.*$)/gim, '<div class="desc-heading">$1</div>');
       text = text.replace(/^##\s*(.*$)/gim, '<div class="desc-heading">$1</div>');
@@ -2339,9 +2341,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       text = text.replace(/\r?\n/g, '<br>');
       text = text.replace(/(<br\s*\/?>){3,}/gi, '<br><br>');
 
-      emojis.forEach((em, idx) => {
-        text = text.replace(`__TG_EMOJI_${idx}__`, em);
-      });
 
       return text;
     }
