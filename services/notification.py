@@ -176,6 +176,17 @@ class NotificationService:
             await bot.send_message(telegram_id, message, reply_markup=reply_markup)
         except Exception as e:
             logging.error(e)
+
+    @staticmethod
+    async def post_to_channel(text: str, reply_markup: types.InlineKeyboardMarkup | None = None) -> None:
+        channel = getattr(config, "ANNOUNCEMENT_CHANNEL_ID", None)
+        if not channel:
+            return
+        bot = NotificationService.get_bot()
+        try:
+            await bot.send_message(channel, text, reply_markup=reply_markup)
+        except Exception as e:
+            logging.debug("Could not post to announcement channel %s: %s", channel, e)
     @staticmethod
     async def edit_message(message: str, source_message_id: int, chat_id: int):
         bot = NotificationService.get_bot()

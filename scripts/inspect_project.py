@@ -203,7 +203,8 @@ def check_database_models() -> int:
     expected_tables = {
         "users", "buys", "items", "categories", "subcategories",
         "app_config", "batstore_products", "batstore_orders",
-        "sam_payments", "restock_subscriptions"
+        "sam_payments", "restock_subscriptions", "stars_payments",
+        "admin_audit_logs", "gift_vouchers",
     }
     missing_tables = expected_tables - set(tables)
     if missing_tables:

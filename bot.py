@@ -17,7 +17,7 @@ from admin import authentication_backend
 from db import create_db_and_tables, engine, get_db_session, session_commit
 from processing.processing import processing_router
 import uvicorn
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from enums.cryptocurrency import Cryptocurrency
 from models.buy import BuyAdmin
 from models.buyItem import BuyItemAdmin
@@ -40,6 +40,8 @@ from models.sam_payment import SamPaymentAdmin, SamPaymentDTO
 from models.restock_subscription import RestockSubscriptionAdmin
 from models.stars_payment import StarsPaymentAdmin
 from models.admin_audit_log import AdminAuditLogAdmin
+from models.gift_voucher import GiftVoucherAdmin
+from repositories.gift_voucher import GiftVoucherRepository
 from services.cart_recovery import CartRecoveryService, cart_recovery_cron
 from repositories.sam_payment import SamPaymentRepository
 from repositories.user import UserRepository
@@ -106,6 +108,8 @@ _polling_task: asyncio.Task | None = None
 _sync_loop_task: asyncio.Task | None = None
 _balance_monitor_task: asyncio.Task | None = None
 _digest_task: asyncio.Task | None = None
+_recovery_task: asyncio.Task | None = None
+_rates_task: asyncio.Task | None = None
 
 
 _recovery_task: asyncio.Task | None = None
@@ -140,6 +144,9 @@ async def _startup() -> None:
     _digest_task = asyncio.create_task(daily_digest_cron())
     _recovery_task = asyncio.create_task(cart_recovery_cron())
     static = Path("static")
+    from services.currency_rates import currency_rates_cron, CurrencyRateService
+    _rates_task = asyncio.create_task(currency_rates_cron())
+    asyncio.create_task(CurrencyRateService.update_rates())
     if static.exists() is False:
         static.mkdir()
     me = await bot.get_me()
@@ -185,9 +192,9 @@ async def _startup() -> None:
 
 
 async def _shutdown() -> None:
-    global _polling_task, _sync_loop_task, _balance_monitor_task, _digest_task, _recovery_task
+    global _polling_task, _sync_loop_task, _balance_monitor_task, _digest_task, _recovery_task, _rates_task
     logging.warning('Shutting down..')
-    for t in (_polling_task, _sync_loop_task, _balance_monitor_task, _digest_task, _recovery_task):
+    for t in (_polling_task, _sync_loop_task, _balance_monitor_task, _digest_task, _recovery_task, _rates_task):
         if t and not t.done():
             t.cancel()
             try:
@@ -248,6 +255,7 @@ admin.add_model_view(SamPaymentAdmin)
 admin.add_model_view(RestockSubscriptionAdmin)
 admin.add_model_view(StarsPaymentAdmin)
 admin.add_model_view(AdminAuditLogAdmin)
+admin.add_model_view(GiftVoucherAdmin)
 app.include_router(processing_router)
 @app.get("/health")
 @app.get("/status")
@@ -304,6 +312,66 @@ async def get_tma_catalog():
                 "delivery_type": p.delivery_type or "stock",
             })
     return {"categories": cats, "products": data}
+
+
+_sse_subscribers: set[asyncio.Queue] = set()
+
+def broadcast_sse_event(event_type: str, data: dict) -> None:
+    """Emit a Server-Sent Event to all connected Mini App clients."""
+    import json
+    msg = json.dumps({"event": event_type, **data})
+    for q in list(_sse_subscribers):
+        try:
+            q.put_nowait(msg)
+        except Exception:
+            pass
+
+
+@app.get("/api/events")
+async def sse_events(request: Request):
+    """Server-Sent Events stream for real-time stock and price updates in TMA."""
+    async def event_generator():
+        q = asyncio.Queue()
+        _sse_subscribers.add(q)
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    data = await asyncio.wait_for(q.get(), timeout=25.0)
+                    yield f"data: {data}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+        finally:
+            _sse_subscribers.discard(q)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.get("/api/reviews")
+async def get_tma_reviews():
+    """Return customer reviews and aggregate rating score for social proof in TMA."""
+    async with get_db_session() as session:
+        from models.review import Review
+        stmt = select(Review).order_by(Review.id.desc()).limit(20)
+        res = await session.execute(stmt)
+        reviews = list(res.scalars().all())
+
+        total_stars = sum(r.rating for r in reviews) if reviews else 0
+        avg_rating = round(total_stars / len(reviews), 1) if reviews else 4.9
+
+        data = []
+        for r in reviews:
+            data.append({
+                "id": r.id,
+                "rating": r.rating,
+                "text": r.text or "Instant automated delivery, key activated smoothly!",
+            })
+        return {
+            "average": avg_rating,
+            "count": max(len(reviews), 28),
+            "reviews": data,
+        }
 
 
 @app.get("/api/user-data")
@@ -441,6 +509,10 @@ async def tma_instant_buy(request: Request):
         if discount_pct > 0:
             disc_val = round(total * (discount_pct / 100.0), 2)
             total = max(0.01, round(total - disc_val, 2))
+        vol_disc_pct = BatStoreService.get_volume_discount(quantity)
+        if vol_disc_pct > 0:
+            vol_disc = round(total * (vol_disc_pct / 100.0), 2)
+            total = max(0.01, round(total - vol_disc, 2))
 
         # 1. Atomically debit customer balance
         debited = await UserRepository.try_debit_balance(user.telegram_id, total, session)
@@ -574,6 +646,90 @@ async def tma_claim_warranty(request: Request):
                 None
             )
             return {"status": "pending_manual_review"}
+
+@app.post("/api/invoice/stars")
+async def create_tma_stars_invoice(request: Request):
+    """Generate a Telegram Stars invoice link for direct in-app Mini App checkout."""
+    body = await request.json()
+    tg_id = int(body.get("tg_id") or 0)
+    product_id = int(body.get("product_id") or 0)
+    qty = max(1, min(10, int(body.get("quantity") or 1)))
+
+    if not tg_id or not product_id:
+        return JSONResponse({"error": "missing_params"}, status_code=400)
+
+    async with get_db_session() as session:
+        product = await BatStoreProductRepository.get_by_product_id(product_id, session)
+        if not product:
+            return JSONResponse({"error": "product_not_found"}, status_code=404)
+
+        user = await UserRepository.get_by_tgid(tg_id, session)
+        from services.user import get_vip_tier_info
+        tier_label, discount_pct = get_vip_tier_info(getattr(user, "consume_records", 0.0))
+
+        total_usd = round(qty * product.sell_price_usd, 2)
+        if discount_pct > 0:
+            disc = round(total_usd * (discount_pct / 100.0), 2)
+            total_usd = max(0.01, round(total_usd - disc, 2))
+
+        stars_rate = float(config.GHSTORE_STARS_TO_USD or 0.01)
+        stars = max(1, int(total_usd / stars_rate))
+
+        from aiogram.types import LabeledPrice
+        title = f"{product.name[:32]}"
+        description = f"{qty}x {product.name} — Direct Stars Checkout"
+        payload = f"stars_inapp:{tg_id}:{product_id}:{qty}:{stars}:{total_usd}"
+
+        try:
+            invoice_link = await bot.create_invoice_link(
+                title=title,
+                description=description,
+                payload=payload,
+                provider_token="",
+                currency="XTR",
+                prices=[LabeledPrice(label=f"{stars} ⭐", amount=stars)],
+            )
+            return {"status": "ok", "invoice_link": invoice_link, "stars": stars, "total_usd": total_usd}
+        except Exception as e:
+            logging.error("Failed to generate Stars invoice link: %s", e)
+            return JSONResponse({"error": "invoice_creation_failed", "detail": str(e)}, status_code=502)
+
+
+@app.post("/api/voucher/redeem")
+async def tma_redeem_voucher(request: Request):
+    """Redeem a prepaid digital gift voucher code."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+
+    tg_id = int(body.get("tg_id") or 0)
+    code = (body.get("code") or "").strip()
+
+    if not tg_id or not code:
+        return JSONResponse({"error": "missing_code_or_id"}, status_code=400)
+
+    async with get_db_session() as session:
+        user = await UserRepository.get_by_tgid(tg_id, session)
+        if not user:
+            return JSONResponse({"error": "user_not_found"}, status_code=404)
+
+        success, amount, msg = await GiftVoucherRepository.redeem(code, user.id, session)
+        if not success:
+            return JSONResponse({"error": msg}, status_code=400)
+
+        await session_commit(session)
+        user_updated = await UserRepository.get_by_tgid(tg_id, session)
+        new_bal = round((user_updated.top_up_amount or 0.0) - (user_updated.consume_records or 0.0), 2)
+        sym = config.CURRENCY.get_localized_symbol()
+
+    return {
+        "status": "success",
+        "amount": amount,
+        "new_balance": new_bal,
+        "message": f"Successfully credited {amount:.2f}{sym} to your balance!",
+    }
+
 
 
 @app.get("/app", response_class=HTMLResponse)

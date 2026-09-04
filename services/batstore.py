@@ -179,6 +179,23 @@ class BatStoreService:
         return goods
 
     @staticmethod
+    def validate_delivery_goods(items: list) -> bool:
+        """Dead-on-Arrival (DOA) pre-delivery validation.
+
+        Ensures delivered credentials are non-empty and well-formed.
+        """
+        if not items:
+            return False
+        for it in items:
+            val = str(it.get("value") if isinstance(it, dict) else it).strip()
+            if len(val) < 3:
+                return False
+            lower = val.lower()
+            if any(bad in lower for bad in ("error", "invalid", "revoked", "suspended", "null", "undefined")):
+                return False
+        return True
+
+    @staticmethod
     def get_order_reseller_status(order_data: dict) -> str:
         """Map reseller order status to our internal status.
 
@@ -238,6 +255,16 @@ class BatStoreService:
         elif cost > 50.0:
             return 15.0
         return fallback_percent
+
+    @staticmethod
+    def get_volume_discount(quantity: int) -> float:
+        """Wholesale bulk discount matrix: 1-4: 0%, 5-9: 7%, 10+: 15%."""
+        qty = int(quantity or 1)
+        if qty >= 10:
+            return 15.0
+        elif qty >= 5:
+            return 7.0
+        return 0.0
 
     @staticmethod
     async def _global_margin(session: AsyncSession | Session) -> tuple[float, float, str]:
@@ -367,4 +394,9 @@ class BatStoreService:
             except Exception as e:
                 logging.error("Failed to notify admin of price spike for %s: %s", spike_pid, e)
             await session_commit(session)
+        try:
+            from bot import broadcast_sse_event
+            broadcast_sse_event("stock_update", {"updated": updated, "created": created})
+        except Exception:
+            pass
         return created, updated
