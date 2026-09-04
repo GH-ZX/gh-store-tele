@@ -2,7 +2,10 @@
 
 Features:
 - SWR (Stale-While-Revalidate) instant 0ms launch cache via localStorage.
-- Native Arabic product descriptions from API (?lang=ar) when app language is Arabic.
+- Dark & Light Mode Appearance Toggle with persistent storage and Telegram theme syncing.
+- Full Bidirectional Arabic & English i18n Overhaul (RTL/LTR, dynamic catalog & product re-rendering, directional arrows).
+- Native Arabic product descriptions from API (?lang=ar) when app language is Arabic, English otherwise.
+- UX-Hardened Recharge Flow: Step 1 method selector (Stars, Crypto, SAM), Step 2 amount chips (+$1, +$5, +$10, +$25, +$50, +$100) + custom amount input, Step 3 dynamic action button with loading state.
 - Wishlist / Favorites synchronized via Telegram CloudStorage with localStorage fallback.
 - In-App 1-Tap Restock Notification button ('🔔 نبهني فور التوفر') via POST /api/restock/subscribe.
 - Structured Credential Splitter for delivered accounts (email:pass:2fa) with discrete copy pills.
@@ -15,7 +18,7 @@ Features:
 """
 
 STOREFRONT_HTML = r"""<!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="ar" dir="rtl" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
@@ -32,12 +35,31 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       --hint: #94a3b8;
       --border: rgba(255, 255, 255, 0.1);
       --glass-border: rgba(255, 255, 255, 0.18);
+      --glass-bg: rgba(18, 24, 40, 0.72);
+      --header-bg: rgba(9, 14, 26, 0.88);
+      --input-bg: rgba(0, 0, 0, 0.35);
       --success: #10b981;
       --warning: #f59e0b;
       --danger: #ef4444;
       --nav-height: 62px;
       --safe-bottom: env(safe-area-inset-bottom, 16px);
     }
+
+    [data-theme="light"] {
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --card-hover: #f1f5f9;
+      --accent: #0284c7;
+      --accent-glow: rgba(2, 132, 199, 0.2);
+      --text: #0f172a;
+      --hint: #64748b;
+      --border: rgba(0, 0, 0, 0.08);
+      --glass-border: rgba(0, 0, 0, 0.12);
+      --glass-bg: rgba(255, 255, 255, 0.82);
+      --header-bg: rgba(248, 250, 252, 0.92);
+      --input-bg: rgba(0, 0, 0, 0.04);
+    }
+
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -48,6 +70,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       user-select: none;
       -webkit-user-select: none;
       overflow-x: hidden;
+      transition: background-color 0.25s, color 0.25s;
     }
 
     /* Top Sticky Navigation Bar */
@@ -57,12 +80,13 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       z-index: 50;
       backdrop-filter: blur(28px) saturate(200%);
       -webkit-backdrop-filter: blur(28px) saturate(200%);
-      background: rgba(9, 14, 26, 0.88);
+      background: var(--header-bg);
       border-bottom: 1px solid var(--border);
       padding: 10px 16px;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      transition: background-color 0.25s, border-color 0.25s;
     }
     .header-user {
       display: flex;
@@ -165,6 +189,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       transform: translateY(-50%);
       font-size: 14px;
       color: var(--hint);
+      pointer-events: none;
     }
     [dir="ltr"] .search-icon { right: auto; left: 14px; }
     .clear-search {
@@ -203,18 +228,18 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     }
     .filter-chip.active {
       background: rgba(56, 189, 248, 0.18);
-      color: #38bdf8;
+      color: var(--accent);
       border-color: var(--accent);
     }
 
     /* Promotional Hero Banner */
     .hero-banner {
-      background: linear-gradient(135deg, #1e293b, #0f172a);
+      background: linear-gradient(135deg, var(--card), var(--card-hover));
       border: 1px solid var(--glass-border);
       border-radius: 16px;
       padding: 16px 18px;
       margin-bottom: 16px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
       position: relative;
       overflow: hidden;
     }
@@ -266,7 +291,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       align-items: center;
       justify-content: space-between;
       cursor: pointer;
-      transition: transform 0.15s, border-color 0.15s;
+      transition: transform 0.15s, border-color 0.15s, background 0.15s;
     }
     .catalog-card:active {
       transform: scale(0.98);
@@ -284,7 +309,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       width: 48px;
       height: 48px;
       border-radius: 14px;
-      background: rgba(255, 255, 255, 0.05);
+      background: var(--input-bg);
       font-size: 26px;
       display: flex;
       align-items: center;
@@ -307,11 +332,11 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       font-size: 12px;
       color: var(--hint);
     }
-    .chevron {
+    .chevron-icon {
       color: var(--hint);
       font-size: 18px;
       font-weight: 700;
-      margin-left: 8px;
+      margin-inline-start: 8px;
     }
 
     /* Subview Header (inside category) */
@@ -349,7 +374,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       gap: 12px;
       cursor: pointer;
       position: relative;
-      transition: transform 0.15s, border-color 0.15s;
+      transition: transform 0.15s, border-color 0.15s, background 0.15s;
     }
     .product-row:active {
       transform: scale(0.99);
@@ -368,7 +393,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       width: 42px;
       height: 42px;
       border-radius: 12px;
-      background: rgba(255, 255, 255, 0.05);
+      background: var(--input-bg);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -394,13 +419,13 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       gap: 6px;
     }
     .prod-price-box {
-      text-align: left;
+      text-align: end;
       flex-shrink: 0;
       display: flex;
       flex-direction: column;
       align-items: flex-end;
     }
-    [dir="ltr"] .prod-price-box { text-align: right; align-items: flex-start; }
+    [dir="ltr"] .prod-price-box { align-items: flex-end; }
     .prod-price {
       font-size: 16px;
       font-weight: 800;
@@ -446,7 +471,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       width: 36px;
       height: 36px;
       border-radius: 50%;
-      background: rgba(255, 255, 255, 0.08);
+      background: var(--input-bg);
       border: 1px solid var(--border);
       color: var(--text);
       display: flex;
@@ -463,6 +488,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       border-radius: 14px;
       padding: 16px;
       margin-bottom: 12px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
     }
     .badges-flex {
       display: flex;
@@ -471,7 +497,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       flex-wrap: wrap;
     }
     .pill-badge {
-      background: rgba(255, 255, 255, 0.05);
+      background: var(--input-bg);
       border: 1px solid var(--border);
       padding: 6px 12px;
       border-radius: 10px;
@@ -489,27 +515,27 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     .rich-desc-container .desc-heading {
       font-size: 15px;
       font-weight: 700;
-      color: #38bdf8;
+      color: var(--accent);
       margin: 10px 0 4px 0;
     }
     .rich-desc-container .desc-bullet {
       margin: 4px 0 4px 10px;
     }
     .rich-desc-container .desc-inline-code {
-      background: rgba(0, 0, 0, 0.35);
-      color: #38bdf8;
+      background: var(--input-bg);
+      color: var(--accent);
       padding: 2px 6px;
       border-radius: 4px;
       font-family: monospace;
       font-size: 13px;
     }
-    .rich-desc-container a { color: #38bdf8; text-decoration: underline; }
+    .rich-desc-container a { color: var(--accent); text-decoration: underline; }
 
     /* Stepper & Action Controls */
     .stepper-capsule {
       display: inline-flex;
       align-items: center;
-      background: rgba(0, 0, 0, 0.35);
+      background: var(--input-bg);
       border: 1px solid var(--border);
       border-radius: 10px;
       overflow: hidden;
@@ -538,7 +564,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       border-radius: 14px;
       background: #007aff;
       color: #ffffff;
-      font-size: 17px;
+      font-size: 16px;
       font-weight: 700;
       letter-spacing: -0.3px;
       border: none;
@@ -551,6 +577,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       transition: opacity 0.15s, transform 0.15s;
     }
     .btn-action-primary:active { opacity: 0.8; transform: scale(0.98); }
+    .btn-action-primary:disabled { opacity: 0.6; cursor: not-allowed; }
     .btn-action-warning {
       width: 100%;
       height: 50px;
@@ -569,14 +596,18 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     }
     .btn-action-warning:active { opacity: 0.8; transform: scale(0.98); }
     .btn-action-secondary {
-      background: rgba(120, 120, 128, 0.18);
+      background: var(--input-bg);
       color: var(--accent);
-      border: none;
+      border: 1px solid var(--border);
       border-radius: 10px;
       padding: 8px 14px;
       font-size: 13px;
       font-weight: 700;
       cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
     }
     .btn-action-secondary:active { opacity: 0.7; }
     .btn-stars-checkout {
@@ -612,7 +643,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       right: 20px;
       left: 20px;
       height: 2px;
-      background: rgba(255, 255, 255, 0.1);
+      background: var(--border);
       z-index: 1;
       transform: translateY(-50%);
     }
@@ -653,7 +684,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       margin: 8px 0;
     }
     .cred-pill-row {
-      background: rgba(0, 0, 0, 0.38);
+      background: var(--input-bg);
       border: 1px solid var(--border);
       border-radius: 10px;
       padding: 10px 12px;
@@ -677,7 +708,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     .cred-val-text {
       font-family: ui-monospace, SFMono-Regular, monospace;
       font-size: 13px;
-      color: #38bdf8;
+      color: var(--accent);
       word-break: break-all;
     }
     .btn-copy-mini {
@@ -694,6 +725,134 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     }
     .btn-copy-mini:active { background: rgba(56, 189, 248, 0.25); }
 
+    /* HARDENED RECHARGE UI COMPONENTS */
+    .recharge-methods-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .recharge-method-card {
+      background: var(--card);
+      border: 1.5px solid var(--border);
+      border-radius: 14px;
+      padding: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .recharge-method-card.active {
+      border-color: var(--accent);
+      background: var(--card-hover);
+      box-shadow: 0 4px 16px var(--accent-glow);
+    }
+    .method-card-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .method-icon { font-size: 26px; }
+    .method-name { font-size: 15px; font-weight: 700; }
+    .method-sub { font-size: 11px; color: var(--hint); margin-top: 2px; }
+    .method-radio-check {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      color: transparent;
+      transition: all 0.15s;
+    }
+    .recharge-method-card.active .method-radio-check {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #ffffff;
+      font-weight: 900;
+    }
+
+    .quick-amounts-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    @media (max-width: 400px) {
+      .quick-amounts-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+    .quick-amount-chip {
+      background: var(--card);
+      border: 1.5px solid var(--border);
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 700;
+      padding: 10px 0;
+      border-radius: 12px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .quick-amount-chip.active {
+      background: rgba(56, 189, 248, 0.18);
+      color: var(--accent);
+      border-color: var(--accent);
+      box-shadow: 0 2px 8px var(--accent-glow);
+    }
+
+    .custom-amount-box {
+      display: flex;
+      align-items: center;
+      background: var(--input-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 14px;
+      gap: 8px;
+    }
+    .custom-amount-box input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--text);
+      font-size: 16px;
+      font-weight: 700;
+      outline: none;
+      font-family: monospace;
+    }
+
+    /* THEME SWITCHER (SEGMENTED CONTROL) */
+    .theme-segmented-control {
+      display: flex;
+      background: var(--input-bg);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 4px;
+      gap: 6px;
+    }
+    .theme-segment-btn {
+      flex: 1;
+      height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--hint);
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .theme-segment-btn.active {
+      background: var(--card);
+      color: var(--accent);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+      border: 1px solid var(--border);
+    }
+
     /* FLOATING LIQUID GLASS BOTTOM NAVBAR (Flyout Island) */
     .liquid-glass-nav {
       position: fixed;
@@ -704,19 +863,20 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       max-width: 440px;
       height: var(--nav-height);
       border-radius: 36px;
-      background: rgba(18, 24, 40, 0.72);
+      background: var(--glass-bg);
       backdrop-filter: blur(36px) saturate(220%);
       -webkit-backdrop-filter: blur(36px) saturate(220%);
       border: 1px solid var(--glass-border);
       box-shadow: 
-        0 16px 40px rgba(0, 0, 0, 0.6),
-        0 4px 12px rgba(0, 0, 0, 0.35),
+        0 16px 40px rgba(0, 0, 0, 0.25),
+        0 4px 12px rgba(0, 0, 0, 0.15),
         inset 0 1px 1px rgba(255, 255, 255, 0.35);
       display: flex;
       align-items: center;
       justify-content: space-around;
       z-index: 100;
       padding: 0 10px;
+      transition: background-color 0.25s, border-color 0.25s;
     }
     .liquid-tab-item {
       flex: 1;
@@ -726,14 +886,14 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       align-items: center;
       justify-content: center;
       gap: 3px;
-      color: #94a3b8;
+      color: var(--hint);
       cursor: pointer;
       border-radius: 24px;
       transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
       position: relative;
     }
     .liquid-tab-item.active {
-      color: #38bdf8;
+      color: var(--accent);
       background: rgba(56, 189, 248, 0.14);
     }
     .liquid-tab-item svg {
@@ -761,7 +921,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       position: absolute;
       inset: 0;
       transform: translateX(-100%);
-      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
       animation: shimmer 1.5s infinite;
     }
     @keyframes shimmer { 100% { transform: translateX(100%); } }
@@ -834,10 +994,10 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     <!-- Home Screen Pin Banner (Bot API 8.0) -->
     <div class="pwa-banner" id="home-screen-banner" style="display: none;">
       <div style="font-size: 13px;">
-        <strong>📲 أضف التطبيق للشاشة الرئيسية</strong>
-        <div style="font-size: 11px; color: var(--hint);">لوصول فوري ومباشر دون فتح تيليجرام</div>
+        <strong id="pwa-banner-title">📲 أضف التطبيق للشاشة الرئيسية</strong>
+        <div style="font-size: 11px; color: var(--hint);" id="pwa-banner-sub">لوصول فوري ومباشر دون فتح تيليجرام</div>
       </div>
-      <button class="btn-copy-mini" onclick="promptAddToHomeScreen()">إضافة الآن</button>
+      <button class="btn-copy-mini" id="pwa-banner-btn" onclick="promptAddToHomeScreen()">إضافة الآن</button>
     </div>
 
     <!-- Search Bar -->
@@ -876,7 +1036,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     <div id="products-catalog-mode" style="display: none;">
       <div class="subview-header">
         <button class="btn-back-catalog" onclick="returnToCollections()">
-          <span>→</span>
+          <span id="icon-back-to-catalogs">→</span>
           <span id="btn-back-to-catalogs">جميع التصنيفات</span>
         </button>
         <div style="font-size: 16px; font-weight: 700;" id="active-collection-title">التصنيف</div>
@@ -889,7 +1049,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
   <section id="view-product-detail" class="tab-view">
     <div class="subview-header">
       <button class="btn-back-catalog" onclick="closeProductDetailPage()">
-        <span>→</span>
+        <span id="icon-back-product">→</span>
         <span id="btn-back-product">رجوع</span>
       </button>
       <span style="font-size: 13px; color: var(--accent); font-weight: 700;" id="detail-category-header">المنتج</span>
@@ -919,10 +1079,10 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     <div class="inset-card">
       <!-- Direct Coupon / Promo Code Input -->
       <div style="margin-bottom: 14px;">
-        <div style="font-size: 12px; color: var(--hint); margin-bottom: 6px;">كود الخصم / Promo Code</div>
+        <div style="font-size: 12px; color: var(--hint); margin-bottom: 6px;" id="label-promo-code-input">كود الخصم / Promo Code</div>
         <div style="display: flex; gap: 8px;">
-          <input type="text" id="coupon-code-input" placeholder="SAVE10" style="flex: 1; background: rgba(0,0,0,0.35); border: 1px solid var(--border); border-radius: 10px; color: #fff; padding: 8px 12px; font-family: monospace; font-size: 13px; text-transform: uppercase; outline: none;">
-          <button class="btn-action-secondary" onclick="applyCheckoutCoupon()" style="padding: 6px 14px;">تطبيق</button>
+          <input type="text" id="coupon-code-input" placeholder="SAVE10" style="flex: 1; background: var(--input-bg); border: 1px solid var(--border); border-radius: 10px; color: var(--text); padding: 8px 12px; font-family: monospace; font-size: 13px; text-transform: uppercase; outline: none;">
+          <button class="btn-action-secondary" id="btn-apply-coupon" onclick="applyCheckoutCoupon()" style="padding: 6px 14px;">تطبيق</button>
         </div>
         <div id="coupon-applied-note" style="font-size: 12px; color: var(--success); font-weight: 700; margin-top: 4px; display: none;"></div>
       </div>
@@ -949,17 +1109,17 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       <!-- Out-of-Stock Restock Alert Button -->
       <div id="restock-alert-box" style="display: none; margin-bottom: 10px;">
         <button class="btn-action-warning" onclick="triggerInAppRestockSubscribe()">
-          <span>🔔 نبهني فور التوفر (Restock Alert)</span>
+          <span id="btn-restock-text">🔔 نبهني فور التوفر (Restock Alert)</span>
         </button>
       </div>
 
       <button class="btn-action-primary" id="btn-inapp-purchase" onclick="executeProductBuy()">
-        <span>⚡ شراء فوري</span>
+        <span id="btn-buy-action-label">⚡ شراء فوري</span>
         <span id="btn-price-tag">($0.00)</span>
       </button>
 
       <button class="btn-stars-checkout" id="btn-stars-purchase" onclick="executeStarsDirectBuy()">
-        <span>⭐ الدفع عبر نجوم تيليجرام</span>
+        <span id="btn-stars-action-label">⭐ الدفع عبر نجوم تيليجرام</span>
       </button>
     </div>
   </section>
@@ -968,21 +1128,21 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
   <section id="view-order-success" class="tab-view">
     <div style="text-align: center; padding: 24px 0 16px 0;">
       <div style="font-size: 60px; margin-bottom: 8px;">🎉</div>
-      <h2 style="font-size: 22px; font-weight: 800; margin-bottom: 4px;">تم الطلب بنجاح!</h2>
+      <h2 style="font-size: 22px; font-weight: 800; margin-bottom: 4px;" id="success-view-title">تم الطلب بنجاح!</h2>
       <p style="font-size: 13px; color: var(--hint);" id="success-meta-sub">طلب #000 · تم التسليم</p>
     </div>
 
     <div class="inset-card">
-      <div style="font-size: 12px; font-weight: 700; color: var(--hint); margin-bottom: 8px;">بيانات الحساب / المفاتيح المسلمة</div>
+      <div style="font-size: 12px; font-weight: 700; color: var(--hint); margin-bottom: 8px;" id="success-keys-title">بيانات الحساب / المفاتيح المسلمة</div>
       <div id="success-delivered-keys"></div>
-      <div style="font-size: 11px; color: var(--hint); text-align: center; margin-top: 6px;">
+      <div style="font-size: 11px; color: var(--hint); text-align: center; margin-top: 6px;" id="success-copy-hint">
         انقر على أي كود بالأعلى للنسخ الفوري!
       </div>
     </div>
 
     <div style="display: flex; gap: 10px;">
-      <button class="btn-action-secondary" onclick="switchTab('orders')" style="flex: 1; height: 48px;">📦 عرض في طلباتي</button>
-      <button class="btn-action-primary" onclick="switchTab('store')" style="flex: 1; height: 48px;">🛍️ متابعة التسوق</button>
+      <button class="btn-action-secondary" id="btn-success-view-orders" onclick="switchTab('orders')" style="flex: 1; height: 48px;">📦 عرض في طلباتي</button>
+      <button class="btn-action-primary" id="btn-success-continue" onclick="switchTab('store')" style="flex: 1; height: 48px;">🛍️ متابعة التسوق</button>
     </div>
   </section>
 
@@ -995,10 +1155,10 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     </div>
   </main>
 
-  <!-- TAB 3: WALLET VIEW -->
+  <!-- TAB 3: WALLET VIEW (UX-HARDENED RECHARGE FLOW) -->
   <main id="view-wallet" class="tab-view">
     <div class="hero-banner" style="text-align: center; padding: 24px 16px;">
-      <div style="font-size: 12px; color: var(--hint); text-transform: uppercase; letter-spacing: 0.5px;">الرصيد المتاح للشراء</div>
+      <div style="font-size: 12px; color: var(--hint); text-transform: uppercase; letter-spacing: 0.5px;" id="label-wallet-balance-title">الرصيد المتاح للشراء</div>
       <div style="font-size: 36px; font-weight: 800; margin: 4px 0;" id="wallet-balance-hero">$0.00</div>
       <div style="font-size: 13px; color: var(--accent); font-weight: 700;" id="wallet-balance-approx">جاهز للشراء الفوري</div>
     </div>
@@ -1006,7 +1166,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     <!-- VIP Progress Bar -->
     <div class="inset-card" style="padding: 14px;">
       <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px;">
-        <span>التقدم نحو رتبة <strong id="next-vip-rank" style="color: var(--warning);">Gold VIP</strong></span>
+        <span><span id="label-vip-progress-prefix">التقدم نحو رتبة</span> <strong id="next-vip-rank" style="color: var(--warning);">Gold VIP</strong></span>
         <span id="vip-progress-num" style="color: var(--accent); font-weight: 700;">60%</span>
       </div>
       <div style="width: 100%; height: 6px; background: var(--card-hover); border-radius: 3px; overflow: hidden;">
@@ -1014,56 +1174,75 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       </div>
     </div>
 
-    <div class="section-title">شحن رصيد سريع</div>
-    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px;">
-      <div class="btn-action-secondary" style="text-align: center; padding: 12px 0;" onclick="triggerQuickTopup(10)">+$10</div>
-      <div class="btn-action-secondary" style="text-align: center; padding: 12px 0;" onclick="triggerQuickTopup(25)">+$25</div>
-      <div class="btn-action-secondary" style="text-align: center; padding: 12px 0;" onclick="triggerQuickTopup(50)">+$50</div>
-      <div class="btn-action-secondary" style="text-align: center; padding: 12px 0;" onclick="triggerQuickTopup(100)">+$100</div>
-    </div>
-
-    <div class="section-title">طرق الدفع والشحن</div>
-    <div class="product-row" onclick="triggerRailPayment('stars')">
-      <div class="prod-left">
-        <span style="font-size: 26px;">⭐</span>
-        <div>
-          <div style="font-weight: 700; font-size: 15px;">نجوم تيليجرام (Telegram Stars)</div>
-          <div style="font-size: 12px; color: var(--hint);">دفع فوري عبر Apple Pay أو Google Pay</div>
+    <!-- Step 1: Choose Payment Method -->
+    <div class="section-title" id="recharge-method-title">1. اختر وسيلة الشحن</div>
+    <div class="recharge-methods-grid">
+      <div class="recharge-method-card active" id="method-card-stars" onclick="selectRechargeMethod('stars')">
+        <div class="method-card-left">
+          <span class="method-icon">⭐</span>
+          <div>
+            <div class="method-name" id="label-method-stars-name">نجوم تيليجرام (Telegram Stars)</div>
+            <div class="method-sub" id="label-method-stars-sub">دفع فوري عبر Apple Pay أو Google Pay</div>
+          </div>
         </div>
+        <div class="method-radio-check">✓</div>
       </div>
-      <span class="chevron">‹</span>
-    </div>
 
-    <div class="product-row" onclick="triggerRailPayment('crypto')">
-      <div class="prod-left">
-        <span style="font-size: 26px;">🪙</span>
-        <div>
-          <div style="font-weight: 700; font-size: 15px;">العملات الرقمية (Crypto)</div>
-          <div style="font-size: 12px; color: var(--hint);">USDT, BTC, SOL عبر KryptoExpress</div>
+      <div class="recharge-method-card" id="method-card-crypto" onclick="selectRechargeMethod('crypto')">
+        <div class="method-card-left">
+          <span class="method-icon">🪙</span>
+          <div>
+            <div class="method-name" id="label-method-crypto-name">العملات الرقمية (Crypto)</div>
+            <div class="method-sub" id="label-method-crypto-sub">USDT (TRC20/BEP20), BTC, SOL عبر KryptoExpress</div>
+          </div>
         </div>
+        <div class="method-radio-check">✓</div>
       </div>
-      <span class="chevron">‹</span>
-    </div>
 
-    <div class="product-row" onclick="triggerRailPayment('sam')">
-      <div class="prod-left">
-        <span style="font-size: 26px;">📱</span>
-        <div>
-          <div style="font-weight: 700; font-size: 15px;">سيرياتيل كاش وشام كاش (SAM)</div>
-          <div style="font-size: 12px; color: var(--hint);">دفع مباشر عبر المحافظ السورية</div>
+      <div class="recharge-method-card" id="method-card-sam" onclick="selectRechargeMethod('sam')">
+        <div class="method-card-left">
+          <span class="method-icon">📱</span>
+          <div>
+            <div class="method-name" id="label-method-sam-name">سيرياتيل كاش وشام كاش (SAM)</div>
+            <div class="method-sub" id="label-method-sam-sub">دفع مباشر عبر المحافظ الإلكترونية السورية</div>
+          </div>
         </div>
+        <div class="method-radio-check">✓</div>
       </div>
-      <span class="chevron">‹</span>
     </div>
 
-    <div class="section-title">شحن عبر كرت هدية (Voucher)</div>
+    <!-- Step 2: Choose Amount with $1 Choice or Custom -->
+    <div class="section-title" id="recharge-amount-title">2. اختر المبلغ أو حدد مخصصاً</div>
+    <div class="quick-amounts-grid">
+      <div class="quick-amount-chip" id="chip-amt-1" onclick="selectTopupAmount(1)">+$1</div>
+      <div class="quick-amount-chip" id="chip-amt-5" onclick="selectTopupAmount(5)">+$5</div>
+      <div class="quick-amount-chip active" id="chip-amt-10" onclick="selectTopupAmount(10)">+$10</div>
+      <div class="quick-amount-chip" id="chip-amt-25" onclick="selectTopupAmount(25)">+$25</div>
+      <div class="quick-amount-chip" id="chip-amt-50" onclick="selectTopupAmount(50)">+$50</div>
+      <div class="quick-amount-chip" id="chip-amt-100" onclick="selectTopupAmount(100)">+$100</div>
+    </div>
+
+    <div class="custom-amount-box">
+      <span style="font-size: 16px; font-weight: 800; color: var(--accent);">$</span>
+      <input type="number" id="custom-topup-input" min="1" max="1000" step="any" placeholder="10.00" value="10.00" oninput="onCustomAmountInput()">
+      <span style="font-size: 12px; color: var(--hint);" id="custom-amt-curr-tag">USD</span>
+    </div>
+
+    <!-- Step 3: Action Button with Loading State -->
+    <button class="btn-action-primary" id="btn-execute-recharge" onclick="executeSelectedRecharge()" style="margin-top: 14px; height: 52px;">
+      <span id="recharge-btn-icon">⚡</span>
+      <span id="recharge-btn-text">شحن 10.00$ عبر نجوم تيليجرام</span>
+    </button>
+
+    <!-- Redeem Gift Voucher -->
+    <div class="section-title" id="voucher-section-title" style="margin-top: 24px;">شحن عبر كرت هدية (Voucher)</div>
     <div class="inset-card" style="display: flex; gap: 8px; padding: 10px;">
-      <input type="text" id="voucher-code-input" placeholder="GH-XXXX-YYYY" style="flex: 1; background: transparent; border: none; color: #fff; font-size: 14px; outline: none; font-family: monospace; text-transform: uppercase;">
-      <button class="btn-action-secondary" onclick="submitVoucherRedeem()" style="padding: 6px 14px;">شحن</button>
+      <input type="text" id="voucher-code-input" placeholder="GH-XXXX-YYYY" style="flex: 1; background: transparent; border: none; color: var(--text); font-size: 14px; outline: none; font-family: monospace; text-transform: uppercase;">
+      <button class="btn-action-secondary" id="voucher-redeem-btn" onclick="submitVoucherRedeem()" style="padding: 6px 14px;">شحن</button>
     </div>
   </main>
 
-  <!-- TAB 4: SETTINGS VIEW -->
+  <!-- TAB 4: SETTINGS VIEW (APPEARANCE, THEME, LANGUAGE) -->
   <main id="view-settings" class="tab-view">
     <div class="inset-card" style="display: flex; align-items: center; gap: 14px;">
       <div id="settings-avatar-box">
@@ -1076,18 +1255,35 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       </div>
     </div>
 
+    <!-- Appearance: Dark / Light Mode Toggle -->
     <div class="inset-card">
-      <div class="section-title" style="margin-top: 0;">📲 تثبيت التطبيق</div>
-      <div style="font-size: 12px; color: var(--hint); margin-bottom: 8px;">
+      <div class="section-title" style="margin-top: 0;" id="label-theme-title">🌓 المظهر / Appearance</div>
+      <div class="theme-segmented-control">
+        <div class="theme-segment-btn active" id="theme-btn-dark" onclick="setAppTheme('dark')">
+          <span>🌙</span>
+          <span id="label-theme-dark">داكن (Dark)</span>
+        </div>
+        <div class="theme-segment-btn" id="theme-btn-light" onclick="setAppTheme('light')">
+          <span>☀️</span>
+          <span id="label-theme-light">فاتح (Light)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Install PWA Button -->
+    <div class="inset-card">
+      <div class="section-title" style="margin-top: 0;" id="label-install-title">📲 تثبيت التطبيق</div>
+      <div style="font-size: 12px; color: var(--hint); margin-bottom: 8px;" id="label-install-desc">
         أضف أيقونة متجر GH Store إلى شاشة هاتفك الرئيسية لتصفح العروض فورياً!
       </div>
-      <button class="btn-action-secondary" onclick="promptAddToHomeScreen()" style="width: 100%; height: 40px;">
+      <button class="btn-action-secondary" id="btn-install-app" onclick="promptAddToHomeScreen()" style="width: 100%; height: 42px;">
         📲 إضافة إلى الشاشة الرئيسية
       </button>
     </div>
 
+    <!-- Currency Picker -->
     <div class="inset-card">
-      <div class="section-title" style="margin-top: 0;">💱 عملة العرض المفضلة</div>
+      <div class="section-title" style="margin-top: 0;" id="label-currency-title">💱 عملة العرض المفضلة</div>
       <div style="display: flex; gap: 8px; flex-wrap: wrap;" id="currency-picker-chips">
         <div class="filter-chip" onclick="selectDisplayCurrency('USD')">USD ($)</div>
         <div class="filter-chip" onclick="selectDisplayCurrency('EUR')">EUR (€)</div>
@@ -1096,27 +1292,29 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       </div>
     </div>
 
+    <!-- Language Picker -->
     <div class="inset-card">
-      <div class="section-title" style="margin-top: 0;">🌐 اللغة / Language</div>
+      <div class="section-title" style="margin-top: 0;" id="label-lang-title">🌐 اللغة / Language</div>
       <div style="display: flex; gap: 8px; flex-wrap: wrap;" id="language-picker-chips">
-        <div class="filter-chip" onclick="changeStoreLanguage('ar')">العربية</div>
-        <div class="filter-chip" onclick="changeStoreLanguage('en')">English</div>
-        <div class="filter-chip" onclick="changeStoreLanguage('de')">Deutsch</div>
-        <div class="filter-chip" onclick="changeStoreLanguage('es')">Español</div>
-        <div class="filter-chip" onclick="changeStoreLanguage('fr')">Français</div>
-        <div class="filter-chip" onclick="changeStoreLanguage('it')">Italiano</div>
-        <div class="filter-chip" onclick="changeStoreLanguage('zh')">中文</div>
+        <div class="filter-chip active" id="lang-chip-ar" onclick="changeStoreLanguage('ar')">العربية</div>
+        <div class="filter-chip" id="lang-chip-en" onclick="changeStoreLanguage('en')">English</div>
+        <div class="filter-chip" id="lang-chip-de" onclick="changeStoreLanguage('de')">Deutsch</div>
+        <div class="filter-chip" id="lang-chip-es" onclick="changeStoreLanguage('es')">Español</div>
+        <div class="filter-chip" id="lang-chip-fr" onclick="changeStoreLanguage('fr')">Français</div>
+        <div class="filter-chip" id="lang-chip-it" onclick="changeStoreLanguage('it')">Italiano</div>
+        <div class="filter-chip" id="lang-chip-zh" onclick="changeStoreLanguage('zh')">中文</div>
       </div>
     </div>
 
+    <!-- Referral Program -->
     <div class="inset-card">
-      <div class="section-title" style="margin-top: 0;">🎁 برنامج الإحالة والأرباح</div>
-      <div style="font-size: 12px; color: var(--hint); margin-bottom: 8px;">
+      <div class="section-title" style="margin-top: 0;" id="label-referral-title">🎁 برنامج الإحالة والأرباح</div>
+      <div style="font-size: 12px; color: var(--hint); margin-bottom: 8px;" id="label-referral-desc">
         شارك رابط الإحالة الخاص بك واحصل على عمولات رصيد فورية عند شحن أصدقائك!
       </div>
-      <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(0, 0, 0, 0.35); border-radius: 8px; padding: 10px; margin-top: 8px;">
-        <span id="referral-link-display" style="font-family: monospace; font-size: 12px; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; margin-left: 8px;">https://t.me/...</span>
-        <button class="btn-action-secondary" onclick="copyReferralLink()" style="padding: 4px 10px;">نسخ</button>
+      <div style="display: flex; align-items: center; justify-content: space-between; background: var(--input-bg); border-radius: 8px; padding: 10px; margin-top: 8px;">
+        <span id="referral-link-display" style="font-family: monospace; font-size: 12px; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; margin-inline-end: 8px;">https://t.me/...</span>
+        <button class="btn-action-secondary" id="btn-copy-ref-link" onclick="copyReferralLink()" style="padding: 4px 10px;">نسخ</button>
       </div>
     </div>
   </main>
@@ -1147,10 +1345,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       tg.ready();
       tg.expand();
       if (tg.enableClosingConfirmation) tg.enableClosingConfirmation();
-      try {
-        if (tg.setHeaderColor) tg.setHeaderColor('#090e1a');
-        if (tg.setBackgroundColor) tg.setBackgroundColor('#090e1a');
-      } catch (e) {}
     }
 
     // Zero-Asset Synthesized Web Audio Micro-Clicks
@@ -1285,7 +1479,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       render();
     }
 
-    // State
+    // State Variables
     let allProducts = [];
     let categoriesList = [];
     let userData = null;
@@ -1293,15 +1487,42 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     let selectedProduct = null;
     let selectedQty = 1;
     let activeTab = 'store';
-    let currentAppLanguage = 'ar'; // Arabic First
+    let currentAppLanguage = 'ar';
     let activeCatalogFilter = 'all';
     let appliedCoupon = null;
     let wishlistSet = new Set();
+
+    // Recharge Flow State
+    let selectedRechargeMethod = 'stars'; // 'stars' | 'crypto' | 'sam'
+    let selectedRechargeAmount = 10.0;
 
     // Telegram User ID Resolution
     const urlParams = new URLSearchParams(window.location.search);
     const tgUser = tg?.initDataUnsafe?.user;
     const userId = tgUser?.id || Number(urlParams.get('tg_id') || 0);
+
+    // Appearance / Theme Switcher
+    function setAppTheme(theme) {
+      haptic('pop');
+      document.documentElement.setAttribute('data-theme', theme);
+      try { localStorage.setItem('ghstore_theme', theme); } catch (e) {}
+
+      document.querySelectorAll('.theme-segment-btn').forEach(b => b.classList.remove('active'));
+      const activeBtn = document.getElementById('theme-btn-' + theme);
+      if (activeBtn) activeBtn.classList.add('active');
+
+      const isLight = (theme === 'light');
+      const bgCol = isLight ? '#f8fafc' : '#090e1a';
+      try {
+        if (tg?.setHeaderColor) tg.setHeaderColor(bgCol);
+        if (tg?.setBackgroundColor) tg.setBackgroundColor(bgCol);
+      } catch (e) {}
+    }
+
+    function initAppTheme() {
+      const savedTheme = localStorage.getItem('ghstore_theme') || 'dark';
+      setAppTheme(savedTheme);
+    }
 
     // Wishlist Sync (CloudStorage + localStorage)
     function initWishlist() {
@@ -1334,12 +1555,13 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       if (e) e.stopPropagation();
       haptic('pop');
       const id = Number(productId);
+      const d = I18N[currentAppLanguage] || I18N.ar;
       if (wishlistSet.has(id)) {
         wishlistSet.delete(id);
-        showToast('تمت الإزالة من المفضلة');
+        showToast(currentAppLanguage === 'ar' ? 'تمت الإزالة من المفضلة' : 'Removed from favorites');
       } else {
         wishlistSet.add(id);
-        showToast('❤️ تمت الإضافة للمفضلة!');
+        showToast(currentAppLanguage === 'ar' ? '❤️ تمت الإضافة للمفضلة!' : '❤️ Added to favorites!');
       }
       saveWishlist();
       updateWishlistUI();
@@ -1361,14 +1583,50 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       });
     }
 
-    // Bilingual Collections Config (Arabic First)
+    // Bilingual Collections Config (Arabic & English)
     const CATALOG_META = {
-      "AI & Chatbots": { arTitle: "🤖 الذكاء الاصطناعي", icon: "🤖", preview: "كلود · شات جي بي تي · جيميني · جروك" },
-      "Streaming & Entertainment": { arTitle: "🎬 البث والترفيه", icon: "🎬", preview: "نتفلكس · بيكوك · شاهد · أبل تي في" },
-      "VPN & Security": { arTitle: "🛡️ الحماية والـ VPN", icon: "🛡️", preview: "نورد في بي ان · سيرف شارك · بروتون" },
-      "Design & Creative": { arTitle: "🎨 التصميم والإبداع", icon: "🎨", preview: "كانفا · أدوبي · فيجما · فريمر" },
-      "Productivity": { arTitle: "📝 الإنتاجية والأدوات", icon: "📝", preview: "نوشن · كاب كات · أوفيس" },
-      "Other": { arTitle: "📦 منتجات رقمية متنوعة", icon: "📦", preview: "تراخيص، مفاتيح واشتراكات" }
+      "AI & Chatbots": {
+        arTitle: "🤖 الذكاء الاصطناعي",
+        enTitle: "🤖 AI & Chatbots",
+        icon: "🤖",
+        arPreview: "كلود · شات جي بي تي · جيميني · جروك",
+        enPreview: "Claude · ChatGPT · Gemini · Grok"
+      },
+      "Streaming & Entertainment": {
+        arTitle: "🎬 البث والترفيه",
+        enTitle: "🎬 Streaming & Entertainment",
+        icon: "🎬",
+        arPreview: "نتفلكس · بيكوك · شاهد · أبل تي في",
+        enPreview: "Netflix · Peacock · Shahid · Apple TV"
+      },
+      "VPN & Security": {
+        arTitle: "🛡️ الحماية والـ VPN",
+        enTitle: "🛡️ VPN & Security",
+        icon: "🛡️",
+        arPreview: "نورد في بي ان · سيرف شارك · بروتون",
+        enPreview: "NordVPN · Surfshark · Proton VPN"
+      },
+      "Design & Creative": {
+        arTitle: "🎨 التصميم والإبداع",
+        enTitle: "🎨 Design & Creative",
+        icon: "🎨",
+        arPreview: "كانفا · أدوبي · فيجما · فريمر",
+        enPreview: "Canva · Adobe · Figma · Framer"
+      },
+      "Productivity": {
+        arTitle: "📝 الإنتاجية والأدوات",
+        enTitle: "📝 Productivity & Tools",
+        icon: "📝",
+        arPreview: "نوشن · كاب كات · أوفيس",
+        enPreview: "Notion · CapCut · MS Office 365"
+      },
+      "Other": {
+        arTitle: "📦 منتجات رقمية متنوعة",
+        enTitle: "📦 Digital Subscriptions",
+        icon: "📦",
+        arPreview: "تراخيص، مفاتيح واشتراكات",
+        enPreview: "Licenses, activations and keys"
+      }
     };
 
     // Robust Markdown & HTML Formatter
@@ -1428,21 +1686,19 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       return goods.map(raw => {
         const line = String(raw).trim();
         let parts = [];
-        let delimiter = null;
-        if (line.includes(' | ')) { parts = line.split(' | '); delimiter = 'pipe'; }
-        else if (line.includes(' / ')) { parts = line.split(' / '); delimiter = 'slash'; }
+        if (line.includes(' | ')) { parts = line.split(' | '); }
+        else if (line.includes(' / ')) { parts = line.split(' / '); }
         else if (line.includes(':') && line.split(':').length >= 2 && !line.startsWith('http')) {
           parts = line.split(':');
-          delimiter = 'colon';
         }
 
         if (parts.length >= 2) {
           const rows = parts.map((part, idx) => {
-            let label = "بيانات";
-            if (idx === 0) label = part.includes('@') ? "📧 البريد / المستخدم" : "👤 اسم المستخدم";
-            else if (idx === 1) label = "🔑 كلمة المرور";
-            else if (idx === 2) label = "🛡️ كود 2FA / الأمان";
-            else label = `معلومة ${idx + 1}`;
+            let label = (currentAppLanguage === 'ar') ? "بيانات" : "Credential";
+            if (idx === 0) label = part.includes('@') ? (currentAppLanguage === 'ar' ? "📧 البريد / المستخدم" : "📧 Email / User") : (currentAppLanguage === 'ar' ? "👤 اسم المستخدم" : "👤 Username");
+            else if (idx === 1) label = (currentAppLanguage === 'ar') ? "🔑 كلمة المرور" : "🔑 Password";
+            else if (idx === 2) label = (currentAppLanguage === 'ar') ? "🛡️ كود 2FA / الأمان" : "🛡️ 2FA / Security Key";
+            else label = (currentAppLanguage === 'ar') ? `معلومة ${idx + 1}` : `Field ${idx + 1}`;
 
             return `
               <div class="cred-pill-row">
@@ -1450,7 +1706,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
                   <span class="cred-type-tag">${label}</span>
                   <span class="cred-val-text">${part.trim()}</span>
                 </div>
-                <button class="btn-copy-mini" onclick="copyCredText('${part.trim().replace(/'/g, "\\\\'")}')">نسخ</button>
+                <button class="btn-copy-mini" onclick="copyCredText('${part.trim().replace(/'/g, "\\\\'")}')">${currentAppLanguage === 'ar' ? 'نسخ' : 'Copy'}</button>
               </div>
             `;
           }).join('');
@@ -1459,7 +1715,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
             <div class="cred-grid">
               ${rows}
               <div style="text-align: left; margin-top: 2px;">
-                <button class="btn-copy-mini" style="font-size: 10px;" onclick="copyCredText('${line.replace(/'/g, "\\\\'")}')">📋 نسخ السطر كاملاً</button>
+                <button class="btn-copy-mini" style="font-size: 10px;" onclick="copyCredText('${line.replace(/'/g, "\\\\'")}')">${currentAppLanguage === 'ar' ? '📋 نسخ السطر كاملاً' : '📋 Copy Full Line'}</button>
               </div>
             </div>
           `;
@@ -1469,85 +1725,292 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         return `
           <div class="cred-pill-row" style="margin: 6px 0;">
             <div class="cred-meta">
-              <span class="cred-type-tag">مفتاح / كود التفعيل</span>
+              <span class="cred-type-tag">${currentAppLanguage === 'ar' ? 'مفتاح / كود التفعيل' : 'License / Key'}</span>
               <span class="cred-val-text">${line}</span>
             </div>
-            <button class="btn-copy-mini" onclick="copyCredText('${line.replace(/'/g, "\\\\'")}')">نسخ</button>
+            <button class="btn-copy-mini" onclick="copyCredText('${line.replace(/'/g, "\\\\'")}')">${currentAppLanguage === 'ar' ? 'نسخ' : 'Copy'}</button>
           </div>
         `;
       }).join('');
     }
 
-    // Client-side i18n
+    // Complete i18n Translation Dictionary
     const I18N = {
       ar: {
-        store: "المتجر", orders: "طلباتي", wallet: "المحفظة", settings: "الإعدادات",
-        search: "ابحث عن كلود، جيميني، نتفلكس، في بي ان...", collections: "التصنيفات المميزة",
-        all_catalogs: "جميع التصنيفات", brand: "🛍️ GH Store", caption: "المتجر الرقمي المعتمد",
-        buy_now: "شراء فوري", in_stock: "متوفر", left: "متبقي", instant: "تسليم فوري",
-        total: "السعر الإجمالي", qty: "الكمية", desc: "الوصف", warranty: "ضمان 30 يوم"
+        store: "المتجر",
+        orders: "طلباتي",
+        wallet: "المحفظة",
+        settings: "الإعدادات",
+        caption: "المتجر الرقمي المعتمد",
+        search: "ابحث عن كلود، جيميني، نتفلكس، في بي ان...",
+        filter_all: "الكل",
+        filter_wishlist: "❤️ المفضلة",
+        filter_stock: "🟢 متوفر فقط",
+        filter_instant: "⚡ تسليم فوري",
+        filter_lowprice: "🪙 الأقل سعراً",
+        banner_badge: "تحديثات المتجر",
+        banner_title: "✨ اشتراكات كلود وجيميني متوفرة فورياً",
+        banner_sub: "تسليم تلقائي فوري للمفاتيح والحسابات على مدار الساعة",
+        pwa_title: "📲 أضف التطبيق للشاشة الرئيسية",
+        pwa_sub: "لوصول فوري ومباشر دون فتح تيليجرام",
+        pwa_btn: "إضافة الآن",
+        collections: "التصنيفات المميزة",
+        all_catalogs: "جميع التصنيفات",
+        items_suffix: "منتج",
+        starts_from: "يبدأ من",
+        view_details: "عرض ‹",
+        back: "رجوع",
+        product: "المنتج",
+        instant_delivery: "⚡ تسليم تلقائي فوري",
+        custom_activation: "⏳ تفعيل مخصص",
+        warranty_30d: "🛡️ ضمان 30 يوم",
+        in_stock: "🟢 متوفر",
+        out_of_stock: "🔴 نفد المخزون",
+        desc: "الوصف",
+        promo_code_label: "كود الخصم / Promo Code",
+        apply: "تطبيق",
+        total: "السعر الإجمالي",
+        insufficient_balance: "⚠️ الرصيد المتاح غير كافٍ لهذا الطلب.",
+        topup_to_continue: "💳 شحن الرصيد للمتابعة",
+        buy_now: "⚡ شراء فوري",
+        stars_buy: "⭐ الدفع عبر نجوم تيليجرام",
+        restock_alert: "🔔 نبهني فور التوفر (Restock Alert)",
+        order_success: "تم الطلب بنجاح!",
+        delivered_keys: "بيانات الحساب / المفاتيح المسلمة",
+        copy_hint: "انقر على أي كود بالأعلى للنسخ الفوري!",
+        view_orders: "📦 عرض في طلباتي",
+        continue_shopping: "🛍️ متابعة التسوق",
+        orders_title: "سجل الطلبات والمشتريات",
+        orders_empty_title: "لا توجد طلبات بعد",
+        orders_empty_sub: "تصفح التصنيفات واطلب الحسابات والمفاتيح بضغطة واحدة!",
+        browse_store: "تصفح المتجر",
+        step_placed: "تم الطلب",
+        step_processing: "قيد المعالجة",
+        step_delivered: "تم التسليم",
+        claim_warranty: "🛡️ طلب تعويض الضمان",
+        wallet_balance_title: "الرصيد المتاح للشراء",
+        wallet_ready: "جاهز للشراء الفوري",
+        vip_progress: "التقدم نحو رتبة",
+        method_section_title: "1. اختر وسيلة الشحن",
+        stars_title: "نجوم تيليجرام (Telegram Stars)",
+        stars_sub: "دفع فوري عبر Apple Pay أو Google Pay",
+        crypto_title: "العملات الرقمية (Crypto)",
+        crypto_sub: "USDT (TRC20/BEP20), BTC, SOL عبر KryptoExpress",
+        sam_title: "سيرياتيل كاش وشام كاش (SAM)",
+        sam_sub: "دفع مباشر عبر المحافظ الإلكترونية السورية",
+        amount_section_title: "2. اختر المبلغ أو حدد مخصصاً",
+        custom_amount_placeholder: "أدخل المبلغ ($)... e.g. 15",
+        voucher_section_title: "شحن عبر كرت هدية (Voucher)",
+        voucher_btn: "شحن الكرت",
+        theme_section_title: "🌓 المظهر / Appearance",
+        theme_dark: "داكن (Dark)",
+        theme_light: "فاتح (Light)",
+        install_section_title: "📲 تثبيت التطبيق",
+        install_desc: "أضف أيقونة متجر GH Store إلى شاشة هاتفك الرئيسية لتصفح العروض فورياً!",
+        install_btn: "📲 إضافة إلى الشاشة الرئيسية",
+        currency_title: "💱 عملة العرض المفضلة",
+        lang_title: "🌐 اللغة / Language",
+        referral_title: "🎁 برنامج الإحالة والأرباح",
+        referral_desc: "شارك رابط الإحالة الخاص بك واحصل على عمولات رصيد فورية عند شحن أصدقائك!",
+        copy: "نسخ"
       },
       en: {
-        store: "Store", orders: "Orders", wallet: "Wallet", settings: "Settings",
-        search: "Search Claude, Gemini, Netflix, VPN...", collections: "Featured Catalogs",
-        all_catalogs: "All Catalogs", brand: "🛍️ GH Store", caption: "Verified Digital Reseller",
-        buy_now: "Instant Buy", in_stock: "In Stock", left: "left", instant: "Instant Delivery",
-        total: "Total Price", qty: "Quantity", desc: "Description", warranty: "30 Days Warranty"
-      },
-      de: {
-        store: "Shop", orders: "Bestellungen", wallet: "Guthaben", settings: "Einstellungen",
-        search: "Produkte suchen...", collections: "Kategorien", all_catalogs: "Alle Kategorien",
-        brand: "🛍️ GH Store", caption: "Verifizierter Reseller", buy_now: "Sofort kaufen",
-        in_stock: "Vorrätig", left: "übrig", instant: "Sofortige Lieferung",
-        total: "Gesamtpreis", qty: "Menge", desc: "Beschreibung", warranty: "30 Tage Garantie"
-      },
-      es: {
-        store: "Tienda", orders: "Pedidos", wallet: "Billetera", settings: "Ajustes",
-        search: "Buscar productos...", collections: "Colecciones", all_catalogs: "Todas las Colecciones",
-        brand: "🛍️ GH Store", caption: "Distribuidor Verificado", buy_now: "Comprar ahora",
-        in_stock: "En stock", left: "disponibles", instant: "Entrega instantánea",
-        total: "Precio Total", qty: "Cantidad", desc: "Descripción", warranty: "30 Días de Garantía"
-      },
-      fr: {
-        store: "Boutique", orders: "Commandes", wallet: "Portefeuille", settings: "Paramètres",
-        search: "Rechercher...", collections: "Collections", all_catalogs: "Toutes les Collections",
-        brand: "🛍️ GH Store", caption: "Revendeur Vérifié", buy_now: "Acheter",
-        in_stock: "En stock", left: "restants", instant: "Livraison instantanée",
-        total: "Prix Total", qty: "Quantité", desc: "Description", warranty: "Garantie 30 jours"
-      },
-      it: {
-        store: "Negozio", orders: "Ordini", wallet: "Portafoglio", settings: "Impostazioni",
-        search: "Cerca prodotti...", collections: "Collezioni", all_catalogs: "Tutte le Collezioni",
-        brand: "🛍️ GH Store", caption: "Rivenditore Verificato", buy_now: "Acquista",
-        in_stock: "Disponibile", left: "rimasti", instant: "Consegna istantanea",
-        total: "Prezzo Totale", qty: "Quantità", desc: "Descrizione", warranty: "Garanzia 30 giorni"
-      },
-      zh: {
-        store: "商店", orders: "订单", wallet: "钱包", settings: "设置",
-        search: "搜索产品...", collections: "精选分类", all_catalogs: "所有分类",
-        brand: "🛍️ GH Store", caption: "官方认证分销商", buy_now: "立即购买",
-        in_stock: "现货", left: "剩余", instant: "自动秒发",
-        total: "总计", qty: "数量", desc: "商品说明", warranty: "30天质保"
+        store: "Store",
+        orders: "Orders",
+        wallet: "Wallet",
+        settings: "Settings",
+        caption: "Verified Digital Reseller",
+        search: "Search Claude, Gemini, Netflix, VPN...",
+        filter_all: "All",
+        filter_wishlist: "❤️ Favorites",
+        filter_stock: "🟢 In Stock",
+        filter_instant: "⚡ Instant Delivery",
+        filter_lowprice: "🪙 Lowest Price",
+        banner_badge: "STORE UPDATES",
+        banner_title: "✨ Instant Claude & Gemini Accounts Ready",
+        banner_sub: "Automated 24/7 key & account delivery with instant activation",
+        pwa_title: "📲 Add App to Home Screen",
+        pwa_sub: "Direct instant launch without opening Telegram",
+        pwa_btn: "Add Now",
+        collections: "Featured Catalogs",
+        all_catalogs: "All Catalogs",
+        items_suffix: "items",
+        starts_from: "From",
+        view_details: "View ›",
+        back: "Back",
+        product: "Product",
+        instant_delivery: "⚡ Instant Automated Delivery",
+        custom_activation: "⏳ Custom Activation",
+        warranty_30d: "🛡️ 30 Days Warranty",
+        in_stock: "🟢 In Stock",
+        out_of_stock: "🔴 Out of Stock",
+        desc: "Description",
+        promo_code_label: "Promo Code / Coupon",
+        apply: "Apply",
+        total: "Total Price",
+        insufficient_balance: "⚠️ Insufficient balance for this order.",
+        topup_to_continue: "💳 Top Up Balance to Continue",
+        buy_now: "⚡ Instant Buy",
+        stars_buy: "⭐ Pay with Telegram Stars",
+        restock_alert: "🔔 Notify When Available (Restock Alert)",
+        order_success: "Order Successful!",
+        delivered_keys: "Delivered Credentials / Keys",
+        copy_hint: "Tap any code above to copy instantly!",
+        view_orders: "📦 View in Orders",
+        continue_shopping: "🛍️ Continue Shopping",
+        orders_title: "Order History & Purchases",
+        orders_empty_title: "No orders yet",
+        orders_empty_sub: "Browse catalogs and order accounts & keys in 1 tap!",
+        browse_store: "Browse Store",
+        step_placed: "Placed",
+        step_processing: "Processing",
+        step_delivered: "Delivered",
+        claim_warranty: "🛡️ Claim Warranty",
+        wallet_balance_title: "Available Balance",
+        wallet_ready: "Ready for instant purchase",
+        vip_progress: "Progress to",
+        method_section_title: "1. Select Payment Method",
+        stars_title: "Telegram Stars",
+        stars_sub: "Instant pay via Apple Pay, Google Pay or Stars",
+        crypto_title: "Crypto (USDT, BTC, SOL)",
+        crypto_sub: "USDT (TRC20/BEP20), BTC, SOL via KryptoExpress",
+        sam_title: "Syriatel Cash & Sham Cash (SAM)",
+        sam_sub: "Direct payment via Syrian mobile wallets",
+        amount_section_title: "2. Choose Amount or Enter Custom",
+        custom_amount_placeholder: "Enter amount ($)... e.g. 15",
+        voucher_section_title: "Redeem Gift Card (Voucher)",
+        voucher_btn: "Redeem Card",
+        theme_section_title: "🌓 Theme & Appearance",
+        theme_dark: "Dark Mode",
+        theme_light: "Light Mode",
+        install_section_title: "📲 Install App",
+        install_desc: "Add GH Store to your phone home screen for instant access!",
+        install_btn: "📲 Add to Home Screen",
+        currency_title: "💱 Preferred Display Currency",
+        lang_title: "🌐 Language",
+        referral_title: "🎁 Referral Program & Earnings",
+        referral_desc: "Share your referral link and earn instant commission when friends recharge!",
+        copy: "Copy"
       }
     };
 
     function applyLanguage(lang) {
       currentAppLanguage = lang;
-      const d = I18N[lang] || I18N.ar;
-      document.getElementById('i18n-tab-store').innerText = d.store;
-      document.getElementById('i18n-tab-orders').innerText = d.orders;
-      document.getElementById('i18n-tab-wallet').innerText = d.wallet;
-      document.getElementById('i18n-tab-settings').innerText = d.settings;
-      document.getElementById('store-search-input').placeholder = d.search;
-      document.getElementById('title-collections').innerText = d.collections;
-      document.getElementById('btn-back-to-catalogs').innerText = d.all_catalogs;
-      document.getElementById('top-sub-caption').innerText = d.caption;
-      document.getElementById('label-desc-title').innerText = d.desc;
-      document.getElementById('label-total-title').innerText = d.total;
+      try { localStorage.setItem('ghstore_lang', lang); } catch (e) {}
 
+      const d = I18N[lang] || I18N.en || I18N.ar;
       const isRtl = (lang === 'ar');
       document.documentElement.dir = isRtl ? 'rtl' : 'ltr';
       document.documentElement.lang = lang;
+
+      // Navigation & Header
+      const setText = (id, txt) => { const el = document.getElementById(id); if (el) el.innerText = txt; };
+      setText('i18n-tab-store', d.store);
+      setText('i18n-tab-orders', d.orders);
+      setText('i18n-tab-wallet', d.wallet);
+      setText('i18n-tab-settings', d.settings);
+      setText('top-sub-caption', d.caption);
+
+      // Search & Filters
+      const sInput = document.getElementById('store-search-input');
+      if (sInput) sInput.placeholder = d.search;
+      setText('filter-all', d.filter_all);
+      setText('filter-wishlist', d.filter_wishlist);
+      setText('filter-stock', d.filter_stock);
+      setText('filter-instant', d.filter_instant);
+      setText('filter-lowprice', d.filter_lowprice);
+
+      // Banner & PWA
+      setText('banner-badge-text', d.banner_badge);
+      setText('banner-title-text', d.banner_title);
+      setText('banner-sub-text', d.banner_sub);
+      setText('pwa-banner-title', d.pwa_title);
+      setText('pwa-banner-sub', d.pwa_sub);
+      setText('pwa-banner-btn', d.pwa_btn);
+
+      // Collections & Back Arrows
+      setText('title-collections', d.collections);
+      setText('btn-back-to-catalogs', d.all_catalogs);
+      setText('btn-back-product', d.back);
+      const backArrow = isRtl ? '→' : '←';
+      setText('icon-back-to-catalogs', backArrow);
+      setText('icon-back-product', backArrow);
+
+      // Product Detail Page
+      setText('detail-category-header', d.product);
+      setText('label-desc-title', d.desc);
+      setText('label-promo-code-input', d.promo_code_label);
+      setText('btn-apply-coupon', d.apply);
+      setText('label-total-title', d.total);
+      setText('btn-buy-action-label', d.buy_now);
+      setText('btn-stars-action-label', d.stars_buy);
+      setText('btn-restock-text', d.restock_alert);
+
+      // Order Success & Orders View
+      setText('success-view-title', d.order_success);
+      setText('success-keys-title', d.delivered_keys);
+      setText('success-copy-hint', d.copy_hint);
+      setText('btn-success-view-orders', d.view_orders);
+      setText('btn-success-continue', d.continue_shopping);
+      setText('title-orders-history', d.orders_title);
+
+      // Wallet View (Recharge Flow)
+      setText('label-wallet-balance-title', d.wallet_balance_title);
+      setText('label-vip-progress-prefix', d.vip_progress);
+      setText('recharge-method-title', d.method_section_title);
+      setText('label-method-stars-name', d.stars_title);
+      setText('label-method-stars-sub', d.stars_sub);
+      setText('label-method-crypto-name', d.crypto_title);
+      setText('label-method-crypto-sub', d.crypto_sub);
+      setText('label-method-sam-name', d.sam_title);
+      setText('label-method-sam-sub', d.sam_sub);
+      setText('recharge-amount-title', d.amount_section_title);
+      setText('voucher-section-title', d.voucher_section_title);
+      setText('voucher-redeem-btn', d.voucher_btn);
+
+      const customInput = document.getElementById('custom-topup-input');
+      if (customInput) customInput.placeholder = d.custom_amount_placeholder;
+      updateRechargeButtonText();
+
+      // Settings View
+      setText('label-theme-title', d.theme_section_title);
+      setText('label-theme-dark', d.theme_dark);
+      setText('label-theme-light', d.theme_light);
+      setText('label-install-title', d.install_section_title);
+      setText('label-install-desc', d.install_desc);
+      setText('btn-install-app', d.install_btn);
+      setText('label-currency-title', d.currency_title);
+      setText('label-lang-title', d.lang_title);
+      setText('label-referral-title', d.referral_title);
+      setText('label-referral-desc', d.referral_desc);
+      setText('btn-copy-ref-link', d.copy);
+
+      // Active Language Chip
+      document.querySelectorAll('#language-picker-chips .filter-chip').forEach(el => {
+        el.classList.toggle('active', el.id === 'lang-chip-' + lang);
+      });
+
+      // Re-render Dynamic Catalog and Active Views
+      renderCatalogsGrid();
+      if (activeCatalog) {
+        const meta = CATALOG_META[activeCatalog];
+        const dispTitle = (lang === 'ar' && meta?.arTitle) ? meta.arTitle : (meta?.enTitle || activeCatalog);
+        setText('active-collection-title', dispTitle);
+        let filtered = allProducts.filter(p => p.category === activeCatalog);
+        filtered = filterAndSortProducts(filtered);
+        renderProductItems(filtered);
+      }
+      if (selectedProduct) {
+        const rawDesc = (lang === 'ar' && selectedProduct.description_ar)
+          ? selectedProduct.description_ar
+          : (selectedProduct.description || '');
+        const descBox = document.getElementById('prod-rich-desc');
+        if (descBox) descBox.innerHTML = formatRichDescription(rawDesc);
+        updateDetailPagePrice();
+      }
+      if (userData?.orders) {
+        renderOrders(userData.orders);
+      }
     }
 
     // Tab Navigation
@@ -1609,18 +2072,23 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
     function renderCatalogsGrid() {
       const container = document.getElementById('catalogs-grid');
+      if (!container) return;
       const groups = {};
       categoriesList.forEach(c => {
         groups[c] = allProducts.filter(p => p.category === c);
       });
 
+      const d = I18N[currentAppLanguage] || I18N.ar;
+      const chevron = (currentAppLanguage === 'ar') ? '‹' : '›';
+
       container.innerHTML = Object.keys(groups).map(catName => {
         const items = groups[catName];
         if (!items || !items.length) return '';
-        const meta = CATALOG_META[catName] || { arTitle: catName, icon: "📦", preview: "منتجات رقمية" };
+        const meta = CATALOG_META[catName] || { arTitle: catName, enTitle: catName, icon: "📦", arPreview: "منتجات رقمية", enPreview: "Digital goods" };
         const minPrice = Math.min(...items.map(p => p.price || 999));
         const sym = items[0]?.sym || '$';
-        const displayTitle = (currentAppLanguage === 'ar' && meta.arTitle) ? meta.arTitle : catName;
+        const displayTitle = (currentAppLanguage === 'ar' && meta.arTitle) ? meta.arTitle : (meta.enTitle || catName);
+        const displayPreview = (currentAppLanguage === 'ar' && meta.arPreview) ? meta.arPreview : (meta.enPreview || meta.arPreview);
 
         return `
           <div class="catalog-card" onclick="openCollection('${catName.replace(/'/g, "\\\\'")}')">
@@ -1629,15 +2097,15 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
               <div class="catalog-info">
                 <div class="catalog-name">${displayTitle}</div>
                 <div class="catalog-sub">
-                  <span>${items.length} منتج</span> ·
-                  <span style="color: var(--accent); font-weight: 700;">يبدأ من ${minPrice.toFixed(2)}${sym}</span>
+                  <span>${items.length} ${d.items_suffix}</span> ·
+                  <span style="color: var(--accent); font-weight: 700;">${d.starts_from} ${minPrice.toFixed(2)}${sym}</span>
                 </div>
                 <div style="font-size: 11px; color: var(--hint); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                  ${meta.preview}
+                  ${displayPreview}
                 </div>
               </div>
             </div>
-            <span class="chevron">‹</span>
+            <span class="chevron-icon">${chevron}</span>
           </div>
         `;
       }).join('');
@@ -1649,7 +2117,8 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       document.getElementById('catalogs-collection-mode').style.display = 'none';
       document.getElementById('products-catalog-mode').style.display = 'block';
       const meta = CATALOG_META[catName];
-      document.getElementById('active-collection-title').innerText = (currentAppLanguage === 'ar' && meta?.arTitle) ? meta.arTitle : catName;
+      const dispTitle = (currentAppLanguage === 'ar' && meta?.arTitle) ? meta.arTitle : (meta?.enTitle || catName);
+      document.getElementById('active-collection-title').innerText = dispTitle;
 
       let filtered = allProducts.filter(p => p.category === catName);
       filtered = filterAndSortProducts(filtered);
@@ -1678,7 +2147,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         return;
       }
 
-      // Enter collection/results mode
       document.getElementById('catalogs-collection-mode').style.display = 'none';
       document.getElementById('products-catalog-mode').style.display = 'block';
 
@@ -1688,12 +2156,15 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         baseList = baseList.filter(p =>
           p.name.toLowerCase().includes(q) ||
           (p.description || '').toLowerCase().includes(q) ||
+          (p.description_ar || '').toLowerCase().includes(q) ||
           (p.category || '').toLowerCase().includes(q)
         );
       }
 
       const filtered = filterAndSortProducts(baseList);
-      document.getElementById('active-collection-title').innerText = filterKey === 'wishlist' ? '❤️ المفضلة' : 'النتائج المصفاة';
+      document.getElementById('active-collection-title').innerText = filterKey === 'wishlist'
+        ? (currentAppLanguage === 'ar' ? '❤️ المفضلة' : '❤️ Favorites')
+        : (currentAppLanguage === 'ar' ? 'النتائج المصفاة' : 'Filtered Results');
       renderProductItems(filtered);
     }
 
@@ -1719,11 +2190,12 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         clearBtn.style.display = 'block';
         document.getElementById('catalogs-collection-mode').style.display = 'none';
         document.getElementById('products-catalog-mode').style.display = 'block';
-        document.getElementById('active-collection-title').innerText = `بحث: "${q}"`;
+        document.getElementById('active-collection-title').innerText = (currentAppLanguage === 'ar') ? `بحث: "${q}"` : `Search: "${q}"`;
 
         let matched = allProducts.filter(p =>
           p.name.toLowerCase().includes(q) ||
           (p.description || '').toLowerCase().includes(q) ||
+          (p.description_ar || '').toLowerCase().includes(q) ||
           (p.category || '').toLowerCase().includes(q)
         );
         matched = filterAndSortProducts(matched);
@@ -1742,13 +2214,22 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
     function renderProductItems(products) {
       const container = document.getElementById('catalog-products-list');
+      if (!container) return;
       if (!products.length) {
-        container.innerHTML = '<div style="text-align: center; padding: 40px; color: var(--hint);">لا توجد منتجات مطابقة لهذا الفلتر.</div>';
+        container.innerHTML = `<div style="text-align: center; padding: 40px; color: var(--hint);">${currentAppLanguage === 'ar' ? 'لا توجد منتجات مطابقة لهذا الفلتر.' : 'No products found matching this filter.'}</div>`;
         return;
       }
+      const d = I18N[currentAppLanguage] || I18N.ar;
       container.innerHTML = products.map(p => {
         const isFav = wishlistSet.has(Number(p.id));
         const isOutOfStock = (p.stock !== null && p.stock <= 0);
+        const stockStr = isOutOfStock
+          ? (currentAppLanguage === 'ar' ? 'نفد المخزون' : 'Out of Stock')
+          : (p.stock ? `${currentAppLanguage === 'ar' ? 'متوفر' : 'In Stock'} (${p.stock})` : (currentAppLanguage === 'ar' ? 'تسليم فوري' : 'Instant Delivery'));
+        const deliveryStr = (p.delivery_type === 'activation')
+          ? (currentAppLanguage === 'ar' ? 'تفعيل مخصص' : 'Custom Activation')
+          : (currentAppLanguage === 'ar' ? 'تسليم تلقائي' : 'Instant Delivery');
+
         return `
           <div class="product-row" onclick="openProductDetail(${Number(p.id)})">
             <div class="prod-left">
@@ -1756,8 +2237,8 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
               <div class="prod-details">
                 <div class="prod-title">${p.name}</div>
                 <div class="prod-desc">
-                  <span style="${isOutOfStock ? 'color: var(--danger); font-weight:700;' : ''}">${isOutOfStock ? 'نفد المخزون' : p.stock ? 'متوفر (' + p.stock + ')' : 'تسليم فوري'}</span> ·
-                  <span>${p.delivery_type === 'activation' ? 'تفعيل مخصص' : 'تسليم تلقائي'}</span>
+                  <span style="${isOutOfStock ? 'color: var(--danger); font-weight:700;' : ''}">${stockStr}</span> ·
+                  <span>${deliveryStr}</span>
                 </div>
               </div>
             </div>
@@ -1765,7 +2246,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
               <div class="prod-price">${p.price ? p.price.toFixed(2) + p.sym : 'N/A'}</div>
               <div style="display: flex; align-items: center; gap: 4px; margin-top: 2px;">
                 <button class="wishlist-btn-card" data-pid="${p.id}" onclick="toggleWishlist(${p.id}, event)">${isFav ? '❤️' : '🤍'}</button>
-                <div class="prod-tap-hint">عرض ‹</div>
+                <div class="prod-tap-hint">${d.view_details}</div>
               </div>
             </div>
           </div>
@@ -1785,10 +2266,9 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
       document.getElementById('prod-hero-icon').innerText = selectedProduct.emoji || '⚡';
       document.getElementById('prod-hero-name').innerText = selectedProduct.name;
-      document.getElementById('prod-hero-cat').innerText = selectedProduct.category || 'منتج رقمي';
-      document.getElementById('detail-category-header').innerText = selectedProduct.category || 'المنتج';
+      document.getElementById('prod-hero-cat').innerText = selectedProduct.category || 'Digital';
 
-      // Native Arabic description from API if available
+      // Description in current language
       const rawDesc = (currentAppLanguage === 'ar' && selectedProduct.description_ar)
         ? selectedProduct.description_ar
         : (selectedProduct.description || '');
@@ -1797,12 +2277,15 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       const isInstant = selectedProduct.delivery_type !== 'activation';
       const isOutOfStock = (selectedProduct.stock !== null && selectedProduct.stock <= 0);
 
-      document.getElementById('prod-delivery-badge').innerText = isInstant ? '⚡ تسليم تلقائي فوري' : '⏳ تفعيل مخصص';
-      document.getElementById('prod-stock-badge').innerText = isOutOfStock
-        ? '🔴 نفد المخزون'
-        : (selectedProduct.stock ? `🟢 متوفر (${selectedProduct.stock})` : '⚡ تسليم فوري');
+      document.getElementById('prod-delivery-badge').innerText = isInstant
+        ? (currentAppLanguage === 'ar' ? '⚡ تسليم تلقائي فوري' : '⚡ Instant Automated Delivery')
+        : (currentAppLanguage === 'ar' ? '⏳ تفعيل مخصص' : '⏳ Custom Activation');
 
-      // Restock Alert Button visibility
+      document.getElementById('prod-stock-badge').innerText = isOutOfStock
+        ? (currentAppLanguage === 'ar' ? '🔴 نفد المخزون' : '🔴 Out of Stock')
+        : (selectedProduct.stock ? `${currentAppLanguage === 'ar' ? '🟢 متوفر' : '🟢 In Stock'} (${selectedProduct.stock})` : (currentAppLanguage === 'ar' ? '⚡ تسليم فوري' : '⚡ Instant Delivery'));
+
+      // Out of Stock Handling
       const restockBox = document.getElementById('restock-alert-box');
       const buyBtn = document.getElementById('btn-inapp-purchase');
       const starsBtn = document.getElementById('btn-stars-purchase');
@@ -1861,12 +2344,12 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
           updateDetailPagePrice();
         } else {
           appliedCoupon = null;
-          showToast(d.error || 'كود الخصم غير صالح');
+          showToast(d.error || (currentAppLanguage === 'ar' ? 'كود الخصم غير صالح' : 'Invalid promo code'));
           document.getElementById('coupon-applied-note').style.display = 'none';
           updateDetailPagePrice();
         }
       } catch (e) {
-        showToast('فشل التحقق من كود الخصم');
+        showToast(currentAppLanguage === 'ar' ? 'فشل التحقق من كود الخصم' : 'Failed to validate promo code');
       }
     }
 
@@ -1889,14 +2372,14 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       if (totalDiscount > 0) {
         const discVal = total * (totalDiscount / 100);
         total = Math.max(0.01, total - discVal);
-        discountText = `خصم تلقائي: -${totalDiscount}%!`;
+        discountText = (currentAppLanguage === 'ar') ? `خصم تلقائي: -${totalDiscount}%!` : `Discount: -${totalDiscount}%!`;
       }
 
       // Coupon discount
       if (appliedCoupon) {
         const cDisc = appliedCoupon.discount || 0.0;
         total = Math.max(0.01, total - cDisc);
-        discountText += ` (كوبون: -${cDisc.toFixed(2)}${sym})`;
+        discountText += (currentAppLanguage === 'ar') ? ` (كوبون: -${cDisc.toFixed(2)}${sym})` : ` (Coupon: -${cDisc.toFixed(2)}${sym})`;
       }
 
       document.getElementById('prod-discount-tag').innerText = discountText;
@@ -1907,15 +2390,18 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       const userBalance = userData?.balance || 0.0;
       const alertBox = document.getElementById('insufficient-funds-alert');
       const buyBtn = document.getElementById('btn-inapp-purchase');
+      const d = I18N[currentAppLanguage] || I18N.ar;
 
       if (userBalance < total) {
         alertBox.style.display = 'block';
-        alertBox.innerHTML = `⚠️ الرصيد المتاح غير كافٍ (تحتاج ${total.toFixed(2)}${sym}، رصيدك $${userBalance.toFixed(2)}).`;
-        buyBtn.innerHTML = `<span>💳 شحن الرصيد للمتابعة</span>`;
+        alertBox.innerHTML = (currentAppLanguage === 'ar')
+          ? `⚠️ الرصيد المتاح غير كافٍ (تحتاج ${total.toFixed(2)}${sym}، رصيدك $${userBalance.toFixed(2)}).`
+          : `⚠️ Insufficient balance (Requires ${total.toFixed(2)}${sym}, available $${userBalance.toFixed(2)}).`;
+        buyBtn.innerHTML = `<span>${d.topup_to_continue}</span>`;
         buyBtn.onclick = () => switchTab('wallet');
       } else {
         alertBox.style.display = 'none';
-        buyBtn.innerHTML = `<span>⚡ شراء فوري</span> <span>(${total.toFixed(2)}${sym})</span>`;
+        buyBtn.innerHTML = `<span>${d.buy_now}</span> <span>(${total.toFixed(2)}${sym})</span>`;
         buyBtn.onclick = executeProductBuy;
       }
     }
@@ -1933,12 +2419,12 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         const d = await res.json();
         if (d.status === 'success') {
           haptic('success');
-          showToast('🔔 ' + d.message);
+          showToast('🔔 ' + (currentAppLanguage === 'ar' ? d.message : 'Subscribed to restock alerts!'));
         } else {
-          showToast('تعذر الاشتراك في التنبيه');
+          showToast(currentAppLanguage === 'ar' ? 'تعذر الاشتراك في التنبيه' : 'Failed to subscribe to alert');
         }
       } catch (e) {
-        showToast('خطأ في إرسال طلب التنبيه');
+        showToast(currentAppLanguage === 'ar' ? 'خطأ في إرسال طلب التنبيه' : 'Network error subscribing');
       }
     }
 
@@ -1948,9 +2434,10 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       haptic('light');
       const botUser = userData?.bot_username || 'demo_aiogramshopbot';
       const shareUrl = `https://t.me/${botUser}?start=prod_${selectedProduct.id}_ref_${userId}`;
-      const shareText = `تسوق ${selectedProduct.name} الآن بأفضل سعر على GH Store!`;
+      const shareText = (currentAppLanguage === 'ar')
+        ? `تسوق ${selectedProduct.name} الآن بأفضل سعر على GH Store!`
+        : `Shop ${selectedProduct.name} now at best prices on GH Store!`;
 
-      // If client supports story sharing
       if (tg?.shareToStory) {
         tg.shareToStory({
           media_url: selectedProduct.image_url || 'https://bot.gh-store.me/static/banner.png',
@@ -1960,7 +2447,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         return;
       }
 
-      // Default native share deep link
       const tgShareLink = `https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(shareText)}`;
       if (tg?.openTelegramLink) tg.openTelegramLink(tgShareLink);
       else window.open(tgShareLink, '_blank');
@@ -1972,7 +2458,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       if (tg?.addToHomeScreen) {
         tg.addToHomeScreen();
       } else {
-        showToast('انقر على القائمة بالأعلى (⋮) واختر "إضافة إلى الشاشة الرئيسية"');
+        showToast(currentAppLanguage === 'ar' ? 'انقر على القائمة بالأعلى (⋮) واختر "إضافة إلى الشاشة الرئيسية"' : 'Tap menu (⋮) and select "Add to Home Screen"');
       }
     }
 
@@ -1990,17 +2476,16 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     // IN-APP CHECKOUT (POST /api/buy)
     async function executeProductBuy() {
       if (!selectedProduct || !userId) {
-        showToast('يرجى فتح المتجر من داخل تيليجرام');
+        showToast(currentAppLanguage === 'ar' ? 'يرجى فتح المتجر من داخل تيليجرام' : 'Please open store inside Telegram');
         return;
       }
 
-      // Biometric Verification for high-value orders ($50+)
       const unit = selectedProduct.price || 0.0;
       let total = unit * selectedQty;
       if (total >= 50.0 && tg?.BiometricManager?.isBiometricAvailable) {
-        tg.BiometricManager.authenticate({ reason: `تأكيد طلب بقيمة $${total.toFixed(2)}` }, (success) => {
+        tg.BiometricManager.authenticate({ reason: `Confirm order $${total.toFixed(2)}` }, (success) => {
           if (success) processOrderPlacement();
-          else showToast('تم إلغاء التحقق الحيوي');
+          else showToast(currentAppLanguage === 'ar' ? 'تم إلغاء التحقق الحيوي' : 'Biometric cancelled');
         });
         return;
       }
@@ -2012,7 +2497,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       haptic('light');
       const buyBtn = document.getElementById('btn-inapp-purchase');
       buyBtn.disabled = true;
-      buyBtn.innerHTML = '<span>⏳ جاري معالجة الطلب...</span>';
+      buyBtn.innerHTML = `<span>${currentAppLanguage === 'ar' ? '⏳ جاري معالجة الطلب...' : '⏳ Processing Order...'}</span>`;
 
       const payload = {
         tg_id: userId,
@@ -2040,8 +2525,9 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
             try { localStorage.setItem('ghstore_user_cache', JSON.stringify(userData)); } catch (e) {}
           }
 
-          // Show in-app success screen with structured credential splitter
-          document.getElementById('success-meta-sub').innerText = `طلب #${d.order_id} · ${d.product_name} (${d.quantity}×)`;
+          document.getElementById('success-meta-sub').innerText = (currentAppLanguage === 'ar')
+            ? `طلب #${d.order_id} · ${d.product_name} (${d.quantity}×)`
+            : `Order #${d.order_id} · ${d.product_name} (${d.quantity}×)`;
           const keysBox = document.getElementById('success-delivered-keys');
           keysBox.innerHTML = renderStructuredCredentials(d.goods);
 
@@ -2049,13 +2535,13 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
           document.getElementById('view-order-success').classList.add('active');
         } else {
           haptic('error');
-          showToast(d.error || 'فشل إتمام الطلب.');
+          showToast(d.error || (currentAppLanguage === 'ar' ? 'فشل إتمام الطلب.' : 'Order failed.'));
           updateDetailPagePrice();
         }
       } catch (e) {
         buyBtn.disabled = false;
         haptic('error');
-        showToast('خطأ في الاتصال. يرجى إعادة المحاولة.');
+        showToast(currentAppLanguage === 'ar' ? 'خطأ في الاتصال. يرجى إعادة المحاولة.' : 'Connection error. Please retry.');
         updateDetailPagePrice();
       }
     }
@@ -2079,75 +2565,137 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
           tg.openInvoice(d.invoice_link, (status) => {
             if (status === 'paid') {
               fireConfetti();
-              showToast('تم الدفع بنجاح عبر نجوم تيليجرام!');
+              showToast(currentAppLanguage === 'ar' ? 'تم الدفع بنجاح عبر نجوم تيليجرام!' : 'Paid successfully with Telegram Stars!');
               switchTab('orders');
             } else if (status === 'failed') {
-              showToast('فشلت عملية الدفع بالنجوم');
+              showToast(currentAppLanguage === 'ar' ? 'فشلت عملية الدفع بالنجوم' : 'Stars payment failed');
             }
           });
         } else {
-          showToast('تعذر فتح فاتورة النجوم');
+          showToast(currentAppLanguage === 'ar' ? 'تعذر فتح فاتورة النجوم' : 'Failed to open Stars invoice');
         }
       } catch (e) {
-        showToast('خطأ في شبكة الفواتير');
+        showToast(currentAppLanguage === 'ar' ? 'خطأ في شبكة الفواتير' : 'Invoice network error');
       }
     }
 
-    // Top-Up Rails (Native openInvoice & openLink)
-    async function triggerQuickTopup(amount) {
+    // ==========================================
+    // HARDENED RECHARGE / TOP-UP FLOW LOGIC
+    // ==========================================
+    function selectRechargeMethod(method) {
+      haptic('pop');
+      selectedRechargeMethod = method;
+      ['stars', 'crypto', 'sam'].forEach(m => {
+        const card = document.getElementById('method-card-' + m);
+        if (card) card.classList.toggle('active', m === method);
+      });
+      updateRechargeButtonText();
+    }
+
+    function selectTopupAmount(amt) {
       haptic('light');
-      if (!userId) return;
+      selectedRechargeAmount = parseFloat(amt);
+      const input = document.getElementById('custom-topup-input');
+      if (input) input.value = amt.toFixed(2);
+      updateAmountChipsUI();
+      updateRechargeButtonText();
+    }
+
+    function onCustomAmountInput() {
+      const input = document.getElementById('custom-topup-input');
+      const val = parseFloat(input?.value);
+      if (!isNaN(val) && val > 0) {
+        selectedRechargeAmount = val;
+      }
+      updateAmountChipsUI();
+      updateRechargeButtonText();
+    }
+
+    function updateAmountChipsUI() {
+      [1, 5, 10, 25, 50, 100].forEach(a => {
+        const chip = document.getElementById('chip-amt-' + a);
+        if (chip) chip.classList.toggle('active', Math.abs(selectedRechargeAmount - a) < 0.001);
+      });
+    }
+
+    function updateRechargeButtonText() {
+      const btn = document.getElementById('btn-execute-recharge');
+      if (!btn) return;
+      let methodName = "نجوم تيليجرام";
+      if (selectedRechargeMethod === 'crypto') {
+        methodName = (currentAppLanguage === 'ar') ? "العملات الرقمية" : "Crypto";
+      } else if (selectedRechargeMethod === 'sam') {
+        methodName = (currentAppLanguage === 'ar') ? "سيرياتيل كاش" : "SAM Cash";
+      } else {
+        methodName = (currentAppLanguage === 'ar') ? "نجوم تيليجرام" : "Telegram Stars";
+      }
+
+      const amtStr = selectedRechargeAmount ? selectedRechargeAmount.toFixed(2) : "10.00";
+      if (currentAppLanguage === 'ar') {
+        btn.innerHTML = `<span>⚡</span> <span>شحن ${amtStr}$ عبر ${methodName}</span>`;
+      } else {
+        btn.innerHTML = `<span>⚡</span> <span>Recharge $${amtStr} via ${methodName}</span>`;
+      }
+    }
+
+    async function executeSelectedRecharge() {
+      if (!userId) {
+        showToast(currentAppLanguage === 'ar' ? 'يرجى فتح المتجر من داخل تيليجرام' : 'Please open store inside Telegram');
+        return;
+      }
+      if (!selectedRechargeAmount || selectedRechargeAmount < 1.0) {
+        showToast(currentAppLanguage === 'ar' ? 'الحد الأدنى للشحن هو 1$' : 'Minimum recharge amount is $1');
+        return;
+      }
+      haptic('light');
+
+      const btn = document.getElementById('btn-execute-recharge');
+      btn.disabled = true;
+      const loadingText = (currentAppLanguage === 'ar') ? '⏳ جاري تجهيز الفاتورة...' : '⏳ Generating invoice...';
+      btn.innerHTML = `<span>${loadingText}</span>`;
+
       try {
         const res = await fetch('/api/invoice/topup', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tg_id: userId, amount: amount, method: 'stars' })
+          body: JSON.stringify({
+            tg_id: userId,
+            amount: selectedRechargeAmount,
+            method: selectedRechargeMethod
+          })
         });
         const d = await res.json();
-        if (d.status === 'ok' && d.invoice_link) {
-          tg.openInvoice(d.invoice_link, (status) => {
-            if (status === 'paid') {
-              fireConfetti();
-              showToast(`تم شحن +$${amount} بنجاح!`);
-              loadUserData();
-            }
-          });
-        }
-      } catch (e) {
-        showToast('تعذر إنشاء فاتورة الشحن');
-      }
-    }
+        btn.disabled = false;
+        updateRechargeButtonText();
 
-    async function triggerRailPayment(rail) {
-      haptic('light');
-      if (!userId) return;
-      try {
-        const res = await fetch('/api/invoice/topup', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tg_id: userId, amount: 25.0, method: rail })
-        });
-        const d = await res.json();
         if (d.type === 'stars' && d.invoice_link) {
           tg.openInvoice(d.invoice_link, (status) => {
             if (status === 'paid') {
               fireConfetti();
-              showToast('تم شحن الرصيد بنجاح!');
+              haptic('success');
+              showToast(currentAppLanguage === 'ar' ? `تم شحن +$${selectedRechargeAmount.toFixed(2)} بنجاح!` : `+$${selectedRechargeAmount.toFixed(2)} Credited!`);
               loadUserData();
+            } else if (status === 'failed') {
+              showToast(currentAppLanguage === 'ar' ? 'فشلت عملية الدفع' : 'Payment failed');
             }
           });
         } else if (d.type === 'url' && d.url) {
           tg.openLink(d.url);
+          showToast(currentAppLanguage === 'ar' ? 'تم فتح صفحة الدفع. سيتم شحن الرصيد تلقائياً فور التأكيد!' : 'Payment link opened. Balance credits on confirmation!');
+        } else {
+          showToast(d.error || (currentAppLanguage === 'ar' ? 'تعذر إنشاء فاتورة الشحن' : 'Failed to create invoice'));
         }
       } catch (e) {
-        showToast('بوابة الدفع غير متاحة حالياً');
+        btn.disabled = false;
+        updateRechargeButtonText();
+        showToast(currentAppLanguage === 'ar' ? 'خطأ في شبكة الشحن' : 'Recharge network error');
       }
     }
 
     async function submitVoucherRedeem() {
       const code = (document.getElementById('voucher-code-input').value || '').trim();
       if (!code || !userId) return;
-      haptic('light');
+      haptic('medium');
       try {
         const res = await fetch('/api/voucher/redeem', {
           method: 'POST',
@@ -2157,14 +2705,14 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         const d = await res.json();
         if (d.status === 'success') {
           fireConfetti();
-          showToast(d.message || 'تم شحن الكوبون!');
+          showToast(d.message || (currentAppLanguage === 'ar' ? 'تم شحن الكوبون!' : 'Voucher redeemed!'));
           document.getElementById('voucher-code-input').value = '';
           loadUserData();
         } else {
-          showToast(d.error || 'كود الهدية غير صالح');
+          showToast(d.error || (currentAppLanguage === 'ar' ? 'كود الهدية غير صالح' : 'Invalid voucher'));
         }
       } catch (e) {
-        showToast('فشلت عملية شحن الكوبون');
+        showToast(currentAppLanguage === 'ar' ? 'فشلت عملية شحن الكوبون' : 'Failed to redeem voucher');
       }
     }
 
@@ -2185,7 +2733,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         try { localStorage.setItem('ghstore_user_cache', JSON.stringify(d)); } catch (e) {}
         updateBalancePills();
 
-        // Real Profile Picture (Telegram Bot API or Initial)
+        // Profile Picture
         const topAvatarBox = document.getElementById('top-avatar-box');
         const setAvatarBox = document.getElementById('settings-avatar-box');
         const firstLetter = (tgUser?.first_name || d.username || 'U')[0].toUpperCase();
@@ -2199,17 +2747,22 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         }
 
         // Settings View Info
-        const displayName = tgUser?.first_name ? `${tgUser.first_name} ${tgUser.last_name || ''}`.trim() : (d.username ? '@' + d.username : 'العميل');
+        const displayName = tgUser?.first_name ? `${tgUser.first_name} ${tgUser.last_name || ''}`.trim() : (d.username ? '@' + d.username : (currentAppLanguage === 'ar' ? 'العميل' : 'Customer'));
         document.getElementById('user-name-title').innerText = displayName;
         document.getElementById('user-tg-num').innerText = 'ID: ' + d.telegram_id;
-        document.getElementById('user-vip-pill-box').innerHTML = `<span class="vip-tag">${d.vip_tier} (خصم ${d.vip_discount}%)</span>`;
+        document.getElementById('user-vip-pill-box').innerHTML = `<span class="vip-tag">${d.vip_tier} (${currentAppLanguage === 'ar' ? 'خصم' : 'Discount'} ${d.vip_discount}%)</span>`;
 
         // VIP Progress Bar
         const spent = d.total_spent || 0.0;
         let nextTarget = 100.0;
-        let nextLabel = "Silver VIP (خصم 3%)";
-        if (spent >= 500) { nextTarget = 1000.0; nextLabel = "Platinum VIP (خصم 10%)"; }
-        else if (spent >= 100) { nextTarget = 500.0; nextLabel = "Gold VIP (خصم 7%)"; }
+        let nextLabel = (currentAppLanguage === 'ar') ? "Silver VIP (خصم 3%)" : "Silver VIP (3% off)";
+        if (spent >= 500) {
+          nextTarget = 1000.0;
+          nextLabel = (currentAppLanguage === 'ar') ? "Platinum VIP (خصم 10%)" : "Platinum VIP (10% off)";
+        } else if (spent >= 100) {
+          nextTarget = 500.0;
+          nextLabel = (currentAppLanguage === 'ar') ? "Gold VIP (خصم 7%)" : "Gold VIP (7% off)";
+        }
         const pct = Math.min(100, Math.round((spent / nextTarget) * 100));
         document.getElementById('next-vip-rank').innerText = nextLabel;
         document.getElementById('vip-progress-num').innerText = `${pct}% ($${spent.toFixed(0)} / $${nextTarget.toFixed(0)})`;
@@ -2219,18 +2772,16 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         const refLink = `https://t.me/${d.bot_username}?start=${d.referral_code || ''}`;
         document.getElementById('referral-link-display').innerText = refLink;
 
-        // Active Chips
+        // Currency Chips
         document.querySelectorAll('#currency-picker-chips .filter-chip').forEach(el => {
           el.classList.toggle('active', el.innerText.includes(d.currency_preference));
         });
-        document.querySelectorAll('#language-picker-chips .filter-chip').forEach(el => {
-          el.classList.toggle('active', el.getAttribute('onclick')?.includes(`'${d.language}'`));
-        });
 
-        // Set Language
-        applyLanguage(d.language || 'ar');
+        // Set Language if user has not set an explicit local override
+        if (!localStorage.getItem('ghstore_lang') && d.language) {
+          applyLanguage(d.language);
+        }
 
-        // Render Orders
         renderOrders(d.orders || []);
       } catch (e) {
         renderEmptyOrders();
@@ -2243,7 +2794,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       document.getElementById('wallet-balance-hero').innerText = `$${userData.balance.toFixed(2)}`;
       document.getElementById('wallet-balance-approx').innerText = userData.currency_preference !== 'USD'
         ? `≈ ${userData.display_balance}`
-        : 'جاهز للشراء الفوري';
+        : (currentAppLanguage === 'ar' ? 'جاهز للشراء الفوري' : 'Ready for instant purchases');
 
       if (userData.vip_tier && userData.vip_tier !== 'Standard') {
         const tag = document.getElementById('top-vip-tag');
@@ -2253,45 +2804,50 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     }
 
     function renderEmptyOrders() {
-      document.getElementById('orders-container-box').innerHTML = `
+      const container = document.getElementById('orders-container-box');
+      if (!container) return;
+      const d = I18N[currentAppLanguage] || I18N.ar;
+      container.innerHTML = `
         <div style="text-align: center; padding: 40px 16px; color: var(--hint);">
           <div style="font-size: 40px; margin-bottom: 8px;">📦</div>
-          <div style="font-size: 16px; font-weight: 700; color: #fff; margin-bottom: 4px;">لا توجد طلبات بعد</div>
-          <p style="font-size: 13px; margin-bottom: 16px;">تصفح التصنيفات واطلب الحسابات والمفاتيح بضغطة واحدة!</p>
-          <button class="btn-action-primary" onclick="switchTab('store')" style="width: auto; padding: 0 24px; margin: 0 auto; height: 42px;">تصفح المتجر</button>
+          <div style="font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 4px;">${d.orders_empty_title}</div>
+          <p style="font-size: 13px; margin-bottom: 16px;">${d.orders_empty_sub}</p>
+          <button class="btn-action-primary" onclick="switchTab('store')" style="width: auto; padding: 0 24px; margin: 0 auto; height: 42px;">${d.browse_store}</button>
         </div>
       `;
     }
 
     function renderOrders(orders) {
       const container = document.getElementById('orders-container-box');
+      if (!container) return;
       if (!orders.length) {
         renderEmptyOrders();
         return;
       }
+      const d = I18N[currentAppLanguage] || I18N.ar;
       container.innerHTML = orders.map(o => `
         <div class="inset-card" style="margin-bottom: 12px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
             <strong style="font-size: 15px;">#${o.id} · ${o.created_at || ''}</strong>
             <span class="pill-badge" style="background: ${o.status.includes('completed') ? 'rgba(16,185,129,0.2); color:#10b981' : o.status.includes('fail') ? 'rgba(239,68,68,0.2); color:#ef4444' : 'rgba(245,158,11,0.2); color:#f59e0b'}; font-size:11px;">${o.status}</span>
           </div>
-          <div style="font-size: 15px; font-weight: 700; color: #fff; margin-bottom: 2px;">${o.products}</div>
-          <div style="font-size: 13px; color: var(--accent); font-weight: 700; margin-bottom: 8px;">الإجمالي: ${o.total.toFixed(2)}${o.sym}</div>
+          <div style="font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 2px;">${o.products}</div>
+          <div style="font-size: 13px; color: var(--accent); font-weight: 700; margin-bottom: 8px;">${d.total}: ${o.total.toFixed(2)}${o.sym}</div>
 
           <!-- Timeline Stepper -->
           <div class="timeline-box">
             <div class="timeline-track"></div>
             <div class="timeline-node">
               <div class="node-circle done">✓</div>
-              <div class="node-label">تم الطلب</div>
+              <div class="node-label">${d.step_placed}</div>
             </div>
             <div class="timeline-node">
               <div class="node-circle ${o.status.includes('completed') ? 'done' : 'active'}">${o.status.includes('completed') ? '✓' : '●'}</div>
-              <div class="node-label">قيد المعالجة</div>
+              <div class="node-label">${d.step_processing}</div>
             </div>
             <div class="timeline-node">
               <div class="node-circle ${o.status.includes('completed') ? 'done' : ''}">${o.status.includes('completed') ? '✓' : '○'}</div>
-              <div class="node-label">تم التسليم</div>
+              <div class="node-label">${d.step_delivered}</div>
             </div>
           </div>
 
@@ -2300,7 +2856,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
           <div style="display: flex; gap: 8px; margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px;">
             ${o.warranty_days && !o.warranty_claimed && o.status === 'completed' ? `
-              <button class="btn-action-secondary" onclick="claimOrderWarranty(${o.id})">🛡️ طلب تعويض الضمان</button>
+              <button class="btn-action-secondary" onclick="claimOrderWarranty(${o.id})">${d.claim_warranty}</button>
             ` : ''}
           </div>
         </div>
@@ -2309,14 +2865,14 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
     function copyCredText(text) {
       navigator.clipboard.writeText(text).then(() => {
-        showToast('تم النسخ بنجاح!');
+        showToast(currentAppLanguage === 'ar' ? 'تم النسخ بنجاح!' : 'Copied successfully!');
       });
     }
 
     function copyReferralLink() {
       const link = document.getElementById('referral-link-display').innerText;
       navigator.clipboard.writeText(link).then(() => {
-        showToast('تم نسخ رابط الإحالة!');
+        showToast(currentAppLanguage === 'ar' ? 'تم نسخ رابط الإحالة!' : 'Referral link copied!');
       });
     }
 
@@ -2331,13 +2887,13 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tg_id: userId, currency: code })
         });
-        showToast(`تم تعيين عملة العرض إلى ${code}`);
+        showToast(currentAppLanguage === 'ar' ? `تم تعيين عملة العرض إلى ${code}` : `Display currency set to ${code}`);
         loadUserData();
       }
     }
 
     async function changeStoreLanguage(code) {
-      haptic('light');
+      haptic('pop');
       applyLanguage(code);
       if (userId) {
         await fetch('/api/user/settings', {
@@ -2345,7 +2901,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tg_id: userId, language: code })
         });
-        showToast('تم تحديث لغة التطبيق!');
+        showToast(code === 'ar' ? 'تم تحديث لغة التطبيق إلى العربية!' : 'App language set to English!');
         loadUserData();
       }
     }
@@ -2361,13 +2917,13 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         const d = await res.json();
         if (d.status === 'success') {
           fireConfetti();
-          showToast('تم اعتماد الضمان وتسليم البيانات الجديدة!');
+          showToast(currentAppLanguage === 'ar' ? 'تم اعتماد الضمان وتسليم البيانات الجديدة!' : 'Warranty approved & new credentials delivered!');
           loadUserData();
         } else {
-          showToast('تم إرسال طلب الضمان لمراجعة الدعم');
+          showToast(currentAppLanguage === 'ar' ? 'تم إرسال طلب الضمان لمراجعة الدعم' : 'Warranty claim submitted for review');
         }
       } catch (e) {
-        showToast('فشل تقديم طلب الضمان');
+        showToast(currentAppLanguage === 'ar' ? 'فشل تقديم طلب الضمان' : 'Failed to submit warranty claim');
       }
     }
 
@@ -2383,8 +2939,10 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       } catch (e) {}
     }
 
-    // Initial Startup Sequence: SWR Instant 0ms Load & Arabic First
-    applyLanguage('ar');
+    // Initial Startup Sequence: Theme -> i18n -> SWR Cache -> Network
+    initAppTheme();
+    const initialLang = localStorage.getItem('ghstore_lang') || 'ar';
+    applyLanguage(initialLang);
     initWishlist();
     loadFromCache();
     fetchCatalogData();
