@@ -112,7 +112,7 @@ If upstream supplier placement fails, `UserRepository.refund_balance(telegram_id
    - **Price Spike Circuit Breaker**: If wholesale cost increases by >30%, product is automatically hidden (`hidden=True`) and admins receive an alert to review margins.
 3. **Low Reseller Balance Monitor (`services/order_polling.py:periodic_balance_monitor`)**:
    - Checks `BatStoreService.me()` every 15m.
-   - Alerts admins if reseller wallet balance drops below $25.00.
+   - Alerts admins once if reseller wallet balance drops below $5.00 (resets only after top-up).
 4. **Daily Financial Digest (`services/financial_digest.py:daily_digest_cron`)**:
    - Calculates 24h P&L (Crypto, Stars, SAM deposits, gross revenue, wholesale supplier costs, net profit, new signups) and alerts admins daily. Also available on-demand in `/admin`.
 

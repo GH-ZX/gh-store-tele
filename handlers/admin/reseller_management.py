@@ -77,15 +77,19 @@ async def reseller_action(callback: CallbackQuery,
     if action == "balance":
         try:
             me_data = await BatStoreService.me(session)
-            wallet = me_data.get("wallet", {})
-            balance = wallet.get("balance", "N/A")
-            user_info = me_data.get("user", {})
-            username = user_info.get("username", "N/A")
-            tier = user_info.get("tier", "standard")
+            raw_bal = me_data.get("wallet_balance")
+            if raw_bal is None:
+                raw_bal = me_data.get("wallet", {}).get("balance", "0.00")
+            try:
+                balance = f"{float(raw_bal):.2f}"
+            except (ValueError, TypeError):
+                balance = str(raw_bal)
+            username = me_data.get("username") or me_data.get("user", {}).get("username", "N/A")
+            tier = me_data.get("key_name") or me_data.get("user", {}).get("tier", "Standard")
             text = (
                 "💰 <b>Reseller API Wallet Balance</b>\n\n"
                 f"• <b>Account:</b> {username}\n"
-                f"• <b>Tier:</b> {tier}\n"
+                f"• <b>Key / Tier:</b> {tier}\n"
                 f"• <b>USD Balance:</b> ${balance}\n\n"
                 "<i>This balance is debited in real time whenever customers buy digital products.</i>"
             )

@@ -87,3 +87,42 @@ class TestNotifyOrderComplete:
             MockNotif.send_to_user.assert_awaited_once()
             call_args = MockNotif.send_to_user.call_args
             assert "user1:pass1" in call_args[0][0]
+
+
+class TestCheckResellerBalance:
+
+    @pytest.mark.asyncio
+    async def test_alerts_once_below_5_and_resets_on_topup(self):
+        import services.order_polling as op
+        op._low_balance_alerted = False
+        mock_session = AsyncMock()
+
+        with patch("services.order_polling.BatStoreService.me") as mock_me, \
+             patch("services.order_polling.NotificationService.send_error_to_admins") as mock_alert:
+            # 1. Balance is 0.08 (BatStore API key wallet_balance)
+            mock_me.return_value = {"success": True, "wallet_balance": 0.08}
+            bal1 = await op.check_reseller_balance(mock_session)
+            assert bal1 == 0.08
+            assert mock_alert.await_count == 1
+            args = mock_alert.call_args[0]
+            assert "$0.08" in args[1]
+            assert "$5.00" in args[1]
+
+            # 2. Second check still below $5.00 -> should NOT alert again
+            bal2 = await op.check_reseller_balance(mock_session)
+            assert bal2 == 0.08
+            assert mock_alert.await_count == 1  # Still 1, not spammed!
+
+            # 3. Top up to $15.00 -> resets trigger
+            mock_me.return_value = {"success": True, "wallet_balance": 15.00}
+            bal3 = await op.check_reseller_balance(mock_session)
+            assert bal3 == 15.00
+            assert mock_alert.await_count == 1
+            assert op._low_balance_alerted is False
+
+            # 4. Drops below $5.00 again -> alerts once more
+            mock_me.return_value = {"success": True, "wallet_balance": 2.50}
+            bal4 = await op.check_reseller_balance(mock_session)
+            assert bal4 == 2.50
+            assert mock_alert.await_count == 2
+            assert "$2.50" in mock_alert.call_args[0][1]

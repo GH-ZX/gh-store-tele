@@ -127,29 +127,44 @@ async def periodic_catalog_sync():
             except Exception as e:
                 logging.error("Periodic catalog sync failed: %s", e)
 
+_low_balance_alerted = False
+
+
+async def check_reseller_balance(session) -> float | None:
+    """Check reseller balance, alert once if below threshold ($5.00), return balance."""
+    global _low_balance_alerted
+    me_data = await BatStoreService.me(session)
+    raw_bal = me_data.get("wallet_balance")
+    if raw_bal is None:
+        raw_bal = me_data.get("wallet", {}).get("balance", 0.0)
+    try:
+        bal = float(raw_bal)
+        if bal < 5.0:
+            if not _low_balance_alerted:
+                await NotificationService.send_error_to_admins(
+                    "low_reseller_balance",
+                    f"⚠️ <b>Low Reseller Wallet Balance!</b>\n\n"
+                    f"• Current Balance: <b>${bal:.2f}</b>\n"
+                    f"• Alert Threshold: $5.00\n\n"
+                    "<i>Please top up your BatStore/VenteBot reseller wallet to prevent customer orders from failing.</i>",
+                    None,
+                    window_seconds=86400,
+                )
+                _low_balance_alerted = True
+        else:
+            # Reset trigger once the account is topped up above $5.00
+            _low_balance_alerted = False
+        return bal
+    except (ValueError, TypeError):
+        return None
+
 
 async def periodic_balance_monitor():
-    """Periodically check the reseller wallet balance and alert admins if low."""
+    """Periodically check the reseller wallet balance and alert admins once if below $5.00."""
     while True:
         await asyncio.sleep(900)
         try:
             async with get_db_session() as session:
-                me_data = await BatStoreService.me(session)
-            wallet = me_data.get("wallet", {})
-            raw_bal = wallet.get("balance", "0")
-            try:
-                bal = float(raw_bal)
-                if bal < 25.0:
-                    await NotificationService.send_error_to_admins(
-                        "low_reseller_balance",
-                        f"⚠️ <b>Low Reseller Wallet Balance!</b>\n\n"
-                        f"• Current Balance: <b>${bal:.2f}</b>\n"
-                        f"• Alert Threshold: $25.00\n\n"
-                        "<i>Please top up your BatStore/VenteBot reseller wallet to prevent customer orders from failing.</i>",
-                        None,
-                        window_seconds=3600,
-                    )
-            except ValueError:
-                pass
+                await check_reseller_balance(session)
         except Exception as e:
             logging.warning("Low balance monitor check failed: %s", e)
