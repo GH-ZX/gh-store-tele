@@ -1,6 +1,9 @@
 """Telegram Mini App (TMA) Mobile-First Storefront.
 
 Features:
+- Category Cards: Picture & Title Visual Grid by default, with instant toggle to List view.
+- Profile & Settings: Hides VIP badge if Standard (0%), shows only if real discount applied; prominently displays @username.
+- Referral Program: 0.2% profit margin commission on referred purchases, stat cards, and referred friends breakdown list in Settings.
 - SWR (Stale-While-Revalidate) instant 0ms launch cache via localStorage.
 - Dark & Light Mode Appearance Toggle with persistent storage and Telegram theme syncing.
 - Full Bidirectional Arabic & English i18n Overhaul (RTL/LTR, dynamic catalog & product re-rendering, directional arrows).
@@ -263,37 +266,140 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     .banner-title { font-size: 16px; font-weight: 700; margin-bottom: 2px; }
     .banner-sub { font-size: 12px; color: var(--hint); }
 
-    /* Section Header */
+    /* Section Header with View Mode Toggle */
+    .section-header-flex {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin: 16px 0 10px 4px;
+    }
     .section-title {
       font-size: 13px;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.5px;
       color: var(--hint);
-      margin: 16px 0 10px 4px;
+    }
+    .view-toggle-capsule {
+      display: flex;
+      background: var(--input-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2px;
+      gap: 2px;
+    }
+    .view-toggle-btn {
+      background: transparent;
+      border: none;
+      color: var(--hint);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .view-toggle-btn.active {
+      background: var(--card);
+      color: var(--accent);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
     }
 
-    /* Homepage Catalog Cards Grid */
-    .catalogs-grid {
+    /* Picture & Title Visual Grid Layout (Cards with image and title) */
+    .catalogs-grid.grid-layout {
       display: grid;
-      grid-template-columns: 1fr;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+    @media (max-width: 340px) {
+      .catalogs-grid.grid-layout { grid-template-columns: 1fr; }
+    }
+    .catalog-visual-card {
+      position: relative;
+      border-radius: 18px;
+      overflow: hidden;
+      aspect-ratio: 16 / 11;
+      border: 1px solid var(--glass-border);
+      cursor: pointer;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+      transition: transform 0.15s, box-shadow 0.15s;
+      background-size: cover;
+      background-position: center;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 12px;
+    }
+    .catalog-visual-card:active {
+      transform: scale(0.97);
+    }
+    .catalog-visual-overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(0, 0, 0, 0.15) 0%, rgba(9, 14, 26, 0.9) 100%);
+      pointer-events: none;
+    }
+    .catalog-visual-top {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .catalog-visual-pill {
+      background: rgba(18, 24, 40, 0.75);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      color: #38bdf8;
+      padding: 3px 8px;
+      border-radius: 8px;
+      font-size: 10px;
+      font-weight: 800;
+    }
+    .catalog-visual-bottom {
+      position: relative;
+      z-index: 2;
+    }
+    .catalog-visual-title {
+      font-size: 15px;
+      font-weight: 800;
+      color: #ffffff;
+      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+      margin-bottom: 3px;
+      line-height: 1.25;
+    }
+    .catalog-visual-sub {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11px;
+      color: #cbd5e1;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+      font-weight: 700;
+    }
+
+    /* List Layout (Alternate view) */
+    .catalogs-grid.list-layout {
+      display: flex;
+      flex-direction: column;
       gap: 10px;
     }
-    @media (min-width: 480px) {
-      .catalogs-grid { grid-template-columns: repeat(2, 1fr); }
-    }
-    .catalog-card {
+    .catalog-list-card {
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 16px;
-      padding: 16px;
+      padding: 14px 16px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       cursor: pointer;
       transition: transform 0.15s, border-color 0.15s, background 0.15s;
     }
-    .catalog-card:active {
+    .catalog-list-card:active {
       transform: scale(0.98);
       border-color: var(--accent);
       background: var(--card-hover);
@@ -425,7 +531,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       flex-direction: column;
       align-items: flex-end;
     }
-    [dir="ltr"] .prod-price-box { align-items: flex-end; }
     .prod-price {
       font-size: 16px;
       font-weight: 800;
@@ -1023,10 +1128,20 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       <div class="banner-sub" id="banner-sub-text">تسليم تلقائي فوري للمفاتيح والحسابات على مدار الساعة</div>
     </div>
 
-    <!-- Mode A: Catalogs Cards Grid (Homepage Collections) -->
+    <!-- Mode A: Catalogs Cards (Homepage Collections with Grid/List Toggle) -->
     <div id="catalogs-collection-mode">
-      <div class="section-title" id="title-collections">التصنيفات المميزة</div>
-      <div class="catalogs-grid" id="catalogs-grid">
+      <div class="section-header-flex">
+        <div class="section-title" id="title-collections">التصنيفات المميزة</div>
+        <div class="view-toggle-capsule">
+          <button class="view-toggle-btn active" id="btn-view-grid" onclick="setCatalogViewMode('grid')">
+            <span>🖼️</span> <span id="label-view-grid">شبكة</span>
+          </button>
+          <button class="view-toggle-btn" id="btn-view-list" onclick="setCatalogViewMode('list')">
+            <span>📋</span> <span id="label-view-list">قائمة</span>
+          </button>
+        </div>
+      </div>
+      <div class="catalogs-grid grid-layout" id="catalogs-grid">
         <div class="skeleton-card"></div>
         <div class="skeleton-card"></div>
       </div>
@@ -1242,16 +1357,19 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     </div>
   </main>
 
-  <!-- TAB 4: SETTINGS VIEW (APPEARANCE, THEME, LANGUAGE) -->
+  <!-- TAB 4: SETTINGS VIEW (PROFILE, THEME, LANGUAGE, REFERRALS) -->
   <main id="view-settings" class="tab-view">
+    <!-- User Profile Header -->
     <div class="inset-card" style="display: flex; align-items: center; gap: 14px;">
       <div id="settings-avatar-box">
         <div class="avatar-fallback" id="settings-avatar-initial" style="width: 48px; height: 48px; font-size: 20px;">U</div>
       </div>
       <div>
         <div style="font-size: 17px; font-weight: 800;" id="user-name-title">العميل</div>
-        <div style="font-size: 12px; color: var(--hint); font-family: monospace;" id="user-tg-num">ID: 000000000</div>
-        <div style="margin-top: 4px;" id="user-vip-pill-box"></div>
+        <div style="font-size: 13px; color: var(--accent); font-weight: 700; margin-top: 1px; display: none;" id="user-handle-title">@username</div>
+        <div style="font-size: 11px; color: var(--hint); font-family: monospace; margin-top: 2px;" id="user-tg-num">ID: 000000000</div>
+        <!-- VIP badge is displayed ONLY if user has a real discount applied (>0%) -->
+        <div style="margin-top: 5px; display: none;" id="user-vip-pill-box"></div>
       </div>
     </div>
 
@@ -1306,16 +1424,40 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- Referral Program -->
+    <!-- Referral Program (Comprehensive Details & Breakdown) -->
     <div class="inset-card">
       <div class="section-title" style="margin-top: 0;" id="label-referral-title">🎁 برنامج الإحالة والأرباح</div>
-      <div style="font-size: 12px; color: var(--hint); margin-bottom: 8px;" id="label-referral-desc">
-        شارك رابط الإحالة الخاص بك واحصل على عمولات رصيد فورية عند شحن أصدقائك!
+      <div style="font-size: 12px; color: var(--hint); margin-bottom: 12px;" id="label-referral-desc">
+        شارك رابط الإحالة الخاص بك واحصل على <strong>0.2% عمولة أرباح</strong> مباشرة من هامش كل عملية شراء يقوم بها أصدقاؤك!
       </div>
-      <div style="display: flex; align-items: center; justify-content: space-between; background: var(--input-bg); border-radius: 8px; padding: 10px; margin-top: 8px;">
+
+      <!-- Referral Summary Stats -->
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px;">
+        <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 10px; text-align: center;">
+          <div style="font-size: 10px; color: var(--hint); font-weight: 700;" id="label-ref-stat-count">المدعوون</div>
+          <div style="font-size: 18px; font-weight: 800; color: var(--accent); margin-top: 2px;" id="referral-count-val">0</div>
+        </div>
+        <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 10px; text-align: center;">
+          <div style="font-size: 10px; color: var(--hint); font-weight: 700;" id="label-ref-stat-earned">إجمالي الأرباح</div>
+          <div style="font-size: 18px; font-weight: 800; color: var(--success); margin-top: 2px;" id="referral-earned-val">$0.00</div>
+        </div>
+        <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 10px; text-align: center;">
+          <div style="font-size: 10px; color: var(--hint); font-weight: 700;" id="label-ref-stat-rate">نسبة العمولة</div>
+          <div style="font-size: 16px; font-weight: 800; color: var(--warning); margin-top: 2px;">0.2%</div>
+        </div>
+      </div>
+
+      <!-- Referral Link Box -->
+      <div style="display: flex; align-items: center; justify-content: space-between; background: var(--input-bg); border: 1px solid var(--border); border-radius: 10px; padding: 10px; margin-bottom: 14px;">
         <span id="referral-link-display" style="font-family: monospace; font-size: 12px; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; margin-inline-end: 8px;">https://t.me/...</span>
         <button class="btn-action-secondary" id="btn-copy-ref-link" onclick="copyReferralLink()" style="padding: 4px 10px;">نسخ</button>
       </div>
+
+      <!-- Breakdown of Invited Friends & Individual Earnings -->
+      <div style="font-size: 13px; font-weight: 700; margin-bottom: 8px;" id="label-ref-breakdown-title">
+        👥 سجل الأصدقاء المدعوين والأرباح
+      </div>
+      <div id="referrals-breakdown-list" style="display: flex; flex-direction: column; gap: 6px;"></div>
     </div>
   </main>
 
@@ -1491,9 +1633,10 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     let activeCatalogFilter = 'all';
     let appliedCoupon = null;
     let wishlistSet = new Set();
+    let currentCatalogViewMode = localStorage.getItem('ghstore_cat_view') || 'grid';
 
     // Recharge Flow State
-    let selectedRechargeMethod = 'stars'; // 'stars' | 'crypto' | 'sam'
+    let selectedRechargeMethod = 'stars';
     let selectedRechargeAmount = 10.0;
 
     // Telegram User ID Resolution
@@ -1555,7 +1698,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       if (e) e.stopPropagation();
       haptic('pop');
       const id = Number(productId);
-      const d = I18N[currentAppLanguage] || I18N.ar;
       if (wishlistSet.has(id)) {
         wishlistSet.delete(id);
         showToast(currentAppLanguage === 'ar' ? 'تمت الإزالة من المفضلة' : 'Removed from favorites');
@@ -1583,19 +1725,21 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       });
     }
 
-    // Bilingual Collections Config (Arabic & English)
+    // Bilingual Collections Config with Curated HD Visual Pictures
     const CATALOG_META = {
       "AI & Chatbots": {
         arTitle: "🤖 الذكاء الاصطناعي",
         enTitle: "🤖 AI & Chatbots",
         icon: "🤖",
+        image: "https://images.unsplash.com/photo-1677442136019-21780efad99a?w=600&auto=format&fit=crop&q=80",
         arPreview: "كلود · شات جي بي تي · جيميني · جروك",
         enPreview: "Claude · ChatGPT · Gemini · Grok"
       },
       "Streaming & Entertainment": {
         arTitle: "🎬 البث والترفيه",
-        enTitle: "🎬 Streaming & Entertainment",
+        enTitle: "🎬 Streaming & Media",
         icon: "🎬",
+        image: "https://images.unsplash.com/photo-1574375927938-d5a98e8ffe85?w=600&auto=format&fit=crop&q=80",
         arPreview: "نتفلكس · بيكوك · شاهد · أبل تي في",
         enPreview: "Netflix · Peacock · Shahid · Apple TV"
       },
@@ -1603,6 +1747,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         arTitle: "🛡️ الحماية والـ VPN",
         enTitle: "🛡️ VPN & Security",
         icon: "🛡️",
+        image: "https://images.unsplash.com/photo-1563986768609-322da13575f3?w=600&auto=format&fit=crop&q=80",
         arPreview: "نورد في بي ان · سيرف شارك · بروتون",
         enPreview: "NordVPN · Surfshark · Proton VPN"
       },
@@ -1610,6 +1755,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         arTitle: "🎨 التصميم والإبداع",
         enTitle: "🎨 Design & Creative",
         icon: "🎨",
+        image: "https://images.unsplash.com/photo-1626785774573-4b799315345d?w=600&auto=format&fit=crop&q=80",
         arPreview: "كانفا · أدوبي · فيجما · فريمر",
         enPreview: "Canva · Adobe · Figma · Framer"
       },
@@ -1617,6 +1763,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         arTitle: "📝 الإنتاجية والأدوات",
         enTitle: "📝 Productivity & Tools",
         icon: "📝",
+        image: "https://images.unsplash.com/photo-1499750310107-5fef28a66643?w=600&auto=format&fit=crop&q=80",
         arPreview: "نوشن · كاب كات · أوفيس",
         enPreview: "Notion · CapCut · MS Office 365"
       },
@@ -1624,6 +1771,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         arTitle: "📦 منتجات رقمية متنوعة",
         enTitle: "📦 Digital Subscriptions",
         icon: "📦",
+        image: "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=600&auto=format&fit=crop&q=80",
         arPreview: "تراخيص، مفاتيح واشتراكات",
         enPreview: "Licenses, activations and keys"
       }
@@ -1634,11 +1782,9 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       if (!raw) return '<span style="color: var(--hint)">لا يوجد وصف إضافي.</span>';
       let text = String(raw).trim();
 
-      // Decode entities
       const entityMap = { '&lt;': '<', '&gt;': '>', '&quot;': '"', '&apos;': "'", '&amp;': '&' };
       text = text.replace(/&(lt|gt|quot|apos|amp);/g, (m) => entityMap[m] || m);
 
-      // Preserve <tg-emoji>
       const emojis = [];
       text = text.replace(/<tg-emoji[^>]*emoji-id="([^"]+)"[^>]*>(.*?)<\/tg-emoji>/gi, (m, id, char) => {
         const placeholder = `__TG_EMOJI_${emojis.length}__`;
@@ -1646,30 +1792,22 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         return placeholder;
       });
 
-      // Headers (### Header)
       text = text.replace(/^###\s*(.*$)/gim, '<div class="desc-heading">$1</div>');
       text = text.replace(/^##\s*(.*$)/gim, '<div class="desc-heading">$1</div>');
       text = text.replace(/^#\s*(.*$)/gim, '<div class="desc-heading">$1</div>');
 
-      // Bold & Underline
       text = text.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
       text = text.replace(/__(.*?)__/g, '<u>$1</u>');
 
-      // Italic
       text = text.replace(/\*([^\*\n]+)\*/g, '<i>$1</i>');
       text = text.replace(/_([^_\n]+)_/g, '<i>$1</i>');
 
-      // Inline code
       text = text.replace(/`([^`]+)`/g, '<code class="desc-inline-code">$1</code>');
-
-      // Bullets
       text = text.replace(/^[\s]*[-*•]\s+(.+)$/gim, '<div class="desc-bullet">• $1</div>');
 
-      // Line breaks
       text = text.replace(/\r?\n/g, '<br>');
       text = text.replace(/(<br\s*\/?>){3,}/gi, '<br><br>');
 
-      // Restore custom emojis
       emojis.forEach((em, idx) => {
         text = text.replace(`__TG_EMOJI_${idx}__`, em);
       });
@@ -1721,7 +1859,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
           `;
         }
 
-        // Single key or token
         return `
           <div class="cred-pill-row" style="margin: 6px 0;">
             <div class="cred-meta">
@@ -1760,6 +1897,8 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         starts_from: "يبدأ من",
         view_details: "عرض ‹",
         back: "رجوع",
+        view_grid: "شبكة",
+        view_list: "قائمة",
         product: "المنتج",
         instant_delivery: "⚡ تسليم تلقائي فوري",
         custom_activation: "⏳ تفعيل مخصص",
@@ -1811,8 +1950,13 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         currency_title: "💱 عملة العرض المفضلة",
         lang_title: "🌐 اللغة / Language",
         referral_title: "🎁 برنامج الإحالة والأرباح",
-        referral_desc: "شارك رابط الإحالة الخاص بك واحصل على عمولات رصيد فورية عند شحن أصدقائك!",
-        copy: "نسخ"
+        referral_desc: "شارك رابط الإحالة الخاص بك واحصل على <strong>0.2% عمولة أرباح</strong> مباشرة من هامش كل عملية شراء يقوم بها أصدقاؤك!",
+        ref_stat_count: "المدعوون",
+        ref_stat_earned: "إجمالي الأرباح",
+        ref_stat_rate: "نسبة العمولة",
+        ref_breakdown_title: "👥 سجل الأصدقاء المدعوين والأرباح",
+        copy: "نسخ",
+        orders_word: "طلب"
       },
       en: {
         store: "Store",
@@ -1838,6 +1982,8 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         starts_from: "From",
         view_details: "View ›",
         back: "Back",
+        view_grid: "Grid",
+        view_list: "List",
         product: "Product",
         instant_delivery: "⚡ Instant Automated Delivery",
         custom_activation: "⏳ Custom Activation",
@@ -1889,8 +2035,13 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         currency_title: "💱 Preferred Display Currency",
         lang_title: "🌐 Language",
         referral_title: "🎁 Referral Program & Earnings",
-        referral_desc: "Share your referral link and earn instant commission when friends recharge!",
-        copy: "Copy"
+        referral_desc: "Share your referral link and earn <strong>0.2% profit margin commission</strong> on every purchase made by friends!",
+        ref_stat_count: "Invited",
+        ref_stat_earned: "Total Earned",
+        ref_stat_rate: "Commission",
+        ref_breakdown_title: "👥 Referred Friends & Earnings Breakdown",
+        copy: "Copy",
+        orders_word: "orders"
       }
     };
 
@@ -1903,7 +2054,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       document.documentElement.dir = isRtl ? 'rtl' : 'ltr';
       document.documentElement.lang = lang;
 
-      // Navigation & Header
       const setText = (id, txt) => { const el = document.getElementById(id); if (el) el.innerText = txt; };
       setText('i18n-tab-store', d.store);
       setText('i18n-tab-orders', d.orders);
@@ -1911,7 +2061,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       setText('i18n-tab-settings', d.settings);
       setText('top-sub-caption', d.caption);
 
-      // Search & Filters
       const sInput = document.getElementById('store-search-input');
       if (sInput) sInput.placeholder = d.search;
       setText('filter-all', d.filter_all);
@@ -1920,7 +2069,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       setText('filter-instant', d.filter_instant);
       setText('filter-lowprice', d.filter_lowprice);
 
-      // Banner & PWA
       setText('banner-badge-text', d.banner_badge);
       setText('banner-title-text', d.banner_title);
       setText('banner-sub-text', d.banner_sub);
@@ -1928,15 +2076,15 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       setText('pwa-banner-sub', d.pwa_sub);
       setText('pwa-banner-btn', d.pwa_btn);
 
-      // Collections & Back Arrows
       setText('title-collections', d.collections);
+      setText('label-view-grid', d.view_grid);
+      setText('label-view-list', d.view_list);
       setText('btn-back-to-catalogs', d.all_catalogs);
       setText('btn-back-product', d.back);
       const backArrow = isRtl ? '→' : '←';
       setText('icon-back-to-catalogs', backArrow);
       setText('icon-back-product', backArrow);
 
-      // Product Detail Page
       setText('detail-category-header', d.product);
       setText('label-desc-title', d.desc);
       setText('label-promo-code-input', d.promo_code_label);
@@ -1946,7 +2094,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       setText('btn-stars-action-label', d.stars_buy);
       setText('btn-restock-text', d.restock_alert);
 
-      // Order Success & Orders View
       setText('success-view-title', d.order_success);
       setText('success-keys-title', d.delivered_keys);
       setText('success-copy-hint', d.copy_hint);
@@ -1954,7 +2101,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       setText('btn-success-continue', d.continue_shopping);
       setText('title-orders-history', d.orders_title);
 
-      // Wallet View (Recharge Flow)
       setText('label-wallet-balance-title', d.wallet_balance_title);
       setText('label-vip-progress-prefix', d.vip_progress);
       setText('recharge-method-title', d.method_section_title);
@@ -1972,7 +2118,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       if (customInput) customInput.placeholder = d.custom_amount_placeholder;
       updateRechargeButtonText();
 
-      // Settings View
       setText('label-theme-title', d.theme_section_title);
       setText('label-theme-dark', d.theme_dark);
       setText('label-theme-light', d.theme_light);
@@ -1982,15 +2127,18 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       setText('label-currency-title', d.currency_title);
       setText('label-lang-title', d.lang_title);
       setText('label-referral-title', d.referral_title);
-      setText('label-referral-desc', d.referral_desc);
+      const descBox = document.getElementById('label-referral-desc');
+      if (descBox) descBox.innerHTML = d.referral_desc;
+      setText('label-ref-stat-count', d.ref_stat_count);
+      setText('label-ref-stat-earned', d.ref_stat_earned);
+      setText('label-ref-stat-rate', d.ref_stat_rate);
+      setText('label-ref-breakdown-title', d.ref_breakdown_title);
       setText('btn-copy-ref-link', d.copy);
 
-      // Active Language Chip
       document.querySelectorAll('#language-picker-chips .filter-chip').forEach(el => {
         el.classList.toggle('active', el.id === 'lang-chip-' + lang);
       });
 
-      // Re-render Dynamic Catalog and Active Views
       renderCatalogsGrid();
       if (activeCatalog) {
         const meta = CATALOG_META[activeCatalog];
@@ -2004,12 +2152,15 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         const rawDesc = (lang === 'ar' && selectedProduct.description_ar)
           ? selectedProduct.description_ar
           : (selectedProduct.description || '');
-        const descBox = document.getElementById('prod-rich-desc');
-        if (descBox) descBox.innerHTML = formatRichDescription(rawDesc);
+        const pDescBox = document.getElementById('prod-rich-desc');
+        if (pDescBox) pDescBox.innerHTML = formatRichDescription(rawDesc);
         updateDetailPagePrice();
       }
       if (userData?.orders) {
         renderOrders(userData.orders);
+      }
+      if (userData) {
+        renderReferralsBreakdown(userData.referrals_breakdown || [], userData.referrals_total_earned || 0.0, userData.referrals_count || 0);
       }
     }
 
@@ -2070,28 +2221,73 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       }
     }
 
+    // Category View Mode: Picture & Title Grid vs Detailed List
+    function setCatalogViewMode(mode) {
+      haptic('pop');
+      currentCatalogViewMode = mode;
+      try { localStorage.setItem('ghstore_cat_view', mode); } catch (e) {}
+
+      const btnG = document.getElementById('btn-view-grid');
+      const btnL = document.getElementById('btn-view-list');
+      if (btnG) btnG.classList.toggle('active', mode === 'grid');
+      if (btnL) btnL.classList.toggle('active', mode === 'list');
+
+      renderCatalogsGrid();
+    }
+
     function renderCatalogsGrid() {
       const container = document.getElementById('catalogs-grid');
       if (!container) return;
+
       const groups = {};
       categoriesList.forEach(c => {
         groups[c] = allProducts.filter(p => p.category === c);
       });
 
       const d = I18N[currentAppLanguage] || I18N.ar;
-      const chevron = (currentAppLanguage === 'ar') ? '‹' : '›';
+      const isGrid = (currentCatalogViewMode === 'grid');
+
+      container.className = `catalogs-grid ${isGrid ? 'grid-layout' : 'list-layout'}`;
 
       container.innerHTML = Object.keys(groups).map(catName => {
         const items = groups[catName];
         if (!items || !items.length) return '';
-        const meta = CATALOG_META[catName] || { arTitle: catName, enTitle: catName, icon: "📦", arPreview: "منتجات رقمية", enPreview: "Digital goods" };
+        const meta = CATALOG_META[catName] || {
+          arTitle: catName,
+          enTitle: catName,
+          icon: "📦",
+          image: "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=600&auto=format&fit=crop&q=80",
+          arPreview: "منتجات رقمية",
+          enPreview: "Digital goods"
+        };
         const minPrice = Math.min(...items.map(p => p.price || 999));
         const sym = items[0]?.sym || '$';
         const displayTitle = (currentAppLanguage === 'ar' && meta.arTitle) ? meta.arTitle : (meta.enTitle || catName);
         const displayPreview = (currentAppLanguage === 'ar' && meta.arPreview) ? meta.arPreview : (meta.enPreview || meta.arPreview);
 
+        if (isGrid) {
+          // Visual Card: Picture + Title
+          return `
+            <div class="catalog-visual-card" style="background-image: url('${meta.image}');" onclick="openCollection('${catName.replace(/'/g, "\\\\'")}')">
+              <div class="catalog-visual-overlay"></div>
+              <div class="catalog-visual-top">
+                <span class="catalog-visual-pill">${items.length} ${d.items_suffix}</span>
+              </div>
+              <div class="catalog-visual-bottom">
+                <div class="catalog-visual-title">${displayTitle}</div>
+                <div class="catalog-visual-sub">
+                  <span>${d.starts_from} ${minPrice.toFixed(2)}${sym}</span>
+                  <span style="font-size: 14px;">${(currentAppLanguage === 'ar') ? '‹' : '›'}</span>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
+        // List Card (Alternate View)
+        const chevron = (currentAppLanguage === 'ar') ? '‹' : '›';
         return `
-          <div class="catalog-card" onclick="openCollection('${catName.replace(/'/g, "\\\\'")}')">
+          <div class="catalog-list-card" onclick="openCollection('${catName.replace(/'/g, "\\\\'")}')">
             <div class="catalog-left">
               <div class="catalog-icon-box">${meta.icon}</div>
               <div class="catalog-info">
@@ -2268,7 +2464,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       document.getElementById('prod-hero-name').innerText = selectedProduct.name;
       document.getElementById('prod-hero-cat').innerText = selectedProduct.category || 'Digital';
 
-      // Description in current language
       const rawDesc = (currentAppLanguage === 'ar' && selectedProduct.description_ar)
         ? selectedProduct.description_ar
         : (selectedProduct.description || '');
@@ -2285,7 +2480,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         ? (currentAppLanguage === 'ar' ? '🔴 نفد المخزون' : '🔴 Out of Stock')
         : (selectedProduct.stock ? `${currentAppLanguage === 'ar' ? '🟢 متوفر' : '🟢 In Stock'} (${selectedProduct.stock})` : (currentAppLanguage === 'ar' ? '⚡ تسليم فوري' : '⚡ Instant Delivery'));
 
-      // Out of Stock Handling
       const restockBox = document.getElementById('restock-alert-box');
       const buyBtn = document.getElementById('btn-inapp-purchase');
       const starsBtn = document.getElementById('btn-stars-purchase');
@@ -2359,12 +2553,10 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       let total = unit * selectedQty;
       const sym = selectedProduct.sym || '$';
 
-      // Bulk Wholesale Discount Matrix
       let bulkPct = 0;
       if (selectedQty >= 10) bulkPct = 15;
       else if (selectedQty >= 5) bulkPct = 7;
 
-      // VIP discount
       let vipPct = userData?.vip_discount || 0;
       let totalDiscount = Math.max(bulkPct, vipPct);
 
@@ -2375,7 +2567,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         discountText = (currentAppLanguage === 'ar') ? `خصم تلقائي: -${totalDiscount}%!` : `Discount: -${totalDiscount}%!`;
       }
 
-      // Coupon discount
       if (appliedCoupon) {
         const cDisc = appliedCoupon.discount || 0.0;
         total = Math.max(0.01, total - cDisc);
@@ -2386,7 +2577,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       document.getElementById('prod-total-price').innerText = `${total.toFixed(2)}${sym}`;
       document.getElementById('btn-price-tag').innerText = `(${total.toFixed(2)}${sym})`;
 
-      // Balance check
       const userBalance = userData?.balance || 0.0;
       const alertBox = document.getElementById('insufficient-funds-alert');
       const buyBtn = document.getElementById('btn-inapp-purchase');
@@ -2579,9 +2769,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       }
     }
 
-    // ==========================================
-    // HARDENED RECHARGE / TOP-UP FLOW LOGIC
-    // ==========================================
+    // Recharge Flow
     function selectRechargeMethod(method) {
       haptic('pop');
       selectedRechargeMethod = method;
@@ -2716,7 +2904,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       }
     }
 
-    // User Data & Profile Loading
+    // User Profile, Settings & Referral Data Loading
     async function loadUserData() {
       if (!userId) {
         renderEmptyOrders();
@@ -2746,11 +2934,35 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
           document.getElementById('settings-avatar-initial').innerText = firstLetter;
         }
 
-        // Settings View Info
+        // Profile Display Name & Prominent @username
         const displayName = tgUser?.first_name ? `${tgUser.first_name} ${tgUser.last_name || ''}`.trim() : (d.username ? '@' + d.username : (currentAppLanguage === 'ar' ? 'العميل' : 'Customer'));
         document.getElementById('user-name-title').innerText = displayName;
+
+        const handleBox = document.getElementById('user-handle-title');
+        if (d.username) {
+          handleBox.innerText = `@${d.username}`;
+          handleBox.style.display = 'block';
+        } else {
+          handleBox.style.display = 'none';
+        }
+
         document.getElementById('user-tg-num').innerText = 'ID: ' + d.telegram_id;
-        document.getElementById('user-vip-pill-box').innerHTML = `<span class="vip-tag">${d.vip_tier} (${currentAppLanguage === 'ar' ? 'خصم' : 'Discount'} ${d.vip_discount}%)</span>`;
+
+        // Profile VIP Badge: ONLY display if a real discount is applied (>0% and not Standard)
+        const vipBox = document.getElementById('user-vip-pill-box');
+        const topVipTag = document.getElementById('top-vip-tag');
+        const hasVipDiscount = d.vip_discount > 0 && d.vip_tier && d.vip_tier !== 'Standard';
+
+        if (hasVipDiscount) {
+          vipBox.innerHTML = `<span class="vip-tag">${d.vip_tier} (${currentAppLanguage === 'ar' ? 'خصم' : 'Discount'} ${d.vip_discount}%)</span>`;
+          vipBox.style.display = 'block';
+          topVipTag.innerText = d.vip_tier;
+          topVipTag.style.display = 'inline-block';
+        } else {
+          vipBox.innerHTML = '';
+          vipBox.style.display = 'none';
+          topVipTag.style.display = 'none';
+        }
 
         // VIP Progress Bar
         const spent = d.total_spent || 0.0;
@@ -2768,9 +2980,13 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         document.getElementById('vip-progress-num').innerText = `${pct}% ($${spent.toFixed(0)} / $${nextTarget.toFixed(0)})`;
         document.getElementById('vip-progress-fill').style.width = `${pct}%`;
 
-        // Referral link
+        // Referral Stats & Breakdown
         const refLink = `https://t.me/${d.bot_username}?start=${d.referral_code || ''}`;
         document.getElementById('referral-link-display').innerText = refLink;
+        document.getElementById('referral-count-val').innerText = d.referrals_count || 0;
+        document.getElementById('referral-earned-val').innerText = `$${(d.referrals_total_earned || 0.0).toFixed(2)}`;
+
+        renderReferralsBreakdown(d.referrals_breakdown || [], d.referrals_total_earned || 0.0, d.referrals_count || 0);
 
         // Currency Chips
         document.querySelectorAll('#currency-picker-chips .filter-chip').forEach(el => {
@@ -2788,6 +3004,38 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       }
     }
 
+    // Render Referred Friends & Commission Breakdown in Settings
+    function renderReferralsBreakdown(breakdown, totalEarned, count) {
+      const container = document.getElementById('referrals-breakdown-list');
+      if (!container) return;
+      const d = I18N[currentAppLanguage] || I18N.ar;
+
+      if (!breakdown || !breakdown.length) {
+        container.innerHTML = `
+          <div style="text-align: center; padding: 16px; background: var(--input-bg); border-radius: 12px; color: var(--hint); font-size: 12px;">
+            ${currentAppLanguage === 'ar' ? 'لم تقم بدعوة أصدقاء بعد. شارك رابطك واكسب 0.2% عمولة أرباح فورية من كل عملية شراء!' : 'No referred friends yet. Share your link and earn 0.2% profit margin commission on every order!'}
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = breakdown.map(r => `
+        <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+          <div>
+            <div style="font-size: 13px; font-weight: 700; color: var(--text);">${r.user_display}</div>
+            <div style="font-size: 11px; color: var(--hint); margin-top: 1px;">
+              ${r.registered_at ? r.registered_at + ' · ' : ''}${r.orders_count} ${d.orders_word}
+            </div>
+          </div>
+          <div style="text-align: end;">
+            <span style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.35); color: var(--success); font-size: 12px; font-weight: 800; padding: 3px 8px; border-radius: 8px;">
+              +$${r.earned.toFixed(2)}
+            </span>
+          </div>
+        </div>
+      `).join('');
+    }
+
     function updateBalancePills() {
       if (!userData) return;
       document.getElementById('top-balance-str').innerText = userData.display_balance || `$${userData.balance.toFixed(2)}`;
@@ -2796,10 +3044,12 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         ? `≈ ${userData.display_balance}`
         : (currentAppLanguage === 'ar' ? 'جاهز للشراء الفوري' : 'Ready for instant purchases');
 
-      if (userData.vip_tier && userData.vip_tier !== 'Standard') {
-        const tag = document.getElementById('top-vip-tag');
-        tag.innerText = userData.vip_tier;
-        tag.style.display = 'inline-block';
+      const topVipTag = document.getElementById('top-vip-tag');
+      if (userData.vip_discount > 0 && userData.vip_tier && userData.vip_tier !== 'Standard') {
+        topVipTag.innerText = userData.vip_tier;
+        topVipTag.style.display = 'inline-block';
+      } else {
+        topVipTag.style.display = 'none';
       }
     }
 

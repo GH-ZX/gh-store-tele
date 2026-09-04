@@ -425,9 +425,17 @@ async def get_tma_user_data(tg_id: int):
                 "created_at": o.created_at.strftime("%b %d, %H:%M") if o.created_at else "",
             })
 
-        referrals_count = await UserRepository.get_referrals_qty_by_referrer_id(user.id, session)
-        me = await bot.get_me()
+        if not user.referral_code:
+            import string, secrets
+            user.referral_code = f"U_{''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(6))}"
+            await UserRepository.update(user, session)
+            await session_commit(session)
 
+        referrals_count = await UserRepository.get_referrals_qty_by_referrer_id(user.id, session)
+        from repositories.referral import ReferralRepository
+        referrals_total_earned = await ReferralRepository.get_bonus_sum_as_referrer(user.id, session)
+        referrals_breakdown = await ReferralRepository.get_referrals_breakdown(user.id, session)
+        me = await bot.get_me()
         # Fetch real Telegram profile photo
         photo_url = None
         try:
@@ -453,6 +461,9 @@ async def get_tma_user_data(tg_id: int):
             "referral_code": user.referral_code or "",
             "bot_username": me.username or "GHStoreBot",
             "referrals_count": referrals_count,
+            "referrals_total_earned": round(float(referrals_total_earned or 0.0), 2),
+            "referrals_breakdown": referrals_breakdown,
+            "referral_commission_rate": 0.2,
             "orders": orders_data,
         }
 
@@ -611,6 +622,42 @@ async def tma_instant_buy(request: Request):
                 "<i>(Tap any credential above to copy it)</i>",
                 user.telegram_id
             )
+
+        # 5. Process 0.2% referral commission from margin
+        if getattr(user, "referred_by_user_id", None):
+            try:
+                referrer = await UserRepository.get_by_id(user.referred_by_user_id, session)
+                if referrer:
+                    cost_total = (product.cost_usd or 0.0) * quantity
+                    margin_profit = max(0.0, total - cost_total)
+                    if margin_profit > 0:
+                        ref_rate = float(os.environ.get("REFERRAL_MARGIN_COMMISSION_PERCENT", "0.2")) / 100.0
+                        commission = round(margin_profit * ref_rate, 2)
+                        if commission < 0.01:
+                            commission = 0.01
+
+                        await UserRepository.refund_balance(referrer.telegram_id, commission, session)
+                        from repositories.referral import ReferralRepository
+                        from models.referral import ReferralBonusDTO
+                        await ReferralRepository.create(ReferralBonusDTO(
+                            referral_user_id=user.id,
+                            referrer_user_id=referrer.id,
+                            payment_amount=total,
+                            applied_referral_bonus=0.0,
+                            applied_referrer_bonus=commission,
+                        ), session)
+                        await session_commit(session)
+
+                        try:
+                            await NotificationService.send_to_user(
+                                f"🎁 <b>أرباح إحالة جديدة!</b>\n\n"
+                                f"قام صديقك المدعو بعملية شراء ({product.name}) وتمت إضافة <b>+${commission:.2f}</b> كعمولة إلى رصيدك مباشرة!",
+                                referrer.telegram_id
+                            )
+                        except Exception:
+                            pass
+            except Exception as e:
+                logging.error("Failed to process referral margin commission: %s", e)
 
         return {
             "status": "success",

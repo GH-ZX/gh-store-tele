@@ -24,6 +24,15 @@ class UserRepository:
             return user
 
     @staticmethod
+    async def get_by_id(user_id: int, session: AsyncSession | Session) -> UserDTO | None:
+        stmt = select(User).where(User.id == user_id)
+        user = await session_execute(stmt, session)
+        user = user.scalar_one_or_none()
+        if user is None:
+            return None
+        return UserDTO.model_validate(user, from_attributes=True)
+
+    @staticmethod
     async def update(user_dto: UserDTO, session: Session | AsyncSession) -> None:
         user_dto_dict = user_dto.model_dump()
         none_keys = [k for k, v in user_dto_dict.items() if v is None]
