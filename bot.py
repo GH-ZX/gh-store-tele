@@ -830,23 +830,51 @@ async def create_tma_topup_invoice(request: Request):
                 return JSONResponse({"error": "crypto_failed", "detail": str(e)}, status_code=502)
 
         elif method in ("sam", "shamcash", "syriatelcash", "syriatel"):
-            # Determine provider: "shamcash" or "syriatelcash"
             provider = "syriatelcash" if method in ("syriatelcash", "syriatel") or body.get("provider") in ("syriatel", "syriatelcash") else "shamcash"
             try:
                 from services.sam import SamService
+                # Syriatel Cash operates exclusively in Syrian Pounds (SYP)
+                if provider == "syriatelcash":
+                    inv_currency = "SYP"
+                    syp_rate = float(os.environ.get("SAM_SYP_USD_RATE", "0.002551"))
+                    syp_amount = int(round(amount / syp_rate)) if syp_rate < 1.0 else int(round(amount * syp_rate))
+                    inv_amount = syp_amount
+                else:
+                    inv_currency = "USD"
+                    inv_amount = amount
+
                 invoice = await SamService.create_invoice(
                     session=session,
                     method=provider,
-                    amount=amount,
-                    currency="USD",
+                    amount=inv_amount,
+                    currency=inv_currency,
                     webhook_url=config.get_sam_webhook_url()
                 )
+
+                invoice_id = invoice.get("invoiceId")
+                if invoice_id:
+                    from repositories.sam_payment import SamPaymentRepository
+                    from models.sam_payment import SamPaymentDTO
+                    await SamPaymentRepository.create(SamPaymentDTO(
+                        telegram_id=tg_id,
+                        method=provider,
+                        amount=float(inv_amount),
+                        currency=inv_currency,
+                        usd_amount=float(amount),
+                        invoice_id=str(invoice_id),
+                        payment_url=invoice.get("paymentUrl"),
+                        event="pending"
+                    ), session)
+                    await session_commit(session)
+
                 return {
                     "status": "ok",
                     "type": "url",
                     "url": invoice.get("paymentUrl"),
                     "provider": provider,
-                    "amount": amount
+                    "amount": amount,
+                    "invoice_amount": inv_amount,
+                    "currency": inv_currency
                 }
             except Exception as e:
                 err_str = str(e)

@@ -1,6 +1,10 @@
 """Telegram Mini App (TMA) Mobile-First Storefront.
 
 Features:
+- Clean Product Rows: Eliminated repetitive 'Instant Delivery' labels, rendering clean stock badges (🟢 In Stock, 🔴 Out of Stock) and subtle custom activation tags.
+- Stock Priority Sorting: In-stock products always appear first in every catalog and filtered view, with out-of-stock items sinking to the bottom.
+- Vector SVG Favorites: Replaced emoji hearts with sleek, animated vector SVG outline/fill heart icons with drop-shadow glow.
+- Syriatel Cash SYP Denomination: Highlights that Syriatel Cash receives Syrian Pounds (SYP only) and displays converted live approximate SYP amounts on recharge controls.
 - Fixed Product Exploration Navigation: Preserves stable DOM structure in buy buttons, eliminates null reference crashes, and enables native Telegram BackButton support.
 - Separated Customer-Facing Payment Methods: Sham Cash, Syriatel Cash, Crypto, and Telegram Stars with ZERO backend/API names exposed.
 - External Browser Payment Sheet: Allows customers to open invoice URLs directly in their mobile browser or copy direct payment links.
@@ -10,7 +14,6 @@ Features:
 - SWR (Stale-While-Revalidate) instant 0ms launch cache via localStorage.
 - Dark & Light Mode Appearance Toggle with persistent storage and Telegram theme syncing.
 - Full Bidirectional Arabic & English i18n Overhaul (RTL/LTR, dynamic catalog & product re-rendering, directional arrows).
-- Native Arabic product descriptions from API (?lang=ar) when app language is Arabic, English otherwise.
 - In-App Checkout Coupon / Promo Code Input & validation (POST /api/coupon/validate).
 - Floating Liquid Glass Flyout Navbar with safe-area and active pill indicator.
 """
@@ -222,12 +225,44 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       border-radius: 14px;
       white-space: nowrap;
       cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
       transition: all 0.15s;
     }
     .filter-chip.active {
       background: rgba(56, 189, 248, 0.18);
       color: var(--accent);
       border-color: var(--accent);
+    }
+
+    /* Vector SVG Favorite Icon Styling */
+    .fav-btn-action {
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      padding: 5px;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      transition: background-color 0.15s;
+    }
+    .fav-btn-action:active { background: rgba(239, 68, 68, 0.15); }
+    .fav-icon-svg {
+      fill: none;
+      stroke: var(--hint);
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: all 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .fav-icon-svg.active {
+      fill: #ef4444;
+      stroke: #ef4444;
+      filter: drop-shadow(0 0 6px rgba(239, 68, 68, 0.45));
+      transform: scale(1.12);
     }
 
     /* Promotional Hero Banner */
@@ -536,16 +571,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       color: var(--hint);
       margin-top: 2px;
     }
-    .wishlist-btn-card {
-      background: transparent;
-      border: none;
-      font-size: 18px;
-      cursor: pointer;
-      padding: 4px;
-      line-height: 1;
-      transition: transform 0.15s;
-    }
-    .wishlist-btn-card:active { transform: scale(1.3); }
 
     /* IN-APP DEDICATED PRODUCT DETAIL PAGE */
     .page-hero {
@@ -1131,7 +1156,10 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     <!-- Quick Filters & Sorting -->
     <div class="filter-chips-row" id="quick-filters-row">
       <div class="filter-chip active" id="filter-all" onclick="applyCatalogFilter('all')">الكل</div>
-      <div class="filter-chip" id="filter-wishlist" onclick="applyCatalogFilter('wishlist')">❤️ المفضلة</div>
+      <div class="filter-chip" id="filter-wishlist" onclick="applyCatalogFilter('wishlist')">
+        <svg class="fav-icon-svg active" viewBox="0 0 24 24" width="14" height="14" style="filter:none;"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+        <span id="label-filter-wishlist">المفضلة</span>
+      </div>
       <div class="filter-chip" id="filter-stock" onclick="applyCatalogFilter('stock')">🟢 متوفر فقط</div>
       <div class="filter-chip" id="filter-instant" onclick="applyCatalogFilter('instant')">⚡ تسليم فوري</div>
       <div class="filter-chip" id="filter-lowprice" onclick="applyCatalogFilter('lowprice')">🪙 الأقل سعراً</div>
@@ -1188,7 +1216,9 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
     <div class="page-hero">
       <div class="hero-actions-bar">
-        <button class="circle-icon-btn" id="btn-detail-wishlist" onclick="toggleCurrentProductWishlist()" title="المفضلة">🤍</button>
+        <button class="circle-icon-btn" id="btn-detail-wishlist" onclick="toggleCurrentProductWishlist()" title="المفضلة">
+          <svg class="fav-icon-svg" viewBox="0 0 24 24" width="18" height="18"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+        </button>
         <button class="circle-icon-btn" onclick="shareCurrentProduct()" title="مشاركة">↗️</button>
       </div>
       <div class="hero-icon" id="prod-hero-icon">⚡</div>
@@ -1345,13 +1375,13 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         <div class="method-radio-check">✓</div>
       </div>
 
-      <!-- 4. Syriatel Cash -->
+      <!-- 4. Syriatel Cash (SYP only) -->
       <div class="recharge-method-card" id="method-card-syriatelcash" onclick="selectRechargeMethod('syriatelcash')">
         <div class="method-card-left">
           <span class="method-icon">📱</span>
           <div>
             <div class="method-name" id="label-method-syriatelcash-name">سيرياتيل كاش (Syriatel Cash)</div>
-            <div class="method-sub" id="label-method-syriatelcash-sub">دفع مباشر وسريع عبر سيرياتيل كاش</div>
+            <div class="method-sub" id="label-method-syriatelcash-sub">دفع مباشر بالليرة السورية (SYP فقط)</div>
           </div>
         </div>
         <div class="method-radio-check">✓</div>
@@ -1668,7 +1698,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     let currentCatalogViewMode = localStorage.getItem('ghstore_cat_view') || 'grid';
 
     // Recharge Flow State (Stars, Crypto, Sham Cash, Syriatel Cash)
-    let selectedRechargeMethod = 'stars'; // 'stars' | 'crypto' | 'shamcash' | 'syriatelcash'
+    let selectedRechargeMethod = 'stars';
     let selectedRechargeAmount = 10.0;
     let activeInvoiceUrl = null;
 
@@ -1736,7 +1766,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         showToast(currentAppLanguage === 'ar' ? 'تمت الإزالة من المفضلة' : 'Removed from favorites');
       } else {
         wishlistSet.add(id);
-        showToast(currentAppLanguage === 'ar' ? '❤️ تمت الإضافة للمفضلة!' : '❤️ Added to favorites!');
+        showToast(currentAppLanguage === 'ar' ? 'تمت الإضافة للمفضلة!' : 'Added to favorites!');
       }
       saveWishlist();
       updateWishlistUI();
@@ -1750,11 +1780,18 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     function updateWishlistUI() {
       const btn = document.getElementById('btn-detail-wishlist');
       if (btn && selectedProduct) {
-        btn.innerText = wishlistSet.has(Number(selectedProduct.id)) ? '❤️' : '🤍';
+        const isFav = wishlistSet.has(Number(selectedProduct.id));
+        btn.innerHTML = `
+          <svg class="fav-icon-svg ${isFav ? 'active' : ''}" viewBox="0 0 24 24" width="20" height="20">
+            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+          </svg>
+        `;
       }
-      document.querySelectorAll('.wishlist-btn-card').forEach(b => {
+      document.querySelectorAll('.fav-btn-action').forEach(b => {
         const pid = Number(b.dataset.pid);
-        b.innerText = wishlistSet.has(pid) ? '❤️' : '🤍';
+        const isFav = wishlistSet.has(pid);
+        const svg = b.querySelector('.fav-icon-svg');
+        if (svg) svg.classList.toggle('active', isFav);
       });
     }
 
@@ -1914,7 +1951,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         caption: "المتجر الرقمي المعتمد",
         search: "ابحث عن كلود، جيميني، نتفلكس، في بي ان...",
         filter_all: "الكل",
-        filter_wishlist: "❤️ المفضلة",
+        filter_wishlist: "المفضلة",
         filter_stock: "🟢 متوفر فقط",
         filter_instant: "⚡ تسليم فوري",
         filter_lowprice: "🪙 الأقل سعراً",
@@ -1934,10 +1971,10 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         view_list: "قائمة",
         product: "المنتج",
         instant_delivery: "⚡ تسليم تلقائي فوري",
-        custom_activation: "⏳ تفعيل مخصص",
+        custom_activation: "تفعيل مخصص",
         warranty_30d: "🛡️ ضمان 30 يوم",
-        in_stock: "🟢 متوفر",
-        out_of_stock: "🔴 نفد المخزون",
+        in_stock: "متوفر",
+        out_of_stock: "نفد المخزون",
         desc: "الوصف",
         promo_code_label: "كود الخصم / Promo Code",
         apply: "تطبيق",
@@ -1971,7 +2008,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         shamcash_title: "شام كاش (Sham Cash)",
         shamcash_sub: "دفع مباشر وسريع عبر بنك شام كاش",
         syriatelcash_title: "سيرياتيل كاش (Syriatel Cash)",
-        syriatelcash_sub: "دفع مباشر وسريع عبر سيرياتيل كاش",
+        syriatelcash_sub: "دفع مباشر بالليرة السورية (SYP فقط)",
         amount_section_title: "2. اختر المبلغ أو حدد مخصصاً",
         custom_amount_placeholder: "أدخل المبلغ ($)... e.g. 15",
         voucher_section_title: "شحن عبر كرت هدية (Voucher)",
@@ -2005,7 +2042,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         caption: "Verified Digital Reseller",
         search: "Search Claude, Gemini, Netflix, VPN...",
         filter_all: "All",
-        filter_wishlist: "❤️ Favorites",
+        filter_wishlist: "Favorites",
         filter_stock: "🟢 In Stock",
         filter_instant: "⚡ Instant Delivery",
         filter_lowprice: "🪙 Lowest Price",
@@ -2025,10 +2062,10 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         view_list: "List",
         product: "Product",
         instant_delivery: "⚡ Instant Automated Delivery",
-        custom_activation: "⏳ Custom Activation",
+        custom_activation: "Custom Activation",
         warranty_30d: "🛡️ 30 Days Warranty",
-        in_stock: "🟢 In Stock",
-        out_of_stock: "🔴 Out of Stock",
+        in_stock: "In Stock",
+        out_of_stock: "Out of Stock",
         desc: "Description",
         promo_code_label: "Promo Code / Coupon",
         apply: "Apply",
@@ -2062,7 +2099,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         shamcash_title: "Sham Cash",
         shamcash_sub: "Direct payment via Sham Cash wallet",
         syriatelcash_title: "Syriatel Cash",
-        syriatelcash_sub: "Direct payment via Syriatel Cash wallet",
+        syriatelcash_sub: "Direct payment in Syrian Pounds (SYP only)",
         amount_section_title: "2. Choose Amount or Enter Custom",
         custom_amount_placeholder: "Enter amount ($)... e.g. 15",
         voucher_section_title: "Redeem Gift Card (Voucher)",
@@ -2109,7 +2146,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       const sInput = document.getElementById('store-search-input');
       if (sInput) sInput.placeholder = d.search;
       setText('filter-all', d.filter_all);
-      setText('filter-wishlist', d.filter_wishlist);
+      setText('label-filter-wishlist', d.filter_wishlist);
       setText('filter-stock', d.filter_stock);
       setText('filter-instant', d.filter_instant);
       setText('filter-lowprice', d.filter_lowprice);
@@ -2390,7 +2427,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       }
     }
 
-    // Quick Filters & Sorting Logic
+    // Quick Filters & Sorting Logic (IN-STOCK PARTITIONING: Available first, Out-of-Stock last)
     function applyCatalogFilter(filterKey) {
       haptic('pop');
       activeCatalogFilter = filterKey;
@@ -2419,7 +2456,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
       const filtered = filterAndSortProducts(baseList);
       document.getElementById('active-collection-title').innerText = filterKey === 'wishlist'
-        ? (currentAppLanguage === 'ar' ? '❤️ المفضلة' : '❤️ Favorites')
+        ? (currentAppLanguage === 'ar' ? 'المفضلة' : 'Favorites')
         : (currentAppLanguage === 'ar' ? 'النتائج المصفاة' : 'Filtered Results');
       renderProductItems(filtered);
 
@@ -2437,9 +2474,19 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         result = result.filter(p => p.stock === null || p.stock > 0);
       } else if (activeCatalogFilter === 'instant') {
         result = result.filter(p => p.delivery_type !== 'activation');
-      } else if (activeCatalogFilter === 'lowprice') {
-        result.sort((a, b) => (a.price || 0) - (b.price || 0));
       }
+
+      // Priority sort: In-stock items ALWAYS at the top, out-of-stock items sink to the very end!
+      result.sort((a, b) => {
+        const aOut = (a.stock !== null && a.stock <= 0) ? 1 : 0;
+        const bOut = (b.stock !== null && b.stock <= 0) ? 1 : 0;
+        if (aOut !== bOut) return aOut - bOut;
+        if (activeCatalogFilter === 'lowprice') {
+          return (a.price || 0) - (b.price || 0);
+        }
+        return 0;
+      });
+
       return result;
     }
 
@@ -2478,6 +2525,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       returnToCollections();
     }
 
+    // Clean Product Rows: No repetitive 'Instant Delivery', clean stock status, vector SVG favorite icon
     function renderProductItems(products) {
       const container = document.getElementById('catalog-products-list');
       if (!container) return;
@@ -2489,12 +2537,21 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       container.innerHTML = products.map(p => {
         const isFav = wishlistSet.has(Number(p.id));
         const isOutOfStock = (p.stock !== null && p.stock <= 0);
-        const stockStr = isOutOfStock
-          ? (currentAppLanguage === 'ar' ? 'نفد المخزون' : 'Out of Stock')
-          : (p.stock ? `${currentAppLanguage === 'ar' ? 'متوفر' : 'In Stock'} (${p.stock})` : (currentAppLanguage === 'ar' ? 'تسليم فوري' : 'Instant Delivery'));
-        const deliveryStr = (p.delivery_type === 'activation')
-          ? (currentAppLanguage === 'ar' ? 'تفعيل مخصص' : 'Custom Activation')
-          : (currentAppLanguage === 'ar' ? 'تسليم تلقائي' : 'Instant Delivery');
+        const isCustom = (p.delivery_type === 'activation');
+
+        const stockBadge = isOutOfStock
+          ? `<span style="color: var(--danger); font-weight: 700;">🔴 ${d.out_of_stock}</span>`
+          : `<span style="color: var(--success); font-weight: 600;">🟢 ${p.stock ? `${d.in_stock} (${p.stock})` : d.in_stock}</span>`;
+
+        const customBadge = isCustom
+          ? ` · <span style="color: var(--warning); font-size: 11px; font-weight: 600;">⏳ ${d.custom_activation}</span>`
+          : '';
+
+        const favSvg = `
+          <svg class="fav-icon-svg ${isFav ? 'active' : ''}" viewBox="0 0 24 24" width="18" height="18">
+            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+          </svg>
+        `;
 
         return `
           <div class="product-row" onclick="openProductDetail(${Number(p.id)})">
@@ -2503,15 +2560,16 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
               <div class="prod-details">
                 <div class="prod-title">${p.name}</div>
                 <div class="prod-desc">
-                  <span style="${isOutOfStock ? 'color: var(--danger); font-weight:700;' : ''}">${stockStr}</span> ·
-                  <span>${deliveryStr}</span>
+                  ${stockBadge}${customBadge}
                 </div>
               </div>
             </div>
             <div class="prod-price-box">
               <div class="prod-price">${p.price ? p.price.toFixed(2) + p.sym : 'N/A'}</div>
               <div style="display: flex; align-items: center; gap: 4px; margin-top: 2px;">
-                <button class="wishlist-btn-card" data-pid="${p.id}" onclick="toggleWishlist(${p.id}, event)">${isFav ? '❤️' : '🤍'}</button>
+                <button class="fav-btn-action" data-pid="${p.id}" onclick="toggleWishlist(${p.id}, event)">
+                  ${favSvg}
+                </button>
                 <div class="prod-tap-hint">${d.view_details}</div>
               </div>
             </div>
@@ -2520,7 +2578,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       }).join('');
     }
 
-    // DEDICATED IN-APP PRODUCT DETAIL PAGE (FIXED NAVIGATION & DOM PRESERVATION)
+    // DEDICATED IN-APP PRODUCT DETAIL PAGE (FIXED NAVIGATION & PRESERVED DOM)
     function openProductDetail(productId) {
       haptic('light');
       selectedProduct = allProducts.find(p => Number(p.id) === Number(productId));
@@ -2944,10 +3002,21 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       }
 
       const amtStr = selectedRechargeAmount ? selectedRechargeAmount.toFixed(2) : "10.00";
-      if (currentAppLanguage === 'ar') {
-        btn.innerHTML = `<span>⚡</span> <span>شحن ${amtStr}$ عبر ${methodName}</span>`;
+      if (selectedRechargeMethod === 'syriatelcash') {
+        // Syriatel Cash is strictly SYP
+        const sypRate = 392.0;
+        const sypEst = Math.round(selectedRechargeAmount * sypRate);
+        if (currentAppLanguage === 'ar') {
+          btn.innerHTML = `<span>⚡</span> <span>شحن ${amtStr}$ (≈ ${sypEst.toLocaleString()} ل.س) عبر ${methodName}</span>`;
+        } else {
+          btn.innerHTML = `<span>⚡</span> <span>Recharge $${amtStr} (≈ ${sypEst.toLocaleString()} SYP) via ${methodName}</span>`;
+        }
       } else {
-        btn.innerHTML = `<span>⚡</span> <span>Recharge $${amtStr} via ${methodName}</span>`;
+        if (currentAppLanguage === 'ar') {
+          btn.innerHTML = `<span>⚡</span> <span>شحن ${amtStr}$ عبر ${methodName}</span>`;
+        } else {
+          btn.innerHTML = `<span>⚡</span> <span>Recharge $${amtStr} via ${methodName}</span>`;
+        }
       }
     }
 
