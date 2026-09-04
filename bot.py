@@ -829,20 +829,31 @@ async def create_tma_topup_invoice(request: Request):
                 logging.error("Failed to create crypto invoice: %s", e)
                 return JSONResponse({"error": "crypto_failed", "detail": str(e)}, status_code=502)
 
-        elif method == "sam":
-            provider = body.get("provider", "shamcash")
+        elif method in ("sam", "shamcash", "syriatelcash", "syriatel"):
+            # Determine provider: "shamcash" or "syriatelcash"
+            provider = "syriatelcash" if method in ("syriatelcash", "syriatel") or body.get("provider") in ("syriatel", "syriatelcash") else "shamcash"
             try:
                 from services.sam import SamService
-                identifier = await ConfigService.get(session, "SAM_RECEIVING_WALLET", env_fallback=config.SAM_RECEIVING_WALLET)
+                # Check provider-specific wallet identifier or fall back to main wallet
+                wallet_key = "SAM_RECEIVING_WALLET_SYRIATEL" if provider == "syriatelcash" else "SAM_RECEIVING_WALLET_SHAMCASH"
+                identifier = await ConfigService.get(session, wallet_key, env_fallback=os.environ.get(wallet_key))
+                if not identifier:
+                    identifier = await ConfigService.get(session, "SAM_RECEIVING_WALLET", env_fallback=config.SAM_RECEIVING_WALLET)
+
                 invoice = await SamService.create_invoice(
                     session, provider, identifier or "wallet", amount, "USD",
                     webhook_url=config.get_sam_webhook_url()
                 )
-                return {"status": "ok", "type": "url", "url": invoice.get("paymentUrl")}
+                return {
+                    "status": "ok",
+                    "type": "url",
+                    "url": invoice.get("paymentUrl"),
+                    "provider": provider,
+                    "amount": amount
+                }
             except Exception as e:
-                logging.error("Failed to create SAM invoice: %s", e)
-                return JSONResponse({"error": "sam_failed", "detail": str(e)}, status_code=502)
-
+                logging.error("Failed to create invoice for provider %s: %s", provider, e)
+                return JSONResponse({"error": "payment_creation_failed", "detail": str(e)}, status_code=502)
     return JSONResponse({"error": "unknown_method"}, status_code=400)
 
 

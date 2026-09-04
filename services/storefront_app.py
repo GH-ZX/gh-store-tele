@@ -1,6 +1,9 @@
 """Telegram Mini App (TMA) Mobile-First Storefront.
 
 Features:
+- Fixed Product Exploration Navigation: Preserves stable DOM structure in buy buttons, eliminates null reference crashes, and enables native Telegram BackButton support.
+- Separated Customer-Facing Payment Methods: Sham Cash, Syriatel Cash, Crypto, and Telegram Stars with ZERO backend/API names exposed.
+- External Browser Payment Sheet: Allows customers to open invoice URLs directly in their mobile browser or copy direct payment links.
 - Category Cards: Picture & Title Visual Grid by default, with instant toggle to List view.
 - Profile & Settings: Hides VIP badge if Standard (0%), shows only if real discount applied; prominently displays @username.
 - Referral Program: 0.2% profit margin commission on referred purchases, stat cards, and referred friends breakdown list in Settings.
@@ -8,14 +11,6 @@ Features:
 - Dark & Light Mode Appearance Toggle with persistent storage and Telegram theme syncing.
 - Full Bidirectional Arabic & English i18n Overhaul (RTL/LTR, dynamic catalog & product re-rendering, directional arrows).
 - Native Arabic product descriptions from API (?lang=ar) when app language is Arabic, English otherwise.
-- UX-Hardened Recharge Flow: Step 1 method selector (Stars, Crypto, SAM), Step 2 amount chips (+$1, +$5, +$10, +$25, +$50, +$100) + custom amount input, Step 3 dynamic action button with loading state.
-- Wishlist / Favorites synchronized via Telegram CloudStorage with localStorage fallback.
-- In-App 1-Tap Restock Notification button ('🔔 نبهني فور التوفر') via POST /api/restock/subscribe.
-- Structured Credential Splitter for delivered accounts (email:pass:2fa) with discrete copy pills.
-- Add to Home Screen integration (tg.addToHomeScreen).
-- 1-Tap Telegram Product & Story Sharing with referral tracking.
-- Catalog Quick Filters (Instant Only, In-Stock, Low-to-High Price, Favorites).
-- Web Audio zero-asset synthesized micro-clicks, pops, and celebratory chimes.
 - In-App Checkout Coupon / Promo Code Input & validation (POST /api/coupon/validate).
 - Floating Liquid Glass Flyout Navbar with safe-area and active pill indicator.
 """
@@ -308,7 +303,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
     }
 
-    /* Picture & Title Visual Grid Layout (Cards with image and title) */
+    /* Picture & Title Visual Grid Layout */
     .catalogs-grid.grid-layout {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
@@ -830,7 +825,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     }
     .btn-copy-mini:active { background: rgba(56, 189, 248, 0.25); }
 
-    /* HARDENED RECHARGE UI COMPONENTS */
+    /* RECHARGE METHODS (Zero backend API names exposed) */
     .recharge-methods-grid {
       display: flex;
       flex-direction: column;
@@ -1075,6 +1070,27 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
   <canvas id="confetti-canvas"></canvas>
   <div class="toast-pill" id="toast">تم النسخ!</div>
 
+  <!-- External Browser Payment Link Modal / Sheet -->
+  <div id="payment-link-sheet" style="position: fixed; inset: 0; background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); z-index: 200; display: none; align-items: flex-end; justify-content: center;">
+    <div class="inset-card" style="width: 100%; max-width: 480px; margin: 0; border-radius: 24px 24px 0 0; padding: 24px 20px calc(var(--safe-bottom) + 20px) 20px; box-shadow: 0 -8px 32px rgba(0,0,0,0.5);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <h3 style="font-size: 18px; font-weight: 800;" id="sheet-payment-title">⚡ إتمام عملية الشحن</h3>
+        <button class="circle-icon-btn" onclick="closePaymentLinkSheet()">✕</button>
+      </div>
+      <p style="font-size: 13px; color: var(--hint); margin-bottom: 18px; line-height: 1.5;" id="sheet-payment-desc">
+        تم إنشاء فاتورة الشحن بنجاح. يمكنك المتابعة في المتصفح الخارجي لإتمام الدفع، أو نسخ رابط الفاتورة:
+      </p>
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <button class="btn-action-primary" id="sheet-btn-open-browser" onclick="openPaymentInExternalBrowser()">
+          <span>🌐</span> <span id="sheet-label-open">فتح صفحة الدفع في المتصفح</span>
+        </button>
+        <button class="btn-action-secondary" id="sheet-btn-copy-link" onclick="copyPaymentInvoiceLink()" style="height: 48px;">
+          <span>📋</span> <span id="sheet-label-copy">نسخ رابط الفاتورة المباشر</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Top Sticky Bar -->
   <header class="top-header">
     <div class="header-user" onclick="switchTab('settings')">
@@ -1160,7 +1176,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     </div>
   </main>
 
-  <!-- DEDICATED IN-APP PRODUCT DETAIL PAGE -->
+  <!-- DEDICATED IN-APP PRODUCT DETAIL PAGE (FIXED NAVIGATION & PRESERVED DOM) -->
   <section id="view-product-detail" class="tab-view">
     <div class="subview-header">
       <button class="btn-back-catalog" onclick="closeProductDetailPage()">
@@ -1228,6 +1244,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         </button>
       </div>
 
+      <!-- In-App Purchase Action Button (Stable child tags preserved) -->
       <button class="btn-action-primary" id="btn-inapp-purchase" onclick="executeProductBuy()">
         <span id="btn-buy-action-label">⚡ شراء فوري</span>
         <span id="btn-price-tag">($0.00)</span>
@@ -1270,7 +1287,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     </div>
   </main>
 
-  <!-- TAB 3: WALLET VIEW (UX-HARDENED RECHARGE FLOW) -->
+  <!-- TAB 3: WALLET VIEW (4 USER-FACING RECHARGE METHODS) -->
   <main id="view-wallet" class="tab-view">
     <div class="hero-banner" style="text-align: center; padding: 24px 16px;">
       <div style="font-size: 12px; color: var(--hint); text-transform: uppercase; letter-spacing: 0.5px;" id="label-wallet-balance-title">الرصيد المتاح للشراء</div>
@@ -1289,37 +1306,52 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- Step 1: Choose Payment Method -->
+    <!-- Step 1: Choose Payment Method (4 Distinct Options, Zero API Names) -->
     <div class="section-title" id="recharge-method-title">1. اختر وسيلة الشحن</div>
     <div class="recharge-methods-grid">
+      <!-- 1. Telegram Stars -->
       <div class="recharge-method-card active" id="method-card-stars" onclick="selectRechargeMethod('stars')">
         <div class="method-card-left">
           <span class="method-icon">⭐</span>
           <div>
             <div class="method-name" id="label-method-stars-name">نجوم تيليجرام (Telegram Stars)</div>
-            <div class="method-sub" id="label-method-stars-sub">دفع فوري عبر Apple Pay أو Google Pay</div>
+            <div class="method-sub" id="label-method-stars-sub">دفع فوري عبر Apple Pay أو Google Pay أو النجوم</div>
           </div>
         </div>
         <div class="method-radio-check">✓</div>
       </div>
 
+      <!-- 2. Cryptocurrency -->
       <div class="recharge-method-card" id="method-card-crypto" onclick="selectRechargeMethod('crypto')">
         <div class="method-card-left">
           <span class="method-icon">🪙</span>
           <div>
             <div class="method-name" id="label-method-crypto-name">العملات الرقمية (Crypto)</div>
-            <div class="method-sub" id="label-method-crypto-sub">USDT (TRC20/BEP20), BTC, SOL عبر KryptoExpress</div>
+            <div class="method-sub" id="label-method-crypto-sub">USDT (TRC20/BEP20), Bitcoin, Solana, TON</div>
           </div>
         </div>
         <div class="method-radio-check">✓</div>
       </div>
 
-      <div class="recharge-method-card" id="method-card-sam" onclick="selectRechargeMethod('sam')">
+      <!-- 3. Sham Cash -->
+      <div class="recharge-method-card" id="method-card-shamcash" onclick="selectRechargeMethod('shamcash')">
+        <div class="method-card-left">
+          <span class="method-icon">💳</span>
+          <div>
+            <div class="method-name" id="label-method-shamcash-name">شام كاش (Sham Cash)</div>
+            <div class="method-sub" id="label-method-shamcash-sub">دفع مباشر وسريع عبر بنك شام كاش</div>
+          </div>
+        </div>
+        <div class="method-radio-check">✓</div>
+      </div>
+
+      <!-- 4. Syriatel Cash -->
+      <div class="recharge-method-card" id="method-card-syriatelcash" onclick="selectRechargeMethod('syriatelcash')">
         <div class="method-card-left">
           <span class="method-icon">📱</span>
           <div>
-            <div class="method-name" id="label-method-sam-name">سيرياتيل كاش وشام كاش (SAM)</div>
-            <div class="method-sub" id="label-method-sam-sub">دفع مباشر عبر المحافظ الإلكترونية السورية</div>
+            <div class="method-name" id="label-method-syriatelcash-name">سيرياتيل كاش (Syriatel Cash)</div>
+            <div class="method-sub" id="label-method-syriatelcash-sub">دفع مباشر وسريع عبر سيرياتيل كاش</div>
           </div>
         </div>
         <div class="method-radio-check">✓</div>
@@ -1635,9 +1667,10 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     let wishlistSet = new Set();
     let currentCatalogViewMode = localStorage.getItem('ghstore_cat_view') || 'grid';
 
-    // Recharge Flow State
-    let selectedRechargeMethod = 'stars';
+    // Recharge Flow State (Stars, Crypto, Sham Cash, Syriatel Cash)
+    let selectedRechargeMethod = 'stars'; // 'stars' | 'crypto' | 'shamcash' | 'syriatelcash'
     let selectedRechargeAmount = 10.0;
+    let activeInvoiceUrl = null;
 
     // Telegram User ID Resolution
     const urlParams = new URLSearchParams(window.location.search);
@@ -1871,7 +1904,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       }).join('');
     }
 
-    // Complete i18n Translation Dictionary
+    // Complete i18n Translation Dictionary (Zero API names exposed)
     const I18N = {
       ar: {
         store: "المتجر",
@@ -1932,11 +1965,13 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         vip_progress: "التقدم نحو رتبة",
         method_section_title: "1. اختر وسيلة الشحن",
         stars_title: "نجوم تيليجرام (Telegram Stars)",
-        stars_sub: "دفع فوري عبر Apple Pay أو Google Pay",
+        stars_sub: "دفع فوري عبر Apple Pay أو Google Pay أو النجوم",
         crypto_title: "العملات الرقمية (Crypto)",
-        crypto_sub: "USDT (TRC20/BEP20), BTC, SOL عبر KryptoExpress",
-        sam_title: "سيرياتيل كاش وشام كاش (SAM)",
-        sam_sub: "دفع مباشر عبر المحافظ الإلكترونية السورية",
+        crypto_sub: "USDT (TRC20/BEP20), Bitcoin, Solana, TON",
+        shamcash_title: "شام كاش (Sham Cash)",
+        shamcash_sub: "دفع مباشر وسريع عبر بنك شام كاش",
+        syriatelcash_title: "سيرياتيل كاش (Syriatel Cash)",
+        syriatelcash_sub: "دفع مباشر وسريع عبر سيرياتيل كاش",
         amount_section_title: "2. اختر المبلغ أو حدد مخصصاً",
         custom_amount_placeholder: "أدخل المبلغ ($)... e.g. 15",
         voucher_section_title: "شحن عبر كرت هدية (Voucher)",
@@ -1956,7 +1991,11 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         ref_stat_rate: "نسبة العمولة",
         ref_breakdown_title: "👥 سجل الأصدقاء المدعوين والأرباح",
         copy: "نسخ",
-        orders_word: "طلب"
+        orders_word: "طلب",
+        sheet_payment_title: "⚡ إتمام عملية الشحن",
+        sheet_payment_desc: "تم إنشاء فاتورة الشحن بنجاح. يمكنك المتابعة في المتصفح الخارجي لإتمام الدفع، أو نسخ رابط الفاتورة المباشر:",
+        sheet_open_btn: "فتح صفحة الدفع في المتصفح",
+        sheet_copy_btn: "نسخ رابط الفاتورة المباشر"
       },
       en: {
         store: "Store",
@@ -2017,11 +2056,13 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         vip_progress: "Progress to",
         method_section_title: "1. Select Payment Method",
         stars_title: "Telegram Stars",
-        stars_sub: "Instant pay via Apple Pay, Google Pay or Stars",
-        crypto_title: "Crypto (USDT, BTC, SOL)",
-        crypto_sub: "USDT (TRC20/BEP20), BTC, SOL via KryptoExpress",
-        sam_title: "Syriatel Cash & Sham Cash (SAM)",
-        sam_sub: "Direct payment via Syrian mobile wallets",
+        stars_sub: "Instant payment via Apple Pay, Google Pay or Stars",
+        crypto_title: "Cryptocurrency (Crypto)",
+        crypto_sub: "USDT (TRC20/BEP20), Bitcoin, Solana, TON",
+        shamcash_title: "Sham Cash",
+        shamcash_sub: "Direct payment via Sham Cash wallet",
+        syriatelcash_title: "Syriatel Cash",
+        syriatelcash_sub: "Direct payment via Syriatel Cash wallet",
         amount_section_title: "2. Choose Amount or Enter Custom",
         custom_amount_placeholder: "Enter amount ($)... e.g. 15",
         voucher_section_title: "Redeem Gift Card (Voucher)",
@@ -2041,7 +2082,11 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         ref_stat_rate: "Commission",
         ref_breakdown_title: "👥 Referred Friends & Earnings Breakdown",
         copy: "Copy",
-        orders_word: "orders"
+        orders_word: "orders",
+        sheet_payment_title: "⚡ Complete Payment",
+        sheet_payment_desc: "Invoice created successfully. You can proceed in your mobile browser or copy the direct payment link:",
+        sheet_open_btn: "Open Payment Page in Browser",
+        sheet_copy_btn: "Copy Direct Payment Link"
       }
     };
 
@@ -2108,11 +2153,19 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       setText('label-method-stars-sub', d.stars_sub);
       setText('label-method-crypto-name', d.crypto_title);
       setText('label-method-crypto-sub', d.crypto_sub);
-      setText('label-method-sam-name', d.sam_title);
-      setText('label-method-sam-sub', d.sam_sub);
+      setText('label-method-shamcash-name', d.shamcash_title);
+      setText('label-method-shamcash-sub', d.shamcash_sub);
+      setText('label-method-syriatelcash-name', d.syriatelcash_title);
+      setText('label-method-syriatelcash-sub', d.syriatelcash_sub);
       setText('recharge-amount-title', d.amount_section_title);
       setText('voucher-section-title', d.voucher_section_title);
       setText('voucher-redeem-btn', d.voucher_btn);
+
+      // Payment Sheet modal labels
+      setText('sheet-payment-title', d.sheet_payment_title);
+      setText('sheet-payment-desc', d.sheet_payment_desc);
+      setText('sheet-label-open', d.sheet_open_btn);
+      setText('sheet-label-copy', d.sheet_copy_btn);
 
       const customInput = document.getElementById('custom-topup-input');
       if (customInput) customInput.placeholder = d.custom_amount_placeholder;
@@ -2266,7 +2319,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         const displayPreview = (currentAppLanguage === 'ar' && meta.arPreview) ? meta.arPreview : (meta.enPreview || meta.arPreview);
 
         if (isGrid) {
-          // Visual Card: Picture + Title
           return `
             <div class="catalog-visual-card" style="background-image: url('${meta.image}');" onclick="openCollection('${catName.replace(/'/g, "\\\\'")}')">
               <div class="catalog-visual-overlay"></div>
@@ -2284,7 +2336,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
           `;
         }
 
-        // List Card (Alternate View)
         const chevron = (currentAppLanguage === 'ar') ? '‹' : '›';
         return `
           <div class="catalog-list-card" onclick="openCollection('${catName.replace(/'/g, "\\\\'")}')">
@@ -2319,6 +2370,11 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       let filtered = allProducts.filter(p => p.category === catName);
       filtered = filterAndSortProducts(filtered);
       renderProductItems(filtered);
+
+      if (tg?.BackButton) {
+        tg.BackButton.show();
+        tg.BackButton.onClick(returnToCollections);
+      }
     }
 
     function returnToCollections() {
@@ -2328,6 +2384,10 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       document.getElementById('store-clear-btn').style.display = 'none';
       document.getElementById('products-catalog-mode').style.display = 'none';
       document.getElementById('catalogs-collection-mode').style.display = 'block';
+
+      if (tg?.BackButton) {
+        tg.BackButton.hide();
+      }
     }
 
     // Quick Filters & Sorting Logic
@@ -2362,6 +2422,11 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         ? (currentAppLanguage === 'ar' ? '❤️ المفضلة' : '❤️ Favorites')
         : (currentAppLanguage === 'ar' ? 'النتائج المصفاة' : 'Filtered Results');
       renderProductItems(filtered);
+
+      if (tg?.BackButton) {
+        tg.BackButton.show();
+        tg.BackButton.onClick(returnToCollections);
+      }
     }
 
     function filterAndSortProducts(list) {
@@ -2396,6 +2461,11 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         );
         matched = filterAndSortProducts(matched);
         renderProductItems(matched);
+
+        if (tg?.BackButton) {
+          tg.BackButton.show();
+          tg.BackButton.onClick(returnToCollections);
+        }
       } else {
         clearBtn.style.display = 'none';
         if (activeCatalogFilter === 'all') returnToCollections();
@@ -2450,67 +2520,101 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       }).join('');
     }
 
-    // DEDICATED IN-APP PRODUCT DETAIL PAGE
+    // DEDICATED IN-APP PRODUCT DETAIL PAGE (FIXED NAVIGATION & DOM PRESERVATION)
     function openProductDetail(productId) {
       haptic('light');
       selectedProduct = allProducts.find(p => Number(p.id) === Number(productId));
       if (!selectedProduct) return;
       selectedQty = 1;
       appliedCoupon = null;
-      document.getElementById('coupon-code-input').value = '';
-      document.getElementById('coupon-applied-note').style.display = 'none';
 
-      document.getElementById('prod-hero-icon').innerText = selectedProduct.emoji || '⚡';
-      document.getElementById('prod-hero-name').innerText = selectedProduct.name;
-      document.getElementById('prod-hero-cat').innerText = selectedProduct.category || 'Digital';
+      try {
+        const couponInput = document.getElementById('coupon-code-input');
+        if (couponInput) couponInput.value = '';
+        const couponNote = document.getElementById('coupon-applied-note');
+        if (couponNote) couponNote.style.display = 'none';
 
-      const rawDesc = (currentAppLanguage === 'ar' && selectedProduct.description_ar)
-        ? selectedProduct.description_ar
-        : (selectedProduct.description || '');
-      document.getElementById('prod-rich-desc').innerHTML = formatRichDescription(rawDesc);
+        const setTxt = (id, txt) => {
+          const el = document.getElementById(id);
+          if (el) el.innerText = txt;
+        };
 
-      const isInstant = selectedProduct.delivery_type !== 'activation';
-      const isOutOfStock = (selectedProduct.stock !== null && selectedProduct.stock <= 0);
+        setTxt('prod-hero-icon', selectedProduct.emoji || '⚡');
+        setTxt('prod-hero-name', selectedProduct.name);
+        setTxt('prod-hero-cat', selectedProduct.category || 'Digital');
+        setTxt('prod-qty-val', '1');
 
-      document.getElementById('prod-delivery-badge').innerText = isInstant
-        ? (currentAppLanguage === 'ar' ? '⚡ تسليم تلقائي فوري' : '⚡ Instant Automated Delivery')
-        : (currentAppLanguage === 'ar' ? '⏳ تفعيل مخصص' : '⏳ Custom Activation');
+        const rawDesc = (currentAppLanguage === 'ar' && selectedProduct.description_ar)
+          ? selectedProduct.description_ar
+          : (selectedProduct.description || '');
+        const descBox = document.getElementById('prod-rich-desc');
+        if (descBox) descBox.innerHTML = formatRichDescription(rawDesc);
 
-      document.getElementById('prod-stock-badge').innerText = isOutOfStock
-        ? (currentAppLanguage === 'ar' ? '🔴 نفد المخزون' : '🔴 Out of Stock')
-        : (selectedProduct.stock ? `${currentAppLanguage === 'ar' ? '🟢 متوفر' : '🟢 In Stock'} (${selectedProduct.stock})` : (currentAppLanguage === 'ar' ? '⚡ تسليم فوري' : '⚡ Instant Delivery'));
+        const isInstant = selectedProduct.delivery_type !== 'activation';
+        const isOutOfStock = (selectedProduct.stock !== null && selectedProduct.stock <= 0);
 
-      const restockBox = document.getElementById('restock-alert-box');
-      const buyBtn = document.getElementById('btn-inapp-purchase');
-      const starsBtn = document.getElementById('btn-stars-purchase');
+        setTxt('prod-delivery-badge', isInstant
+          ? (currentAppLanguage === 'ar' ? '⚡ تسليم تلقائي فوري' : '⚡ Instant Automated Delivery')
+          : (currentAppLanguage === 'ar' ? '⏳ تفعيل مخصص' : '⏳ Custom Activation'));
 
-      if (isOutOfStock) {
-        restockBox.style.display = 'block';
-        buyBtn.style.display = 'none';
-        starsBtn.style.display = 'none';
-      } else {
-        restockBox.style.display = 'none';
-        buyBtn.style.display = 'flex';
-        starsBtn.style.display = 'flex';
+        setTxt('prod-stock-badge', isOutOfStock
+          ? (currentAppLanguage === 'ar' ? '🔴 نفد المخزون' : '🔴 Out of Stock')
+          : (selectedProduct.stock ? `${currentAppLanguage === 'ar' ? '🟢 متوفر' : '🟢 In Stock'} (${selectedProduct.stock})` : (currentAppLanguage === 'ar' ? '⚡ تسليم فوري' : '⚡ Instant Delivery')));
+
+        const restockBox = document.getElementById('restock-alert-box');
+        const buyBtn = document.getElementById('btn-inapp-purchase');
+        const starsBtn = document.getElementById('btn-stars-purchase');
+
+        if (isOutOfStock) {
+          if (restockBox) restockBox.style.display = 'block';
+          if (buyBtn) buyBtn.style.display = 'none';
+          if (starsBtn) starsBtn.style.display = 'none';
+        } else {
+          if (restockBox) restockBox.style.display = 'none';
+          if (buyBtn) buyBtn.style.display = 'flex';
+          if (starsBtn) starsBtn.style.display = 'flex';
+        }
+
+        updateWishlistUI();
+        updateDetailPagePrice();
+      } catch (err) {
+        console.error("Setup product detail error:", err);
       }
 
-      updateWishlistUI();
-      updateDetailPagePrice();
+      // Native Telegram BackButton support
+      if (tg?.BackButton) {
+        tg.BackButton.show();
+        tg.BackButton.onClick(closeProductDetailPage);
+      }
 
+      // Safely activate product detail view
       document.querySelectorAll('.tab-view').forEach(el => el.classList.remove('active'));
-      document.getElementById('view-product-detail').classList.add('active');
+      const detailView = document.getElementById('view-product-detail');
+      if (detailView) detailView.classList.add('active');
     }
 
     function closeProductDetailPage() {
       haptic('light');
-      document.getElementById('view-product-detail').classList.remove('active');
-      document.getElementById('view-store').classList.add('active');
+      const detailView = document.getElementById('view-product-detail');
+      if (detailView) detailView.classList.remove('active');
+      const storeView = document.getElementById('view-store');
+      if (storeView) storeView.classList.add('active');
+
+      if (tg?.BackButton) {
+        if (activeCatalog) {
+          tg.BackButton.show();
+          tg.BackButton.onClick(returnToCollections);
+        } else {
+          tg.BackButton.hide();
+        }
+      }
     }
 
     function adjustQty(delta) {
       haptic('light');
       selectedQty = Math.max(1, Math.min(10, selectedQty + delta));
-      document.getElementById('prod-qty-val').innerText = selectedQty;
+      const qVal = document.getElementById('prod-qty-val');
+      if (qVal) qVal.innerText = selectedQty;
       updateDetailPagePrice();
     }
 
@@ -2533,13 +2637,16 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
           appliedCoupon = d;
           haptic('success');
           const note = document.getElementById('coupon-applied-note');
-          note.innerText = d.message;
-          note.style.display = 'block';
+          if (note) {
+            note.innerText = d.message;
+            note.style.display = 'block';
+          }
           updateDetailPagePrice();
         } else {
           appliedCoupon = null;
           showToast(d.error || (currentAppLanguage === 'ar' ? 'كود الخصم غير صالح' : 'Invalid promo code'));
-          document.getElementById('coupon-applied-note').style.display = 'none';
+          const note = document.getElementById('coupon-applied-note');
+          if (note) note.style.display = 'none';
           updateDetailPagePrice();
         }
       } catch (e) {
@@ -2547,6 +2654,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       }
     }
 
+    // SAFE PRICE UPDATER (NEVER destroys DOM children of btn-inapp-purchase)
     function updateDetailPagePrice() {
       if (!selectedProduct) return;
       const unit = selectedProduct.price || 0.0;
@@ -2573,26 +2681,36 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         discountText += (currentAppLanguage === 'ar') ? ` (كوبون: -${cDisc.toFixed(2)}${sym})` : ` (Coupon: -${cDisc.toFixed(2)}${sym})`;
       }
 
-      document.getElementById('prod-discount-tag').innerText = discountText;
-      document.getElementById('prod-total-price').innerText = `${total.toFixed(2)}${sym}`;
-      document.getElementById('btn-price-tag').innerText = `(${total.toFixed(2)}${sym})`;
+      const discTag = document.getElementById('prod-discount-tag');
+      if (discTag) discTag.innerText = discountText;
+
+      const totalTag = document.getElementById('prod-total-price');
+      if (totalTag) totalTag.innerText = `${total.toFixed(2)}${sym}`;
+
+      const priceTag = document.getElementById('btn-price-tag');
+      if (priceTag) priceTag.innerText = `(${total.toFixed(2)}${sym})`;
 
       const userBalance = userData?.balance || 0.0;
       const alertBox = document.getElementById('insufficient-funds-alert');
       const buyBtn = document.getElementById('btn-inapp-purchase');
+      const buyLabel = document.getElementById('btn-buy-action-label');
       const d = I18N[currentAppLanguage] || I18N.ar;
 
       if (userBalance < total) {
-        alertBox.style.display = 'block';
-        alertBox.innerHTML = (currentAppLanguage === 'ar')
-          ? `⚠️ الرصيد المتاح غير كافٍ (تحتاج ${total.toFixed(2)}${sym}، رصيدك $${userBalance.toFixed(2)}).`
-          : `⚠️ Insufficient balance (Requires ${total.toFixed(2)}${sym}, available $${userBalance.toFixed(2)}).`;
-        buyBtn.innerHTML = `<span>${d.topup_to_continue}</span>`;
-        buyBtn.onclick = () => switchTab('wallet');
+        if (alertBox) {
+          alertBox.style.display = 'block';
+          alertBox.innerHTML = (currentAppLanguage === 'ar')
+            ? `⚠️ الرصيد المتاح غير كافٍ (تحتاج ${total.toFixed(2)}${sym}، رصيدك $${userBalance.toFixed(2)}).`
+            : `⚠️ Insufficient balance (Requires ${total.toFixed(2)}${sym}, available $${userBalance.toFixed(2)}).`;
+        }
+        if (buyLabel) buyLabel.innerText = d.topup_to_continue;
+        if (priceTag) priceTag.style.display = 'none';
+        if (buyBtn) buyBtn.onclick = () => switchTab('wallet');
       } else {
-        alertBox.style.display = 'none';
-        buyBtn.innerHTML = `<span>${d.buy_now}</span> <span>(${total.toFixed(2)}${sym})</span>`;
-        buyBtn.onclick = executeProductBuy;
+        if (alertBox) alertBox.style.display = 'none';
+        if (buyLabel) buyLabel.innerText = d.buy_now;
+        if (priceTag) priceTag.style.display = 'inline';
+        if (buyBtn) buyBtn.onclick = executeProductBuy;
       }
     }
 
@@ -2686,8 +2804,10 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     async function processOrderPlacement() {
       haptic('light');
       const buyBtn = document.getElementById('btn-inapp-purchase');
-      buyBtn.disabled = true;
-      buyBtn.innerHTML = `<span>${currentAppLanguage === 'ar' ? '⏳ جاري معالجة الطلب...' : '⏳ Processing Order...'}</span>`;
+      if (buyBtn) {
+        buyBtn.disabled = true;
+        buyBtn.innerHTML = `<span>${currentAppLanguage === 'ar' ? '⏳ جاري معالجة الطلب...' : '⏳ Processing Order...'}</span>`;
+      }
 
       const payload = {
         tg_id: userId,
@@ -2703,7 +2823,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
           body: JSON.stringify(payload)
         });
         const d = await res.json();
-        buyBtn.disabled = false;
+        if (buyBtn) buyBtn.disabled = false;
 
         if (d.status === 'success') {
           fireConfetti();
@@ -2719,17 +2839,18 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
             ? `طلب #${d.order_id} · ${d.product_name} (${d.quantity}×)`
             : `Order #${d.order_id} · ${d.product_name} (${d.quantity}×)`;
           const keysBox = document.getElementById('success-delivered-keys');
-          keysBox.innerHTML = renderStructuredCredentials(d.goods);
+          if (keysBox) keysBox.innerHTML = renderStructuredCredentials(d.goods);
 
           document.querySelectorAll('.tab-view').forEach(el => el.classList.remove('active'));
-          document.getElementById('view-order-success').classList.add('active');
+          const successView = document.getElementById('view-order-success');
+          if (successView) successView.classList.add('active');
         } else {
           haptic('error');
           showToast(d.error || (currentAppLanguage === 'ar' ? 'فشل إتمام الطلب.' : 'Order failed.'));
           updateDetailPagePrice();
         }
       } catch (e) {
-        buyBtn.disabled = false;
+        if (buyBtn) buyBtn.disabled = false;
         haptic('error');
         showToast(currentAppLanguage === 'ar' ? 'خطأ في الاتصال. يرجى إعادة المحاولة.' : 'Connection error. Please retry.');
         updateDetailPagePrice();
@@ -2769,11 +2890,13 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       }
     }
 
-    // Recharge Flow
+    // ==========================================
+    // HARDENED RECHARGE / TOP-UP FLOW LOGIC
+    // ==========================================
     function selectRechargeMethod(method) {
       haptic('pop');
       selectedRechargeMethod = method;
-      ['stars', 'crypto', 'sam'].forEach(m => {
+      ['stars', 'crypto', 'shamcash', 'syriatelcash'].forEach(m => {
         const card = document.getElementById('method-card-' + m);
         if (card) card.classList.toggle('active', m === method);
       });
@@ -2812,8 +2935,10 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       let methodName = "نجوم تيليجرام";
       if (selectedRechargeMethod === 'crypto') {
         methodName = (currentAppLanguage === 'ar') ? "العملات الرقمية" : "Crypto";
-      } else if (selectedRechargeMethod === 'sam') {
-        methodName = (currentAppLanguage === 'ar') ? "سيرياتيل كاش" : "SAM Cash";
+      } else if (selectedRechargeMethod === 'shamcash') {
+        methodName = (currentAppLanguage === 'ar') ? "شام كاش" : "Sham Cash";
+      } else if (selectedRechargeMethod === 'syriatelcash') {
+        methodName = (currentAppLanguage === 'ar') ? "سيرياتيل كاش" : "Syriatel Cash";
       } else {
         methodName = (currentAppLanguage === 'ar') ? "نجوم تيليجرام" : "Telegram Stars";
       }
@@ -2838,9 +2963,11 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       haptic('light');
 
       const btn = document.getElementById('btn-execute-recharge');
-      btn.disabled = true;
-      const loadingText = (currentAppLanguage === 'ar') ? '⏳ جاري تجهيز الفاتورة...' : '⏳ Generating invoice...';
-      btn.innerHTML = `<span>${loadingText}</span>`;
+      if (btn) {
+        btn.disabled = true;
+        const loadingText = (currentAppLanguage === 'ar') ? '⏳ جاري تجهيز الفاتورة...' : '⏳ Generating invoice...';
+        btn.innerHTML = `<span>${loadingText}</span>`;
+      }
 
       try {
         const res = await fetch('/api/invoice/topup', {
@@ -2853,7 +2980,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
           })
         });
         const d = await res.json();
-        btn.disabled = false;
+        if (btn) btn.disabled = false;
         updateRechargeButtonText();
 
         if (d.type === 'stars' && d.invoice_link) {
@@ -2868,16 +2995,56 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
             }
           });
         } else if (d.type === 'url' && d.url) {
-          tg.openLink(d.url);
-          showToast(currentAppLanguage === 'ar' ? 'تم فتح صفحة الدفع. سيتم شحن الرصيد تلقائياً فور التأكيد!' : 'Payment link opened. Balance credits on confirmation!');
+          // Open Payment Link Sheet with Browser & Copy options
+          activeInvoiceUrl = d.url;
+          openPaymentLinkSheet(d.url);
         } else {
           showToast(d.error || (currentAppLanguage === 'ar' ? 'تعذر إنشاء فاتورة الشحن' : 'Failed to create invoice'));
         }
       } catch (e) {
-        btn.disabled = false;
+        if (btn) btn.disabled = false;
         updateRechargeButtonText();
         showToast(currentAppLanguage === 'ar' ? 'خطأ في شبكة الشحن' : 'Recharge network error');
       }
+    }
+
+    // Payment Link Sheet Modal Functions
+    function openPaymentLinkSheet(url) {
+      activeInvoiceUrl = url;
+      const sheet = document.getElementById('payment-link-sheet');
+      if (sheet) {
+        sheet.style.display = 'flex';
+        haptic('pop');
+      }
+      // Also trigger telegram openLink directly
+      if (tg?.openLink) {
+        try { tg.openLink(url); } catch (e) {}
+      }
+    }
+
+    function closePaymentLinkSheet() {
+      const sheet = document.getElementById('payment-link-sheet');
+      if (sheet) sheet.style.display = 'none';
+    }
+
+    function openPaymentInExternalBrowser() {
+      if (!activeInvoiceUrl) return;
+      haptic('light');
+      if (tg?.openLink) {
+        tg.openLink(activeInvoiceUrl);
+      } else {
+        window.open(activeInvoiceUrl, '_blank');
+      }
+      closePaymentLinkSheet();
+      showToast(currentAppLanguage === 'ar' ? 'تم فتح صفحة الدفع في المتصفح' : 'Opening payment page in browser...');
+    }
+
+    function copyPaymentInvoiceLink() {
+      if (!activeInvoiceUrl) return;
+      haptic('success');
+      navigator.clipboard.writeText(activeInvoiceUrl).then(() => {
+        showToast(currentAppLanguage === 'ar' ? 'تم نسخ رابط الفاتورة المباشر!' : 'Payment link copied!');
+      });
     }
 
     async function submitVoucherRedeem() {
