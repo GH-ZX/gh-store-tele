@@ -44,8 +44,10 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       --warning: #f59e0b;
       --danger: #ef4444;
       --nav-height: 62px;
-      --safe-top: var(--tg-content-safe-area-inset-top, var(--tg-safe-area-inset-top, env(safe-area-inset-top, 0px)));
-      --safe-bottom: var(--tg-content-safe-area-inset-bottom, var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom, 16px)));
+      --safe-top: 0px;
+      --safe-bottom: env(safe-area-inset-bottom, 16px);
+      --safe-left: 0px;
+      --safe-right: 0px;
     }
 
     [data-theme="light"] {
@@ -87,10 +89,10 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       -webkit-backdrop-filter: blur(24px) saturate(180%);
       background: var(--header-bg);
       border-bottom: 1px solid var(--border);
-      padding-top: max(var(--safe-top, 0px), 8px);
-      padding-bottom: 8px;
-      padding-left: max(var(--tg-content-safe-area-inset-left, 0px), 14px);
-      padding-right: max(var(--tg-content-safe-area-inset-right, 0px), 14px);
+      padding-top: max(var(--safe-top, 0px), env(safe-area-inset-top, 0px), 10px);
+      padding-bottom: 10px;
+      padding-left: max(var(--safe-left, 0px), 16px);
+      padding-right: max(var(--safe-right, 0px), 16px);
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -2253,13 +2255,51 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     if (tg) {
       tg.ready();
       tg.expand();
-      if (tg.isVersionAtLeast && tg.isVersionAtLeast('8.0')) {
-        try { tg.requestFullscreen?.(); } catch (e) {}
-      }
       if (tg.isVersionAtLeast && tg.isVersionAtLeast('7.7')) {
         try { tg.disableVerticalSwipes?.(); } catch (e) {}
       }
       if (tg.enableClosingConfirmation) tg.enableClosingConfirmation();
+    }
+
+    function updateSafeAreaInsets() {
+      const t = getTg();
+      let top = 0;
+      let bottom = 0;
+      let left = 0;
+      let right = 0;
+
+      if (t?.contentSafeAreaInset) {
+        top = Math.max(top, t.contentSafeAreaInset.top || 0);
+        bottom = Math.max(bottom, t.contentSafeAreaInset.bottom || 0);
+        left = Math.max(left, t.contentSafeAreaInset.left || 0);
+        right = Math.max(right, t.contentSafeAreaInset.right || 0);
+      }
+      if (t?.safeAreaInset) {
+        top = Math.max(top, t.safeAreaInset.top || 0);
+        bottom = Math.max(bottom, t.safeAreaInset.bottom || 0);
+        left = Math.max(left, t.safeAreaInset.left || 0);
+        right = Math.max(right, t.safeAreaInset.right || 0);
+      }
+
+      // In case client is in fullscreen, ensure generous top clearance to avoid notch / 3-dots collision
+      if (t?.isFullscreen) {
+        top = Math.max(top, 54);
+      }
+
+      if (top > 0) document.documentElement.style.setProperty('--safe-top', `${top}px`);
+      if (bottom > 0) document.documentElement.style.setProperty('--safe-bottom', `${bottom}px`);
+      if (left > 0) document.documentElement.style.setProperty('--safe-left', `${left}px`);
+      if (right > 0) document.documentElement.style.setProperty('--safe-right', `${right}px`);
+    }
+
+    if (tg) {
+      updateSafeAreaInsets();
+      if (tg.onEvent) {
+        tg.onEvent('safeAreaChanged', updateSafeAreaInsets);
+        tg.onEvent('contentSafeAreaChanged', updateSafeAreaInsets);
+        tg.onEvent('fullscreenChanged', updateSafeAreaInsets);
+        tg.onEvent('viewportChanged', updateSafeAreaInsets);
+      }
     }
 
     // Centralized Navigation Stack for Native Telegram BackButton
