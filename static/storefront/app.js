@@ -1045,7 +1045,8 @@ const tg = window.Telegram?.WebApp;
         return `<div style="padding: 12px; color: var(--warning); text-align: center;">${currentAppLanguage === 'ar' ? 'جاري التفعيل، سيتم التسليم قريباً.' : 'Activation in progress, delivery shortly.'}</div>`;
       }
 
-      return goods.map(raw => {
+      const isAr = (currentAppLanguage === 'ar');
+      const renderedRows = goods.map(raw => {
         const line = String(raw).trim();
         let parts = [];
         if (line.includes(' | ')) { parts = line.split(' | '); }
@@ -1056,11 +1057,11 @@ const tg = window.Telegram?.WebApp;
 
         if (parts.length >= 2) {
           const rows = parts.map((part, idx) => {
-            let label = (currentAppLanguage === 'ar') ? "بيانات" : "Credential";
-            if (idx === 0) label = part.includes('@') ? (currentAppLanguage === 'ar' ? "البريد / المستخدم" : "Email / User") : (currentAppLanguage === 'ar' ? "اسم المستخدم" : "Username");
-            else if (idx === 1) label = (currentAppLanguage === 'ar') ? "كلمة المرور" : "Password";
-            else if (idx === 2) label = (currentAppLanguage === 'ar') ? "كود 2FA / الأمان" : "2FA / Security Key";
-            else label = (currentAppLanguage === 'ar') ? `معلومة ${idx + 1}` : `Field ${idx + 1}`;
+            let label = isAr ? "بيانات" : "Credential";
+            if (idx === 0) label = part.includes('@') ? (isAr ? "البريد / المستخدم" : "Email / User") : (isAr ? "اسم المستخدم" : "Username");
+            else if (idx === 1) label = isAr ? "كلمة المرور" : "Password";
+            else if (idx === 2) label = isAr ? "كود 2FA / الأمان" : "2FA / Security Key";
+            else label = isAr ? `معلومة ${idx + 1}` : `Field ${idx + 1}`;
 
             return `
               <div class="cred-pill-row">
@@ -1068,16 +1069,14 @@ const tg = window.Telegram?.WebApp;
                   <span class="cred-type-tag">${label}</span>
                   <span class="cred-val-text">${part.trim()}</span>
                 </div>
-                <button class="btn-copy-mini" onclick="copyCredText('${part.trim().replace(/'/g, "\\\\'")}', this)">${currentAppLanguage === 'ar' ? 'نسخ' : 'Copy'}</button>
+                <button class="btn-copy-mini" onclick="copyCredText('${part.trim().replace(/'/g, "\\\\'")}', this)">${isAr ? 'نسخ' : 'Copy'}</button>
+              </div>
             `;
           }).join('');
 
           return `
             <div class="cred-grid">
               ${rows}
-              <div style="text-align: left; margin-top: 2px;">
-                <button class="btn-copy-mini" style="font-size: 10px;" onclick="copyCredText('${line.replace(/'/g, "\\\\'")}', this)">${currentAppLanguage === 'ar' ? 'نسخ السطر كاملاً' : 'Copy Full Line'}</button>
-              </div>
             </div>
           `;
         }
@@ -1085,15 +1084,25 @@ const tg = window.Telegram?.WebApp;
         return `
           <div class="cred-pill-row" style="margin: 6px 0;">
             <div class="cred-meta">
-              <span class="cred-type-tag">${currentAppLanguage === 'ar' ? 'مفتاح / كود التفعيل' : 'License / Key'}</span>
+              <span class="cred-type-tag">${isAr ? 'مفتاح / كود التفعيل' : 'License / Key'}</span>
               <span class="cred-val-text">${line}</span>
             </div>
-            <button class="btn-copy-mini" onclick="copyCredText('${line.replace(/'/g, "\\\\'")}', this)">${currentAppLanguage === 'ar' ? 'نسخ' : 'Copy'}</button>
+            <button class="btn-copy-mini" onclick="copyCredText('${line.replace(/'/g, "\\\\'")}', this)">${isAr ? 'نسخ' : 'Copy'}</button>
           </div>
         `;
       }).join('');
-    }
 
+      const allText = goods.map(g => String(g).trim()).join('\n');
+      const copyAllBtn = `
+        <div style="margin-top: 8px;">
+          <button class="btn-action-secondary" onclick="copyCredText('${allText.replace(/'/g, "\\\\'").replace(/\n/g, "\\n")}', this)" style="height: 34px; font-size: 11px; width: 100%;">
+            <span>📋 ${isAr ? 'نسخ كافة بيانات الحساب' : 'Copy All Account Details'}</span>
+          </button>
+        </div>
+      `;
+
+      return renderedRows + copyAllBtn;
+    }
     // Complete i18n Translation Dictionary
     const I18N = {
       ar: {
@@ -1802,6 +1811,7 @@ const tg = window.Telegram?.WebApp;
       if (tg?.MainButton && !selectedProduct) {
         tg.MainButton.hide();
       }
+      updateFloatingCartUI();
     }
 
     // Deep Link & Launch Parameter Router (startapp / start_param)
@@ -3102,6 +3112,48 @@ const tg = window.Telegram?.WebApp;
       const modal = document.getElementById('modal-receipt-preview');
       if (modal) modal.style.display = 'none';
       if (navStack.length > 0 && navStack[navStack.length - 1].name === 'receipt_modal') {
+        navStack.pop();
+        if (navStack.length === 0 && tg?.BackButton) tg.BackButton.hide();
+      }
+    }
+
+    function openVipBenefitsModal() {
+      haptic('pop');
+      const modal = document.getElementById('modal-vip-benefits');
+      if (!modal) return;
+      const isAr = (currentAppLanguage === 'ar');
+      const tierTitle = document.getElementById('vip-modal-title');
+      if (tierTitle) tierTitle.innerText = isAr ? 'مزايا عضوية VIP' : 'VIP Membership Benefits';
+
+      const tierName = document.getElementById('vip-modal-tier-name');
+      const tierDesc = document.getElementById('vip-modal-tier-desc');
+      const progDesc = document.getElementById('vip-modal-progress-desc');
+      const closeBtn = document.getElementById('vip-modal-close-btn-label');
+      if (closeBtn) closeBtn.innerText = isAr ? 'حسناً، فهمت' : 'Got it';
+
+      const tier = userData?.vip_tier || 'VIP';
+      const disc = userData?.vip_discount || 0;
+      if (tierName) tierName.innerText = `${tier} (${disc}% ${isAr ? 'خصم' : 'OFF'})`;
+      if (tierDesc) tierDesc.innerText = isAr
+        ? `أنت تستمتع بخصم ${disc}% تلقائي ومباشر على كافة المشتريات!`
+        : `You enjoy an automatic ${disc}% discount across all store purchases!`;
+
+      if (progDesc) {
+        const spent = Number(userData?.total_spent || 0.0);
+        progDesc.innerText = isAr
+          ? `إجمالي مشترياتك حتى الآن: $${spent.toFixed(2)}. ترقية الرتب تتم تلقائياً مع زيادة حجم المشتريات.`
+          : `Total purchases to date: $${spent.toFixed(2)}. VIP tiers upgrade automatically as your spend increases.`;
+      }
+
+      modal.style.display = 'flex';
+      pushNav('vip_modal', closeVipBenefitsModal);
+    }
+
+    function closeVipBenefitsModal(e) {
+      if (e && e.target && e.target.id !== 'modal-vip-benefits') return;
+      const modal = document.getElementById('modal-vip-benefits');
+      if (modal) modal.style.display = 'none';
+      if (navStack.length > 0 && navStack[navStack.length - 1].name === 'vip_modal') {
         navStack.pop();
         if (navStack.length === 0 && tg?.BackButton) tg.BackButton.hide();
       }
@@ -6363,9 +6415,16 @@ const tg = window.Telegram?.WebApp;
       const order = (userData?.orders || []).find(o => Number(o.id) === currentOrderDetailId);
       if (!order) return;
 
+      const isAr = (currentAppLanguage === 'ar');
       const idEl = document.getElementById('order-detail-id-title');
-      if (idEl) idEl.innerText = `طلب #${order.id}`;
+      if (idEl) idEl.innerText = `${isAr ? 'طلب' : 'Order'} #${order.id}`;
 
+      const step1 = document.getElementById('order-step-label-1');
+      const step2 = document.getElementById('order-step-label-2');
+      const step3 = document.getElementById('order-step-label-3');
+      if (step1) step1.innerText = isAr ? 'تم التأكيد' : 'Confirmed';
+      if (step2) step2.innerText = (order.status === 'refunded') ? (isAr ? 'مسترجع' : 'Refunded') : (isAr ? 'التجهيز' : 'Processing');
+      if (step3) step3.innerText = isAr ? 'التسليم' : 'Delivered';
       const dateEl = document.getElementById('order-detail-date');
       if (dateEl) dateEl.innerText = order.created_at || '';
 
