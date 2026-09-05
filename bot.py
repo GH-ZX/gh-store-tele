@@ -1495,7 +1495,8 @@ async def admin_get_users(tg_id: int, query: str = ""):
                 "vip_discount": disc_pct,
                 "is_banned": bool(u.is_banned),
                 "referrals_count": ref_qty,
-                "custom_discount_pct": getattr(u, "custom_discount_pct", None)
+                "custom_discount_pct": getattr(u, "custom_discount_pct", None),
+                "registered_at": u.registered_at.strftime("%Y-%m-%d") if getattr(u, "registered_at", None) else ""
             })
     return {"users": result}
 
@@ -1568,7 +1569,27 @@ async def admin_toggle_ban(request: Request):
         user.is_banned = not user.is_banned
         await UserRepository.update(user, session)
         await session_commit(session)
-    return {"status": "ok", "is_banned": user.is_banned}
+        return {"status": "ok", "is_banned": user.is_banned}
+
+@app.post("/api/admin/users/send-message")
+async def admin_send_user_message(request: Request):
+    """Admin sends direct message to a customer from the bot."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not _verify_admin(admin_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    target_tg_id = int(body.get("target_tg_id") or 0)
+    msg_text = (body.get("message") or "").strip()
+    if not target_tg_id or not msg_text:
+        return JSONResponse({"error": "missing_parameters"}, status_code=400)
+    try:
+        await bot.send_message(target_tg_id, f"📬 <b>رسالة من إدارة المتجر:</b>\n\n{msg_text}")
+        return {"status": "ok", "message": "تم إرسال الرسالة للمستخدم بنجاح!"}
+    except Exception as e:
+        return JSONResponse({"error": "send_failed", "detail": str(e)}, status_code=502)
 
 
 @app.post("/api/admin/users/set-discount")

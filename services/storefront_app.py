@@ -1504,18 +1504,26 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- ADMIN USERS & MONEY ADJUSTMENT MODAL SHEET -->
-  <div class="admin-modal-overlay" id="admin-users-modal">
+  <!-- ADMIN SEND MESSAGE TO USER MODAL SHEET -->
+  <div class="admin-modal-overlay" id="admin-message-user-modal">
     <div class="admin-modal-sheet">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
-        <h3 style="font-size: 17px; font-weight: 800;">إدارة المستخدمين والأرصدة</h3>
-        <button class="circle-icon-btn" onclick="closeAdminUsersModal()">✕</button>
+        <h3 style="font-size: 17px; font-weight: 800;">💬 إرسال إشعار للمستخدم</h3>
+        <button class="circle-icon-btn" onclick="closeAdminMessageModal()">✕</button>
       </div>
-      <div style="display: flex; gap: 6px; margin-bottom: 12px;">
-        <input type="text" class="admin-text-input" id="admin-user-search-input" placeholder="ابحث برقم ID أو @username..." style="flex: 1;">
-        <button class="btn-action-secondary" onclick="executeAdminUserSearch()" style="padding: 0 14px;">بحث</button>
+      <input type="hidden" id="admin-msg-target-tgid">
+      <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 14px;">
+        <div style="font-size: 14px; font-weight: 700; color: var(--text);" id="admin-msg-target-name">@username</div>
+        <div style="font-size: 11px; color: var(--hint); font-family: monospace;" id="admin-msg-target-id">ID: 00000000</div>
       </div>
-      <div id="admin-users-results-list" style="display: flex; flex-direction: column; gap: 8px; max-height: 55vh; overflow-y: auto;"></div>
+      <div class="admin-input-row">
+        <label class="admin-input-label">نص الرسالة / الإشعار المرسل من البوت</label>
+        <textarea class="admin-text-input" id="admin-msg-text-input" rows="4" placeholder="اكتب رسالتك للمستخدم هنا... (سيتم إرسالها فورياً عبر رسالة خاصة من البوت)"></textarea>
+      </div>
+      <div style="display: flex; gap: 8px; margin-top: 14px;">
+        <button class="btn-action-secondary" onclick="closeAdminMessageModal()" style="flex: 1; height: 44px;">إلغاء</button>
+        <button class="btn-action-primary" id="btn-submit-send-user-msg" onclick="submitAdminSendMessage()" style="flex: 2; height: 44px;">إرسال الرسالة 🚀</button>
+      </div>
     </div>
   </div>
 
@@ -1989,6 +1997,37 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     </div>
   </section>
 
+  <!-- DEDICATED IN-APP ADMIN USERS MANAGEMENT VIEW -->
+  <section id="view-admin-users" class="tab-view">
+    <div class="subview-header">
+      <button class="btn-back-catalog" onclick="closeAdminUsersPage()">
+        <span>→</span>
+        <span>العودة للإعدادات</span>
+      </button>
+      <span style="font-size: 13px; color: var(--accent); font-weight: 700;">إدارة المستخدمين والأرصدة</span>
+    </div>
+
+    <!-- Search & Quick Filters Bar -->
+    <div class="inset-card" style="margin-top: 10px; padding: 12px; margin-bottom: 12px;">
+      <div class="search-box" style="margin-bottom: 8px;">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="admin-user-search-input" placeholder="ابحث برقم ID أو اسم المستخدم @username..." oninput="debounceAdminUserSearch()">
+        <span class="clear-search" id="admin-user-clear-btn" onclick="clearAdminUserSearch()" style="display: none;">✕</span>
+      </div>
+      <div class="filter-chips-row" id="admin-user-filter-chips">
+        <div class="filter-chip active" id="admin-ufilter-all" onclick="setAdminUserFilter('all')">الكل</div>
+        <div class="filter-chip" id="admin-ufilter-balance" onclick="setAdminUserFilter('balance')">💰 لديهم رصيد</div>
+        <div class="filter-chip" id="admin-ufilter-vip" onclick="setAdminUserFilter('vip')">🎖️ VIP فقط</div>
+        <div class="filter-chip" id="admin-ufilter-banned" onclick="setAdminUserFilter('banned')">🚫 المحظورون فقط</div>
+      </div>
+    </div>
+
+    <!-- Users List Container -->
+    <div id="admin-users-results-list" style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="text-align: center; padding: 30px; color: var(--hint);">جاري جلب قائمة المستخدمين...</div>
+    </div>
+  </section>
+
 
   <!-- TAB 2: PROCESSES & ACTIVITY VIEW (ORDERS & RECHARGES) -->
   <main id="view-orders" class="tab-view">
@@ -2256,7 +2295,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
       <!-- Quick Admin Management Navigation Drawers -->
       <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px;">
-        <button class="btn-action-secondary" onclick="openAdminUsersModal()" style="height: 44px; font-size: 12px;">
+        <button class="btn-action-secondary" onclick="openAdminUsersPage()" style="height: 44px; font-size: 12px;">
           👥 إدارة المستخدمين والأرصدة
         </button>
         <button class="btn-action-secondary" onclick="openAdminOrdersModal()" style="height: 44px; font-size: 12px;">
@@ -4780,61 +4819,222 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       }
     }
 
-    // Admin Users Modal
-    function openAdminUsersModal() {
+    // Admin Users Dedicated Page View
+    let activeAdminUserFilter = 'all';
+    let cachedAdminUsersList = [];
+    let adminUserSearchTimer = null;
+
+    function openAdminUsersPage() {
       haptic('pop');
-      document.getElementById('admin-users-modal').style.display = 'flex';
-      pushNav('admin_users', closeAdminUsersModal);
-      if (tg?.disableVerticalSwipes) tg.disableVerticalSwipes();
+      document.querySelectorAll('.tab-view').forEach(el => el.classList.remove('active'));
+      const view = document.getElementById('view-admin-users');
+      if (view) view.classList.add('active');
+      pushNav('admin_users', closeAdminUsersPage);
       executeAdminUserSearch();
     }
-    function closeAdminUsersModal() {
-      document.getElementById('admin-users-modal').style.display = 'none';
-      if (tg?.enableVerticalSwipes) tg.enableVerticalSwipes();
+
+    function closeAdminUsersPage() {
+      haptic('light');
+      const view = document.getElementById('view-admin-users');
+      if (view) view.classList.remove('active');
+      const setView = document.getElementById('view-settings');
+      if (setView) setView.classList.add('active');
       if (navStack.length > 0 && navStack[navStack.length - 1].name === 'admin_users') {
         navStack.pop();
         if (navStack.length === 0 && tg?.BackButton) tg.BackButton.hide();
       }
     }
 
+    function setAdminUserFilter(filterKey) {
+      haptic('light');
+      activeAdminUserFilter = filterKey;
+      ['all', 'balance', 'vip', 'banned'].forEach(f => {
+        const btn = document.getElementById('admin-ufilter-' + f);
+        if (btn) btn.classList.toggle('active', f === filterKey);
+      });
+      renderAdminUsersCards();
+    }
+
+    function debounceAdminUserSearch() {
+      clearTimeout(adminUserSearchTimer);
+      const q = (document.getElementById('admin-user-search-input')?.value || '').trim();
+      const clearBtn = document.getElementById('admin-user-clear-btn');
+      if (clearBtn) clearBtn.style.display = q ? 'block' : 'none';
+      adminUserSearchTimer = setTimeout(() => {
+        executeAdminUserSearch();
+      }, 350);
+    }
+
+    function clearAdminUserSearch() {
+      const input = document.getElementById('admin-user-search-input');
+      if (input) input.value = '';
+      const clearBtn = document.getElementById('admin-user-clear-btn');
+      if (clearBtn) clearBtn.style.display = 'none';
+      executeAdminUserSearch();
+    }
+
     async function executeAdminUserSearch() {
       const q = (document.getElementById('admin-user-search-input')?.value || '').trim();
       const container = document.getElementById('admin-users-results-list');
-      container.innerHTML = '<div style="text-align:center; padding:20px; color:var(--hint);">جاري البحث في قاعدة البيانات...</div>';
+      if (container && !cachedAdminUsersList.length) {
+        container.innerHTML = '<div style="text-align:center; padding:30px; color:var(--hint);">جاري البحث في قاعدة البيانات...</div>';
+      }
       try {
         const res = await fetch(`/api/admin/users?tg_id=${userId}&query=${encodeURIComponent(q)}`);
         const d = await res.json();
-        if (!d.users || !d.users.length) {
-          container.innerHTML = '<div style="text-align:center; padding:20px; color:var(--hint);">لا يوجد مستخدمين مطابقين.</div>';
-          return;
-        }
-        container.innerHTML = d.users.map(u => `
-          <div style="background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px;">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <div>
-                <strong style="font-size:14px;">${u.username ? '@' + u.username : 'User'}</strong>
-                <div style="font-size:11px; color:var(--hint); font-family:monospace;">ID: ${u.telegram_id}</div>
+        cachedAdminUsersList = d.users || [];
+        renderAdminUsersCards();
+      } catch (e) {
+        if (container) container.innerHTML = '<div style="text-align:center; padding:20px; color:var(--danger);">خطأ في جلب المستخدمين.</div>';
+      }
+    }
+
+    function renderAdminUsersCards() {
+      const container = document.getElementById('admin-users-results-list');
+      if (!container) return;
+
+      let filtered = [...cachedAdminUsersList];
+      if (activeAdminUserFilter === 'balance') {
+        filtered = filtered.filter(u => u.balance > 0);
+      } else if (activeAdminUserFilter === 'vip') {
+        filtered = filtered.filter(u => (u.vip_discount > 0 || u.custom_discount_pct > 0));
+      } else if (activeAdminUserFilter === 'banned') {
+        filtered = filtered.filter(u => u.is_banned);
+      }
+
+      if (!filtered.length) {
+        container.innerHTML = '<div style="text-align:center; padding:30px; color:var(--hint);">لا يوجد مستخدمين مطابقين لهذا الفلتر.</div>';
+        return;
+      }
+
+      container.innerHTML = filtered.map(u => {
+        const initial = (u.username || 'U')[0].toUpperCase();
+        const vipLabel = (u.custom_discount_pct !== null && u.custom_discount_pct !== undefined)
+          ? `${u.custom_discount_pct}% مخصص`
+          : (u.vip_discount > 0 ? `${u.vip_tier} (${u.vip_discount}%)` : 'Standard');
+
+        return `
+          <div class="inset-card" style="margin-bottom: 12px; padding: 14px; position: relative;">
+            <!-- Top User Row: Avatar + Name + @username + Status badge ONLY if banned -->
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
+              <div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1;">
+                <div class="avatar-fallback" style="width: 38px; height: 38px; font-size: 16px; flex-shrink: 0; background: linear-gradient(135deg, #0284c7, #6366f1);">
+                  ${initial}
+                </div>
+                <div style="min-width: 0;">
+                  <div style="font-size: 14px; font-weight: 800; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                    ${u.username ? '@' + u.username : 'User #' + u.id}
+                  </div>
+                  <div style="display: flex; align-items: center; gap: 6px; margin-top: 1px; flex-wrap: wrap;">
+                    <span style="font-size: 11px; color: var(--hint); font-family: monospace;">ID: ${u.telegram_id}</span>
+                    <button class="btn-copy-mini" style="font-size: 9px; padding: 1px 6px;" onclick="copyCredText('${u.telegram_id}')">نسخ ID</button>
+                    ${u.registered_at ? `<span style="font-size: 10px; color: var(--hint);">· ${u.registered_at}</span>` : ''}
+                  </div>
+                </div>
               </div>
-              <span class="pill-badge" style="background:${u.is_banned ? 'rgba(239,68,68,0.2); color:#ef4444' : 'rgba(16,185,129,0.2); color:#10b981'}; font-size:11px;">
-                ${u.is_banned ? 'محظور' : 'نشط'}
-              </span>
+
+              <!-- ONLY SHOW BADGE IF BANNED (NO ACTIVE BADGE SPAM) -->
+              ${u.is_banned ? `
+                <span class="pill-badge" style="background: rgba(239, 68, 68, 0.2); color: #ef4444; font-size: 11px; flex-shrink: 0;">
+                  🚫 محظور
+                </span>
+              ` : ''}
             </div>
-            <div style="display:flex; justify-content:space-between; font-size:12px; margin:8px 0; border-top:1px solid var(--border); padding-top:6px;">
-              <span>الرصيد: <strong style="color:var(--accent);">$${u.balance.toFixed(2)}</strong></span>
-              <span>المشتريات: <strong>$${u.total_spent.toFixed(2)}</strong></span>
-              <span>الرتبة: <strong>${u.vip_tier}</strong></span>
+
+            <!-- Metrics Row (Balance, Spent, VIP Tier) -->
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px; margin-bottom: 12px; text-align: center;">
+              <div>
+                <div style="font-size: 10px; color: var(--hint);">الرصيد المتاح</div>
+                <div style="font-size: 14px; font-weight: 800; color: ${u.balance > 0 ? 'var(--accent)' : 'var(--text)'};">
+                  $${u.balance.toFixed(2)}
+                </div>
+              </div>
+              <div>
+                <div style="font-size: 10px; color: var(--hint);">المشتريات</div>
+                <div style="font-size: 14px; font-weight: 800; color: var(--text);">
+                  $${u.total_spent.toFixed(2)}
+                </div>
+              </div>
+              <div>
+                <div style="font-size: 10px; color: var(--hint);">الرتبة / الخصم</div>
+                <div style="font-size: 12px; font-weight: 700; color: ${u.vip_discount > 0 ? 'var(--warning)' : 'var(--hint)'}; margin-top: 2px;">
+                  ${vipLabel}
+                </div>
+              </div>
             </div>
-            <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
-              <button class="admin-edit-badge-btn" onclick="openAdminBalanceModal(${u.telegram_id}, '${u.username || ''}', ${u.balance})">💰 تعديل الرصيد</button>
-              <button class="admin-edit-badge-btn" onclick="openAdminDiscountModal(${u.telegram_id}, '${u.username || ''}', ${u.custom_discount_pct !== null && u.custom_discount_pct !== undefined ? u.custom_discount_pct : u.vip_discount})">🏷️ تخصيص خصم</button>
-              <button class="admin-edit-badge-btn" style="color:${u.is_banned ? '#10b981' : '#ef4444'};" onclick="submitToggleBan(${u.telegram_id})">
-                ${u.is_banned ? 'فك الحظر' : 'حظر الحساب'}
+
+            <!-- Quick Options & Settings UX Grid (High Usability) -->
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-bottom: 6px;">
+              <button class="btn-action-primary" onclick="openAdminBalanceModal(${u.telegram_id}, '${u.username || ''}', ${u.balance})" style="height: 38px; font-size: 12px;">
+                💰 تعديل الرصيد
+              </button>
+              <button class="btn-action-secondary" onclick="openAdminDiscountModal(${u.telegram_id}, '${u.username || ''}', ${u.custom_discount_pct !== null && u.custom_discount_pct !== undefined ? u.custom_discount_pct : u.vip_discount})" style="height: 38px; font-size: 12px;">
+                🏷️ تخصيص خصم %
+              </button>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;">
+              <button class="btn-action-secondary" onclick="openAdminMessageModal(${u.telegram_id}, '${u.username || ''}')" style="height: 36px; font-size: 11px;">
+                💬 مراسلة المستخدم
+              </button>
+              <button class="btn-action-secondary" style="height: 36px; font-size: 11px; color: ${u.is_banned ? '#10b981' : '#ef4444'};" onclick="submitToggleBan(${u.telegram_id})">
+                ${u.is_banned ? '✅ فك الحظر' : '🚫 حظر الحساب'}
               </button>
             </div>
           </div>
-        `).join('');
+        `;
+      }).join('');
+    }
+
+    // Admin Direct Message Modal
+    function openAdminMessageModal(targetTgId, username) {
+      haptic('pop');
+      document.getElementById('admin-msg-target-tgid').value = targetTgId;
+      document.getElementById('admin-msg-target-name').innerText = username ? '@' + username : `User (${targetTgId})`;
+      document.getElementById('admin-msg-target-id').innerText = `ID: ${targetTgId}`;
+      document.getElementById('admin-msg-text-input').value = '';
+      document.getElementById('admin-message-user-modal').style.display = 'flex';
+      pushNav('admin_msg_user', closeAdminMessageModal);
+      if (tg?.disableVerticalSwipes) tg.disableVerticalSwipes();
+    }
+
+    function closeAdminMessageModal() {
+      document.getElementById('admin-message-user-modal').style.display = 'none';
+      if (tg?.enableVerticalSwipes) tg.enableVerticalSwipes();
+      if (navStack.length > 0 && navStack[navStack.length - 1].name === 'admin_msg_user') {
+        navStack.pop();
+        if (navStack.length === 0 && tg?.BackButton) tg.BackButton.hide();
+      }
+    }
+
+    async function submitAdminSendMessage() {
+      const targetTgId = parseInt(document.getElementById('admin-msg-target-tgid')?.value);
+      const msg = (document.getElementById('admin-msg-text-input')?.value || '').trim();
+      if (!targetTgId || !msg) {
+        showToast('يرجى كتابة نص الرسالة');
+        return;
+      }
+      haptic('light');
+      const btn = document.getElementById('btn-submit-send-user-msg');
+      if (btn) btn.disabled = true;
+      try {
+        const res = await fetch('/api/admin/users/send-message', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_tg_id: userId, target_tg_id: targetTgId, message: msg })
+        });
+        const d = await res.json();
+        if (btn) btn.disabled = false;
+        if (d.status === 'ok') {
+          haptic('success');
+          showToast('تم إرسال الرسالة بنجاح للمستخدم!');
+          closeAdminMessageModal();
+        } else {
+          showToast(d.error || 'فشل إرسال الرسالة');
+        }
       } catch (e) {
-        container.innerHTML = '<div style="text-align:center; padding:20px; color:var(--danger);">خطأ في جلب المستخدمين.</div>';
+        if (btn) btn.disabled = false;
+        showToast('خطأ في الاتصال أثناء الإرسال');
       }
     }
 
