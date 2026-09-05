@@ -4702,7 +4702,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
               showToast(currentAppLanguage === 'ar' ? 'فشلت عملية الدفع' : 'Payment failed');
             }
           });
-        } else if (d.type === 'url' && d.url) {
+        } else if ((d.type === 'url' || d.type === 'crypto' || d.status === 'ok') && (d.url || d.address)) {
           openInvoicePage(d);
         } else {
           showToast(d.error || (currentAppLanguage === 'ar' ? 'تعذر إنشاء فاتورة الشحن' : 'Failed to create invoice'));

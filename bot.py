@@ -1161,7 +1161,7 @@ async def create_tma_topup_invoice(request: Request):
                 final_url = pay_url if pay_url else (f"https://bscscan.com/address/{addr}" if addr else "")
                 return {
                     "status": "ok",
-                    "type": "crypto",
+                    "type": "url",
                     "provider": "crypto",
                     "url": final_url,
                     "address": addr,

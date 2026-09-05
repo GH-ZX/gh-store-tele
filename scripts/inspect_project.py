@@ -21,6 +21,7 @@ import builtins
 import json
 import os
 import py_compile
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -231,7 +232,21 @@ def check_database_models() -> int:
 
 def run_unit_tests() -> int:
     header("5. Unit Test Suite (pytest)")
-    # Check if docker is available and running
+    # Priority 1: uv runner
+    uv_path = shutil.which("uv") or (Path.home() / ".local" / "bin" / "uv")
+    if uv_path and (Path(uv_path).is_file() or shutil.which(str(uv_path))):
+        try:
+            res = subprocess.run([str(uv_path), "run", "pytest", "-q"], cwd=ROOT, capture_output=True, text=True, timeout=60)
+            if res.returncode == 0:
+                pass_msg(f"uv pytest suite PASSED:\n    {res.stdout.strip().splitlines()[-1]}")
+                return 0
+            else:
+                fail_msg(f"uv pytest FAILED:\n{res.stdout}\n{res.stderr}")
+                return 1
+        except Exception as e:
+            warn_msg(f"uv pytest failed ({e}). Falling back to Docker...")
+
+    # Priority 2: Docker runner
     try:
         res = subprocess.run(
             ["docker", "run", "--rm", "-v", f"{ROOT}:/app", "-w", "/app", "ghstore-bot", "pytest", "-q"],
@@ -248,6 +263,7 @@ def run_unit_tests() -> int:
     except Exception as e:
         warn_msg(f"Docker pytest failed or unavailable ({e}). Trying host pytest...")
 
+    # Priority 3: host pytest
     try:
         res = subprocess.run(["pytest", "-q"], cwd=ROOT, capture_output=True, text=True, timeout=60)
         if res.returncode == 0:
@@ -259,7 +275,6 @@ def run_unit_tests() -> int:
     except Exception as e:
         fail_msg(f"Could not run tests: {e}")
         return 1
-
 
 def show_git_diff() -> None:
     header("6. Git Modified Files")

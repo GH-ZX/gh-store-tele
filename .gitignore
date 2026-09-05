@@ -8,3 +8,6 @@ redis_data/
 caddy_data/
 caddy_config/
 static/
+.venv/
+.pytest_cache/
+.uv/

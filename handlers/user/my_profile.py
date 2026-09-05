@@ -205,13 +205,20 @@ async def receive_top_up_amount(message: Message,
                                                     language)
     state_data = await state.get_data()
     if state_data.get("chat_id") and state_data.get("msg_id"):
-        await message.bot.edit_message_media(chat_id=state_data.get("chat_id"),
-                                             message_id=state_data.get("msg_id"),
-                                             media=media,
-                                             reply_markup=kb_builder.as_markup())
+        try:
+            await message.bot.edit_message_media(chat_id=state_data.get("chat_id"),
+                                                 message_id=state_data.get("msg_id"),
+                                                 media=media,
+                                                 reply_markup=kb_builder.as_markup())
+        except Exception:
+            try:
+                await message.bot.delete_message(chat_id=state_data.get("chat_id"),
+                                                 message_id=state_data.get("msg_id"))
+            except Exception:
+                pass
+            await NotificationService.answer_media(message, media, kb_builder.as_markup())
     else:
         await NotificationService.answer_media(message, media, kb_builder.as_markup())
-
 
 @my_profile_router.callback_query(MyProfileCallback.filter(), IsUserExistFilter())
 async def navigate(callback: CallbackQuery,
