@@ -1,158 +1,137 @@
-<h1 align="center">AiogramShopBot</h1>
+# 🛍️ GH Store — Modern Telegram E-Commerce Bot & Mini App
 
 <p align="center">
-  <strong>🛍️ Production-style Telegram shop bot with crypto payments, admin flows, FastAPI webhooks, and multibot support.</strong>
+  <strong>High-performance digital products storefront, automated key fulfillment, and multi-currency top-up powered by Aiogram 3, FastAPI, and Telegram Mini Apps.</strong>
 </p>
 
 <p align="center">
-  <a href="https://t.me/demo_aiogramshopbot">
-    <img src="https://img.shields.io/badge/Live_Demo_Bot-blue?logo=probot&logoColor=white" alt="Live bot"/>
+  <a href="https://t.me/ahmedghxx">
+    <img src="https://img.shields.io/badge/Developer-Ahmed_GH-0088cc?logo=telegram&logoColor=white" alt="Developer Telegram"/>
   </a>
-  <a href="https://t.me/ilyarolf_dev">
-    <img src="https://img.shields.io/badge/Contact_me-blue?logo=telegram&logoColor=white" alt="Business offer"/>
-  </a>
+  <img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" alt="Python 3.12"/>
+  <img src="https://img.shields.io/badge/Aiogram-3.31-2CA5E0?logo=telegram&logoColor=white" alt="Aiogram 3.31"/>
+  <img src="https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white" alt="FastAPI"/>
+  <img src="https://img.shields.io/badge/PostgreSQL-18-336791?logo=postgresql&logoColor=white" alt="PostgreSQL 18"/>
+  <img src="https://img.shields.io/badge/Redis-6.0-DC382D?logo=redis&logoColor=white" alt="Redis"/>
+  <img src="https://img.shields.io/badge/Tooling-uv-DE5FE9?logo=astral&logoColor=white" alt="uv"/>
 </p>
 
-[![Python](https://img.shields.io/badge/Python_3.12-3776AB?logo=python&logoColor=%23fff)](https://www.python.org/downloads/release/python-3127/)
-[![Dockerhub](https://img.shields.io/badge/Docker_Hub-2496ED?logo=docker&logoColor=fff)](https://hub.docker.com/r/ilyarolf/aiogram-shop-bot)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?logo=postgresql&logoColor=white)](https://www.sqlite.org/)
-[![Bitcoin](https://img.shields.io/badge/Bitcoin-FF9900?logo=bitcoin&logoColor=white)](https://github.com/bitcoin/bitcoin)
-[![Dogecoin](https://img.shields.io/badge/Dogecoin-C2A633?logo=dogecoin&logoColor=white)](https://dogecoin.com/)
-[![Litecoin](https://img.shields.io/badge/Litecoin-A6A9AA?logo=litecoin&logoColor=white)](https://github.com/litecoin-project/litecoin)
-[![Solana](https://img.shields.io/badge/Solana-9945FF?logo=solana&logoColor=fff)](https://github.com/solana-labs/solana)
-[![Ethereum](https://img.shields.io/badge/Ethereum-3C3C3D?logo=ethereum&logoColor=white)](https://github.com/ethereum)
-[![BinanceCoin](https://img.shields.io/badge/Binance-FCD535?logo=binance&logoColor=000)](https://github.com/binance)
-[![Tether](https://img.shields.io/badge/Tether-168363?&logo=tether&logoColor=white)](https://tether.to/)
-[![USD Coin](https://img.shields.io/badge/USD%20Coin-2775CA?&logo=usd-coin&logoColor=white)](https://www.usdc.com/)
+---
 
-**AiogramShopBot** is an open source Telegram shop bot built with **Aiogram 3**, **FastAPI**, **SQLAlchemy async**, **PostgreSQL**, **Redis**, **Docker Compose**, and **SQLAdmin**. It helps you sell **digital goods** and **physical goods** inside Telegram with built-in **cryptocurrency payments**, **shopping cart**, **purchase history**, **admin tools**, **shipping**, **reviews**, **coupons**, **analytics**, **referrals**, and **multi-language support**.
+## 🌟 Overview
 
-This repository is designed for developers and product teams who need a production-style Telegram ecommerce bot with a web admin panel, payment processing, localization, and scalable deployment.
+**GH Store** is a full-featured automated digital goods store and reseller platform built for Telegram. It combines a conversational Telegram bot with a modern, high-speed **Telegram Mini App (TMA)** storefront, enabling customers to browse digital services, manage carts, top up balances, and receive instant digital delivery directly inside Telegram.
 
-## ✨ Why This Project
+Built with **Python 3.12**, **Aiogram 3.31**, **FastAPI**, **SQLAlchemy 2.0 async**, and powered by **uv** for lightning-fast builds and test execution.
 
-- Sell digital and physical products directly in Telegram.
-- Accept crypto top-ups with Bitcoin, Dogecoin, Litecoin, Solana, Ethereum, Binance Coin, USDT, and USDC networks.
-- Manage inventory, users, coupons, shipping, reviews, media, and purchases from Telegram admin flows.
-- Use PostgreSQL, Redis, webhook mode, and Docker-based deployment for production setups.
-- Extend the project with FastAPI routes, SQLAdmin, repositories, services, and Aiogram handlers.
+---
 
-## 🚀 Core Features
+## ✨ Key Features
 
-- Telegram storefront with categories, subcategories, cart, checkout, and purchase history.
-- Admin menu for announcements, inventory, user management, analytics, wallet operations, media, coupons, shipping, buys, and reviews.
-- Crypto payment integration with KryptoExpress.
-- Referral system with limits and anti-abuse rules.
-- Localization through JSON translation files.
-- SQLAdmin web panel for database objects.
-- Docker Compose setup for local and production-like environments.
-- Multibot mode with one main bot and managed child bots.
+### 🛍️ Modern Telegram Mini App (TMA) Storefront
+- **Responsive Mobile-First UI**: Dark and light mode themes, glassmorphism design, and touch gestures.
+- **Smart Catalog & Search**: Real-time filtering across streaming, AI tools, gaming, and subscription categories with auto-categorization.
+- **In-App Cart Drawer**: Multi-item cart, live quantity management, warranty indicators, and instant balance checkout.
+- **Activity & Orders Tracker**: In-app purchase history, 1-tap license key copying, and warranty status tracking.
+
+### 💳 Multi-Currency Recharge & Payments
+- **USDT (BEP-20 / BNB Smart Chain)**: Direct blockchain top-ups with instant copyable deposit addresses, QR codes, and BscScan explorer verification.
+- **Telegram Stars**: Official in-app Telegram Stars billing with automatic payment confirmation.
+- **Syrian Local Methods (SAM API)**: Full support for **Sham Cash** and **Syriatel Cash** with live Syrian Pound (SYP/USD) conversion.
+- **Native 1-Tap Copying**: Telegram Bot API 8.0 `CopyTextButton` support in chat payments.
+
+### ⚙️ Automated Reseller Operations
+- **BatStore & SAM Reseller Integration**: Automated product catalog synchronization, stock tracking, and supplier order placement.
+- **Out-of-Stock Protection & Restock Alerts**: Visual stock status indicators with 1-tap notification alerts when products are replenished.
+- **Automated Order Polling**: Continuous background verification with automatic user refunds if supplier fulfillment encounters issues.
+
+### 🛡️ Admin Control Center
+- **In-App Control Center**: Live store statistics (revenue, active users, total orders, user balances).
+- **Supplier Wallets Monitor**: Live real-time balance tracker for BatStore and SAM (USD and SYP) with on-demand refresh.
+- **Dynamic Rates & Pricing**: Live SYP/USD exchange rate controls and global margin percentage adjustments.
+- **Web Admin Panel**: Full SQLAdmin dashboard at `/admin` for low-level database inspection and management.
+
+---
 
 ## 🧰 Tech Stack
 
-- Python 3.12
-- Aiogram 3
-- FastAPI
-- SQLAlchemy async
-- PostgreSQL
-- Redis
-- Alembic
-- SQLAdmin
-- Docker Compose
+| Layer | Technology |
+|---|---|
+| **Bot Framework** | [Aiogram 3.31](https://github.com/aiogram/aiogram) (Telegram Bot API 8.0+) |
+| **Web & API Backend** | [FastAPI](https://fastapi.tiangolo.com/) + [Uvicorn](https://www.uvicorn.org/) |
+| **Database & ORM** | [PostgreSQL 18](https://www.postgresql.org/) + [SQLAlchemy 2.0 (Async)](https://www.sqlalchemy.org/) + [Alembic](https://alembic.sqlalchemy.org/) |
+| **Caching & FSM** | [Redis](https://redis.io/) (Aiogram FSM storage, rate limiting, and event queues) |
+| **Web Admin** | [SQLAdmin](https://github.com/aminalaee/sqladmin) (Session-authenticated dashboard) |
+| **Package Management** | [uv](https://github.com/astral-sh/uv) by Astral |
+| **Containerization** | Docker + Docker Compose + Cloudflare Tunnel |
+
+---
 
 ## ⚡ Quick Start
 
-### 🖥️ Interactive deployment
+### 1. Prerequisites
+- [Docker](https://docs.docker.com/get-docker/) & [Docker Compose](https://docs.docker.com/compose/)
+- A Telegram Bot Token from [@BotFather](https://t.me/BotFather)
+- Python 3.12+ (optional, for local development outside Docker)
 
-Run the installer script on your VPS:
-
+### 2. Clone & Configure
 ```bash
-sudo sh -c "$(curl -fsSL https://raw.githubusercontent.com/ilyarolf/AiogramShopBot/refs/heads/master/scripts/deploy.sh)"
+git clone https://github.com/GH-ZX/gh-store-tele.git
+cd gh-store-tele
+
+# Copy template and configure your secrets
+cp .env.template .env
+nano .env
 ```
 
-### 💻 Local development
-
-```bash
-git clone https://github.com/ilyarolf/AiogramShopBot.git
-cd AiogramShopBot
-pip install -r requirements.txt
-python run.py
+Key environment variables to configure in `.env`:
+```ini
+TOKEN=123456789:ABCdefGhIJKlmNoPQRstuVWXyz
+ADMIN_ID_LIST=[123456789]
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=your_secure_password
+POSTGRES_DB=postgres
+REDIS_PASSWORD=your_redis_password
+WEBHOOK_HOST=https://bot.yourdomain.com
+KRYPTO_EXPRESS_API_KEY=your_key
+BATSTORE_API_KEY=your_key
+SAM_API_KEY=your_key
 ```
 
-You will also need PostgreSQL, Redis, environment variables, and webhook/reverse proxy configuration.
+### 3. Launch with Docker Compose
+```bash
+docker compose -p ghstore up -d --build
+```
 
-Full setup guide:
-- [Deployment and environment variables](docs.md#deployment-and-configuration)
-- [Local run example](docs.md#local-development-example)
+View live container logs:
+```bash
+docker logs -f GHstore
+```
 
-## 🎬 Product Walkthrough
+---
 
-### 💳 User balance top-up
+## 🧪 Local Testing & Health Check
 
-![Top Up Balance Demo](https://i.imgur.com/j2l7fHc.gif)
+Run the comprehensive project diagnostic tool (powered by `uv`):
+```bash
+# Run all AST syntax checks, i18n key audits, and unit tests
+uv run python scripts/inspect_project.py
 
-### 🛒 Product purchase flow
+# Or run pytest directly
+uv run pytest
+```
 
-![Purchase Flow Demo](https://i.imgur.com/yEUw32h.gif)
+---
 
-### 🧾 Purchase history
+## 📬 Contact & Support
 
-![Purchase History Demo](https://i.imgur.com/t5sA38N.gif)
+Developed and maintained by **Ahmed GH**:
 
-### 👛 Admin wallet withdrawal
+- **Telegram**: [@ahmedghxx](https://t.me/ahmedghxx)
+- **Project Repository**: [github.com/GH-ZX/gh-store-tele](https://github.com/GH-ZX/gh-store-tele)
 
-![Wallet Demo](https://i.imgur.com/gjkRFVb.gif)
-
-More Telegram bot GIF demos, admin flow examples, and screenshots are available in [docs.md](docs.md#demo-gallery).
-
-## 📚 Documentation
-
-- [Full documentation](docs.md)
-- [Deployment and configuration](docs.md#deployment-and-configuration)
-- [User manual](docs.md#user-manual)
-- [Admin manual](docs.md#admin-manual)
-- [Referral system](docs.md#referral-system)
-- [Cryptocurrency forwarding](docs.md#cryptocurrency-forwarding)
-- [SQLAdmin panel](docs.md#sqladmin-web-admin-panel)
-- [Multibot mode](docs.md#multibot-experimental)
-
-## 🌍 Community
-
-- [Contributing guide](CONTRIBUTING.md)
-- [Code of Conduct](CODE_OF_CONDUCT.md)
-- [Security policy](SECURITY.md)
-- [Support](SUPPORT.md)
-
-## 🎯 Use Cases
-
-- Telegram shop bot for digital products
-- Telegram bot for physical goods with shipping
-- Crypto-funded Telegram marketplace
-- Telegram multibot commerce setup with one manager bot
-- Aiogram ecommerce starter project
-- FastAPI + Aiogram + SQLAlchemy production template
-- Telegram admin panel and back office automation
-
-## 🤝 Commercial Contact
-
-- Demo bot: [@demo_aiogramshopbot](https://t.me/demo_aiogramshopbot)
-- Commercial requests: [@ilyarolf_dev](https://t.me/ilyarolf_dev)
-
-## 💖 Donate
-
-- BTC: `bc1q2kv89q8yvf068xxw3x65gzfag98l9wnrda3x56`
-- DOGE: `D8BFXqDM7MHf3A4j3kC8wWEN8DqRLVQjax`
-- LTC: `ltc1q0tuvm5vqn9le5zmhvhtp7z9p2eu6yvv24ey686`
-- SOL: `Avm7VAqPrwpHteXKfDTRFjpj6swEzjmj3a2KQvVDvugK`
-- ETH: `0xB49D720DE2630fA4C813d5B4c025706E25cF74fe`
-- TON: `UQD0QetwXoYTsmbZWVbE_z_JUFh54RVVRUxCbCHQkLsl3Hfn`
-- USDT ERC20: `0xB49D720DE2630fA4C813d5B4c025706E25cF74fe`
-- USDT BEP20: `0xB49D720DE2630fA4C813d5B4c025706E25cF74fe`
-
-## ⭐ Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=ilyarolf/AiogramShopBot&type=Date)](https://star-history.com/#ilyarolf/AiogramShopBot&Date)
+---
 
 ## 📄 License
 
-[MIT License](LICENSE)
+This project is licensed under the [MIT License](LICENSE).

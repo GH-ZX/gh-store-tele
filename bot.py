@@ -444,10 +444,12 @@ async def get_tma_reviews():
             "reviews": data,
         }
 
+_CACHED_BOT_USERNAME: str | None = None
+_USER_PHOTO_CACHE: dict = {}
+_SUPPLIER_WALLETS_CACHE: dict = {"data": None, "expire_time": 0.0}
 
 @app.get("/api/user-data")
-async def get_tma_user_data(tg_id: int):
-    """Return user profile, balance, VIP rank, referral data, and orders for TMA."""
+async def get_tma_user_data(tg_id: int, request: Request):
     async with get_db_session() as session:
         user = await UserRepository.get_by_tgid(tg_id, session)
         if not user:
@@ -564,17 +566,33 @@ async def get_tma_user_data(tg_id: int):
         from repositories.referral import ReferralRepository
         referrals_total_earned = await ReferralRepository.get_bonus_sum_as_referrer(user.id, session)
         referrals_breakdown = await ReferralRepository.get_referrals_breakdown(user.id, session)
-        me = await bot.get_me()
-        # Fetch real Telegram profile photo
-        photo_url = None
-        try:
-            photos = await bot.get_user_profile_photos(user.telegram_id, limit=1)
-            if photos.total_count > 0:
-                file_id = photos.photos[0][-1].file_id
-                file_obj = await bot.get_file(file_id)
-                photo_url = f"https://api.telegram.org/file/bot{config.TOKEN}/{file_obj.file_path}"
-        except Exception as e:
-            logging.debug("Could not fetch profile photo: %s", e)
+        global _CACHED_BOT_USERNAME
+        if _CACHED_BOT_USERNAME is None:
+            try:
+                me_obj = await bot.get_me()
+                _CACHED_BOT_USERNAME = me_obj.username or ""
+            except Exception:
+                _CACHED_BOT_USERNAME = ""
+        bot_username = _CACHED_BOT_USERNAME
+
+        # High-speed cached Telegram profile photo (1 hour TTL)
+        import time
+        now_ts = time.time()
+        photo_entry = _USER_PHOTO_CACHE.get(user.telegram_id)
+        if photo_entry and photo_entry[1] > now_ts:
+            photo_url = photo_entry[0]
+        else:
+            photo_url = None
+            try:
+                photos = await bot.get_user_profile_photos(user.telegram_id, limit=1)
+                if photos.total_count > 0:
+                    file_id = photos.photos[0][-1].file_id
+                    file_obj = await bot.get_file(file_id)
+                    photo_url = f"https://api.telegram.org/file/bot{config.TOKEN}/{file_obj.file_path}"
+            except Exception as e:
+                logging.debug("Could not fetch profile photo: %s", e)
+            _USER_PHOTO_CACHE[user.telegram_id] = (photo_url, now_ts + 3600.0)
+
         is_admin = bool(user.telegram_id in config.ADMIN_ID_LIST)
         admin_stats = None
         if is_admin:
@@ -600,41 +618,70 @@ async def get_tma_user_data(tg_id: int):
                 stars_cfg = await ConfigService.get(session, "GHSTORE_STARS_TO_USD", env_fallback=os.environ.get("GHSTORE_STARS_TO_USD", "0.01"))
                 announcement_cfg = await ConfigService.get(session, "STORE_ANNOUNCEMENT", env_fallback="")
 
-                # Fetch supplier wallet balances (BatStore & SAM)
-                batstore_bal = 0.08
-                try:
-                    from services.batstore import BatStoreService
-                    me_info = await BatStoreService.me(session)
-                    raw_b = me_info.get("wallet_balance")
-                    if raw_b is None:
-                        raw_b = me_info.get("wallet", {}).get("balance", 0.0)
-                    batstore_bal = round(float(raw_b or 0.0), 2)
-                except Exception as e:
-                    logging.warning("Could not fetch BatStore balance: %s", e)
+                # Fetch supplier wallet balances with concurrent TTL cache (60s)
+                global _SUPPLIER_WALLETS_CACHE
+                force_refresh = (request.query_params.get("refresh_wallets") == "true")
+                if not force_refresh and _SUPPLIER_WALLETS_CACHE["data"] and _SUPPLIER_WALLETS_CACHE["expire_time"] > now_ts:
+                    supplier_wallets = _SUPPLIER_WALLETS_CACHE["data"]
+                else:
+                    async def _get_batstore():
+                        try:
+                            from services.batstore import BatStoreService
+                            me_info = await asyncio.wait_for(BatStoreService.me(session), timeout=2.5)
+                            raw_b = me_info.get("wallet_balance")
+                            if raw_b is None:
+                                raw_b = me_info.get("wallet", {}).get("balance", 0.0)
+                            return round(float(raw_b or 0.0), 2)
+                        except Exception as e:
+                            logging.warning("Could not fetch BatStore balance: %s", e)
+                            prev = _SUPPLIER_WALLETS_CACHE.get("data") or {}
+                            return prev.get("batstore_usd", 0.08)
 
-                sam_bal = {"usd": 0.0, "syp": 0.0}
-                try:
-                    from services.sam import SamService
-                    wallets = await SamService.list_wallets(session)
-                    for w in wallets:
-                        prov = w.get("provider") or "shamcash"
-                        addr = w.get("walletAddress") or w.get("id") or w.get("phone")
-                        if addr:
+                    async def _get_sam():
+                        sam_acc = {"usd": 0.0, "syp": 0.0}
+                        try:
+                            from services.sam import SamService
+                            wallets = await asyncio.wait_for(SamService.list_wallets(session), timeout=2.5)
                             base, key = await SamService._resolve(session)
                             async with await SamService._client() as client:
-                                b_resp = await client.get(f"{base}/v1/wallets/{prov}/{addr}/balance", headers=SamService._headers(key))
-                                if b_resp.status_code == 200:
-                                    b_data = b_resp.json()
-                                    if isinstance(b_data, list):
-                                        for b_item in b_data:
-                                            curr = (b_item.get("currency") or "").upper()
-                                            amt = float(b_item.get("amount") or 0.0)
-                                            if curr == "USD":
-                                                sam_bal["usd"] = round(sam_bal["usd"] + amt, 2)
-                                            elif curr == "SYP":
-                                                sam_bal["syp"] = round(sam_bal["syp"] + amt, 2)
-                except Exception as e:
-                    logging.warning("Could not fetch SAM balance: %s", e)
+                                for w in wallets:
+                                    prov = w.get("provider") or "shamcash"
+                                    addr = w.get("walletAddress") or w.get("id") or w.get("phone")
+                                    if addr:
+                                        try:
+                                            b_resp = await asyncio.wait_for(
+                                                client.get(f"{base}/v1/wallets/{prov}/{addr}/balance", headers=SamService._headers(key)),
+                                                timeout=1.5
+                                            )
+                                            if b_resp.status_code == 200:
+                                                b_data = b_resp.json()
+                                                if isinstance(b_data, list):
+                                                    for b_item in b_data:
+                                                        curr = (b_item.get("currency") or "").upper()
+                                                        amt = float(b_item.get("amount") or 0.0)
+                                                        if curr == "USD":
+                                                            sam_acc["usd"] = round(sam_acc["usd"] + amt, 2)
+                                                        elif curr == "SYP":
+                                                            sam_acc["syp"] = round(sam_acc["syp"] + amt, 2)
+                                        except Exception:
+                                            pass
+                        except Exception as e:
+                            logging.warning("Could not fetch SAM balance: %s", e)
+                            prev = _SUPPLIER_WALLETS_CACHE.get("data") or {}
+                            sam_acc["usd"] = prev.get("sam_usd", 0.0)
+                            sam_acc["syp"] = prev.get("sam_syp", 0.0)
+                        return sam_acc
+
+                    try:
+                        bat_val, sam_val = await asyncio.gather(_get_batstore(), _get_sam())
+                        supplier_wallets = {
+                            "batstore_usd": bat_val,
+                            "sam_usd": sam_val["usd"],
+                            "sam_syp": sam_val["syp"],
+                        }
+                        _SUPPLIER_WALLETS_CACHE = {"data": supplier_wallets, "expire_time": now_ts + 60.0}
+                    except Exception as e:
+                        supplier_wallets = _SUPPLIER_WALLETS_CACHE.get("data") or {"batstore_usd": 0.08, "sam_usd": 0.0, "sam_syp": 0.0}
 
                 admin_stats = {
                     "total_revenue": round(float(tot_rev), 2),
@@ -647,15 +694,10 @@ async def get_tma_user_data(tg_id: int):
                     "stars_to_usd_rate": float(stars_cfg or 0.01),
                     "store_announcement": announcement_cfg or "",
                     "autorefund_enabled": (await ConfigService.get(session, "AUTOREFUND_ENABLED", default="false")).lower() in ("true", "1", "yes"),
-                    "supplier_wallets": {
-                        "batstore_usd": batstore_bal,
-                        "sam_usd": sam_bal["usd"],
-                        "sam_syp": sam_bal["syp"],
-                    },
+                    "supplier_wallets": supplier_wallets,
                 }
             except Exception as e:
                 logging.error("Failed to compile admin stats: %s", e)
-
         return {
             "telegram_id": user.telegram_id,
             "username": user.telegram_username or "",
@@ -668,7 +710,7 @@ async def get_tma_user_data(tg_id: int):
             "vip_discount": discount_pct,
             "total_spent": round(user.consume_records or 0.0, 2),
             "referral_code": user.referral_code or "",
-            "bot_username": me.username or "GHStoreBot",
+            "bot_username": bot_username or "GHStoreBot",
             "referrals_count": referrals_count,
             "referrals_total_earned": round(float(referrals_total_earned or 0.0), 2),
             "referrals_breakdown": referrals_breakdown,

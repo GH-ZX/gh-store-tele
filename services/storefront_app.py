@@ -5886,8 +5886,21 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     }
     async function refreshSupplierBalances() {
       haptic('light');
-      showToast('جاري تحديث أرصدة محافظ الموردين...');
-      await loadUserData();
+      showToast((currentAppLanguage === 'ar') ? 'جاري تحديث أرصدة محافظ الموردين...' : 'Updating supplier balances...');
+      try {
+        const res = await fetch(`/api/user-data?tg_id=${userId}&refresh_wallets=true`);
+        const d = await res.json();
+        if (d && d.admin_stats && d.admin_stats.supplier_wallets) {
+          const sw = d.admin_stats.supplier_wallets;
+          const setText = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val; };
+          setText('admin-bal-batstore', `$${Number(sw.batstore_usd || 0).toFixed(2)}`);
+          setText('admin-bal-sam-usd', `$${Number(sw.sam_usd || 0).toFixed(2)} USD`);
+          setText('admin-bal-sam-syp', `${Math.round(Number(sw.sam_syp || 0)).toLocaleString()} ل.س`);
+          showToast((currentAppLanguage === 'ar') ? '✅ تم تحديث الأرصدة بنجاح' : '✅ Balances updated');
+        }
+      } catch (e) {
+        showToast((currentAppLanguage === 'ar') ? 'تعذر التحديث' : 'Update failed');
+      }
     }
 
 
