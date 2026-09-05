@@ -1010,6 +1010,109 @@
     </div>
   </section>
 
+  <!-- DEDICATED IN-APP STORE SETTINGS & RATES VIEW -->
+  <section id="view-admin-store-settings" class="tab-view">
+    <div class="subview-header">
+      <button class="btn-back-catalog" onclick="closeAdminStoreSettingsPage()">
+        <span>→</span>
+        <span id="btn-back-store-settings-label">العودة للإعدادات</span>
+      </button>
+      <span style="font-size: 13px; color: var(--accent); font-weight: 700;" id="store-settings-header-title">إعدادات وتشغيل المتجر</span>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 10px; margin-bottom: 20px;">
+      <!-- Card 1: Currencies & Exchange Rates -->
+      <div class="inset-card" style="padding: 14px;">
+        <div style="font-size: 13px; font-weight: 800; color: var(--accent); margin-bottom: 10px;" id="sec-hdr-currencies">العملات وأسعار الصرف</div>
+        
+        <div style="margin-bottom: 12px;">
+          <div style="font-size: 11px; font-weight: 700; margin-bottom: 4px;" id="admin-syp-rate-title">سعر صرف الليرة السورية مقابل الدولار</div>
+          <div style="font-size: 10px; color: var(--hint); margin-bottom: 6px;" id="admin-syp-rate-desc">مربوط بقاعدة البيانات ويتم تطبيقه فورياً على الشحن بالليرة السورية</div>
+          <div style="display: flex; gap: 6px;">
+            <input type="number" class="admin-text-input" id="admin-syp-rate-input" placeholder="e.g. 15000" style="flex: 1; font-family: monospace; font-size: 12px;">
+            <button class="btn-action-primary" onclick="submitAdminUpdateSypRate()" style="height: 38px; padding: 0 14px; font-size: 11px; font-weight: 700;" id="btn-syp-rate-update">تحديث</button>
+          </div>
+        </div>
+
+        <div>
+          <div style="font-size: 11px; font-weight: 700; margin-bottom: 4px;" id="admin-stars-rate-title">قيمة النجمة الواحدة مقابل الدولار</div>
+          <div style="font-size: 10px; color: var(--hint); margin-bottom: 6px;" id="admin-stars-rate-desc">افتراضياً: 0.01$ للنجمة الواحدة (100 نجمة = 1$)</div>
+          <div style="display: flex; gap: 6px;">
+            <input type="number" step="any" class="admin-text-input" id="admin-stars-rate-input" placeholder="0.01" style="flex: 1; font-family: monospace; font-size: 12px;">
+            <button class="btn-action-primary" onclick="submitAdminUpdateStarsRate()" style="height: 38px; padding: 0 14px; font-size: 11px; font-weight: 700;" id="admin-stars-rate-btn">حفظ سعر النجوم</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 2: Pricing & Profit Margins -->
+      <div class="inset-card" style="padding: 14px;">
+        <div style="font-size: 13px; font-weight: 800; color: var(--accent); margin-bottom: 10px;" id="sec-hdr-pricing">التسعير وهوامش الأرباح</div>
+        
+        <div style="margin-bottom: 12px;">
+          <div style="font-size: 11px; font-weight: 700; margin-bottom: 4px;" id="admin-margin-rate-title">نسبة هامش الربح العام على المنتجات (%)</div>
+          <div style="font-size: 10px; color: var(--hint); margin-bottom: 6px;" id="admin-margin-rate-desc">تحدد نسبة ربح المتجر التلقائية على أسعار المورد لجميع المنتجات</div>
+          <div style="display: flex; gap: 6px;">
+            <input type="number" step="any" class="admin-text-input" id="admin-margin-input" placeholder="20" style="flex: 1; font-family: monospace; font-size: 12px;">
+            <button class="btn-action-primary" onclick="submitAdminUpdateMargin()" style="height: 38px; padding: 0 14px; font-size: 11px; font-weight: 700;" id="btn-margin-update">تحديث الهامش</button>
+          </div>
+        </div>
+
+        <div>
+          <div style="font-size: 11px; font-weight: 700; margin-bottom: 4px;" id="admin-ref-rate-title">نسبة عمولة الإحالة من أرباح الهامش (%)</div>
+          <div style="font-size: 10px; color: var(--hint); margin-bottom: 6px;" id="admin-ref-rate-desc">النسبة التي يحصل عليها العميل من أرباح مشتريات أصدقائه</div>
+          <div style="display: flex; gap: 6px;">
+            <input type="number" step="any" class="admin-text-input" id="admin-ref-rate-input" placeholder="0.2" style="flex: 1; font-family: monospace; font-size: 12px;">
+            <button class="btn-action-primary" onclick="submitAdminUpdateReferralRate()" style="height: 38px; padding: 0 14px; font-size: 11px; font-weight: 700;" id="btn-ref-rate-update">تحديث</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 3: Store Identity & Announcements -->
+      <div class="inset-card" style="padding: 14px;">
+        <div style="font-size: 13px; font-weight: 800; color: var(--accent); margin-bottom: 10px;" id="sec-hdr-branding">هوية المتجر والإعلانات</div>
+        
+        <div style="margin-bottom: 12px;">
+          <div style="font-size: 11px; font-weight: 700; margin-bottom: 4px;" id="admin-logo-url-title">رابط شعار المتجر</div>
+          <div style="font-size: 10px; color: var(--hint); margin-bottom: 6px;" id="admin-logo-url-desc">يظهر أعلى المتجر بجانب الاسم (يدعم PNG و SVG و WebP)</div>
+          <div style="display: flex; gap: 6px;">
+            <input type="text" class="admin-text-input" id="admin-store-logo-input" placeholder="https://example.com/logo.png" style="flex: 1; font-size: 11px;">
+            <button class="btn-action-primary" onclick="submitAdminUpdateStoreLogo()" style="height: 38px; padding: 0 14px; font-size: 11px; font-weight: 700;" id="btn-logo-update">حفظ الشعار</button>
+          </div>
+        </div>
+
+        <div>
+          <div style="font-size: 11px; font-weight: 700; margin-bottom: 4px;" id="admin-broadcast-banner-title">شريط الإعلانات العام في المتجر</div>
+          <div style="font-size: 10px; color: var(--hint); margin-bottom: 6px;" id="admin-broadcast-banner-desc">يظهر أعلى الصفحة لجميع الزوار (اتركه فارغاً لإخفائه)</div>
+          <div style="display: flex; gap: 6px;">
+            <input type="text" class="admin-text-input" id="admin-announcement-input" placeholder="خصم خاص بمناسبة العطلة..." style="flex: 1; font-size: 11px;">
+            <button class="btn-action-primary" onclick="submitAdminUpdateAnnouncement()" style="height: 38px; padding: 0 14px; font-size: 11px; font-weight: 700;" id="btn-announcement-update">نشر الإعلان</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 4: Operations & Sync -->
+      <div class="inset-card" style="padding: 14px;">
+        <div style="font-size: 13px; font-weight: 800; color: var(--accent); margin-bottom: 10px;" id="sec-hdr-operations">أدوات التشغيل والمزامنة</div>
+        
+        <div style="background: var(--input-bg); border-radius: 10px; padding: 10px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <div style="font-size: 11px; font-weight: 700;" id="admin-autorefund-title">نظام الاسترداد التلقائي</div>
+            <div style="font-size: 10px; color: var(--hint); margin-top: 2px;" id="admin-autorefund-desc">استرداد الطلبات المعلقة فوراً لحساب العميل عند التعثر</div>
+          </div>
+          <button class="admin-edit-badge-btn" id="admin-autorefund-toggle-btn" onclick="submitAdminToggleAutoRefund()" style="font-size: 11px; padding: 5px 12px; color: #f59e0b;">
+            معطل
+          </button>
+        </div>
+
+        <div>
+          <button class="btn-action-primary" id="btn-force-sync-catalog" onclick="submitAdminCatalogSync()" style="width: 100%; height: 44px; background: linear-gradient(135deg, #6366f1, #4f46e5); font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px;">
+            <span id="btn-force-sync-label">مزامنة الكتالوج والأسعار من المورد فورياً</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
 
   <!-- TAB 2: PROCESSES & ACTIVITY VIEW (ORDERS & RECHARGES) -->
   <main id="view-orders" class="tab-view">
@@ -1312,117 +1415,31 @@
         </div>
       </div>
 
-      <!-- Dedicated Multi-Supplier Drawer Button -->
-      <div style="margin-bottom: 14px;">
-        <button class="btn-action-primary" onclick="openAdminSuppliersPage()" style="width: 100%; height: 48px; background: linear-gradient(135deg, #0284c7, #6366f1); font-weight: 800; font-size: 13px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border-radius: 12px; box-shadow: 0 4px 14px rgba(2, 132, 199, 0.25);">
-          <span id="btn-suppliers-drawer-label">إدارة ومفاتيح الموردين والسيرفرات</span>
-          <span style="font-size: 14px; opacity: 0.85;">←</span>
+      <!-- Executive Admin Drawers Grid (Clean 2-Column Grid) -->
+      <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 8px;">
+        <button class="btn-action-primary" onclick="openAdminSuppliersPage()" style="height: 48px; background: linear-gradient(135deg, #0284c7, #2563eb); font-weight: 800; font-size: 12px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+          <span id="btn-suppliers-drawer-label">الموردين والسيرفرات</span>
         </button>
-      </div>
-
-      <!-- Live Exchange Rate Manager -->
-      <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 12px;">
-        <div style="font-size: 12px; font-weight: 700; margin-bottom: 6px;" id="admin-syp-rate-title">سعر صرف الليرة السورية مقابل الدولار</div>
-        <div style="font-size: 11px; color: var(--hint); margin-bottom: 8px;">مربوط بقاعدة البيانات ويتم تطبيقه فورياً على الشحن بالليرة السورية</div>
-        <div style="display: flex; gap: 8px;">
-          <input type="number" class="admin-text-input" id="admin-syp-rate-input" placeholder="e.g. 15000" style="flex: 1; font-family: monospace; font-weight: 700;">
-          <button class="btn-action-primary" onclick="submitAdminUpdateSypRate()" style="height: 38px; width: auto; padding: 0 16px; font-size: 12px;">تحديث</button>
-        </div>
-      </div>
-
-      <!-- Referral Commission Rate Manager -->
-      <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 14px;">
-        <div style="font-size: 12px; font-weight: 700; margin-bottom: 6px;" id="admin-ref-rate-title">نسبة عمولة الإحالة من أرباح الهامش</div>
-        <div style="display: flex; gap: 8px;">
-          <input type="number" step="any" class="admin-text-input" id="admin-ref-rate-input" placeholder="0.2" style="flex: 1; font-family: monospace; font-weight: 700;">
-          <button class="btn-action-primary" onclick="submitAdminUpdateReferralRate()" style="height: 38px; width: auto; padding: 0 16px; font-size: 12px;">تحديث</button>
-        </div>
-      </div>
-
-      <!-- Store Brand Logo Manager -->
-      <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 14px;">
-        <div style="font-size: 12px; font-weight: 700; margin-bottom: 6px;" id="admin-logo-url-title">رابط شعار المتجر</div>
-        <div style="font-size: 11px; color: var(--hint); margin-bottom: 8px;">يظهر في أعلى المتجر بجانب الاسم (يدعم PNG و SVG و WebP)</div>
-        <div style="display: flex; gap: 8px;">
-          <input type="text" class="admin-text-input" id="admin-store-logo-input" placeholder="https://example.com/logo.png" style="flex: 1; font-size: 12px;">
-          <button class="btn-action-primary" onclick="submitAdminUpdateStoreLogo()" style="height: 38px; width: auto; padding: 0 16px; font-size: 12px;">حفظ الشعار</button>
-        </div>
-      </div>
-
-      <!-- Global Profit Margin Manager -->
-      <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 12px;">
-        <div style="font-size: 12px; font-weight: 700; margin-bottom: 6px;" id="admin-margin-rate-title">نسبة هامش الربح العام على المنتجات</div>
-        <div style="font-size: 11px; color: var(--hint); margin-bottom: 8px;">تحدد نسبة ربح المتجر التلقائية على أسعار المورد لجميع المنتجات</div>
-        <div style="display: flex; gap: 8px;">
-          <input type="number" step="any" class="admin-text-input" id="admin-margin-input" placeholder="20" style="flex: 1; font-family: monospace; font-weight: 700;">
-          <button class="btn-action-primary" onclick="submitAdminUpdateMargin()" style="height: 38px; width: auto; padding: 0 16px; font-size: 12px;">تحديث الهامش</button>
-        </div>
-      </div>
-
-      <!-- Telegram Stars Rate Manager -->
-      <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 12px;">
-        <div style="font-size: 12px; font-weight: 700; margin-bottom: 6px;" id="admin-stars-rate-title">قيمة النجمة الواحدة مقابل الدولار</div>
-        <div style="font-size: 11px; color: var(--hint); margin-bottom: 8px;" id="admin-stars-rate-desc">افتراضياً: 0.01$ للنجمة الواحدة (100 نجمة = 1$)</div>
-        <div style="display: flex; gap: 8px;">
-          <input type="number" step="any" class="admin-text-input" id="admin-stars-rate-input" placeholder="0.01" style="flex: 1; font-family: monospace; font-weight: 700;">
-          <button class="btn-action-primary" onclick="submitAdminUpdateStarsRate()" style="height: 38px; width: auto; padding: 0 16px; font-size: 12px;" id="admin-stars-rate-btn">حفظ سعر النجوم</button>
-        </div>
-      </div>
-
-      <!-- Broadcast Announcement Banner Manager -->
-      <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 14px;">
-        <div style="font-size: 12px; font-weight: 700; margin-bottom: 6px;" id="admin-broadcast-banner-title">شريط الإعلانات العام في المتجر</div>
-        <div style="font-size: 11px; color: var(--hint); margin-bottom: 8px;">يظهر أعلى الصفحة لجميع الزوار (اتركه فارغاً لإخفائه)</div>
-        <div style="display: flex; gap: 8px;">
-          <input type="text" class="admin-text-input" id="admin-announcement-input" placeholder="خصم خاص بمناسبة العطلة..." style="flex: 1; font-size: 12px;">
-          <button class="btn-action-primary" onclick="submitAdminUpdateAnnouncement()" style="height: 38px; width: auto; padding: 0 16px; font-size: 12px;">نشر الإعلان</button>
-        </div>
-      </div>
-
-      <!-- Force Supplier Catalog Sync -->
-      <div style="margin-bottom: 14px;">
-        <button class="btn-action-primary" id="btn-force-sync-catalog" onclick="submitAdminCatalogSync()" style="width: 100%; height: 44px; background: linear-gradient(135deg, #6366f1, #4f46e5); font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 8px;">
-          <span id="btn-force-sync-label">مزامنة الكتالوج والأسعار من المورد فورياً</span>
+        <button class="btn-action-primary" onclick="openAdminStoreSettingsPage()" style="height: 48px; background: linear-gradient(135deg, #6366f1, #4f46e5); font-weight: 800; font-size: 12px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+          <span id="btn-store-settings-drawer-label">إعدادات وتشغيل المتجر</span>
         </button>
-      </div>
-
-      <!-- Auto-Refund Master Setting -->
-      <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
-        <div>
-          <div style="font-size: 12px; font-weight: 700;" id="admin-autorefund-title">نظام الاسترداد التلقائي</div>
-          <div style="font-size: 10px; color: var(--hint); margin-top: 2px;">عند التعطيل، يتم استرداد الطلبات المعلقة يدوياً فقط</div>
-        </div>
-        <button class="admin-edit-badge-btn" id="admin-autorefund-toggle-btn" onclick="submitAdminToggleAutoRefund()" style="font-size: 11px; padding: 5px 12px; color: #f59e0b;">
-          معطل
-        </button>
-      </div>
-
-      <!-- Stuck Orders Center Button -->
-      <div style="margin-bottom: 12px;">
-        <button class="btn-action-warning" onclick="openAdminStuckOrdersPage()" style="width: 100%; height: 44px; font-size: 13px; background: rgba(245,158,11,0.15); border: 1px solid rgba(245,158,11,0.4); color: #f59e0b; display: flex; align-items: center; justify-content: center; gap: 8px;">
-          <span id="btn-stuck-orders-label">متابعة الطلبات والعمليات المعلقة</span>
-        </button>
-      </div>
-
-      <!-- Quick Admin Management Navigation Drawers -->
-      <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px;">
         <button class="btn-action-secondary" onclick="openAdminUsersPage()" style="height: 44px; font-size: 12px;" id="btn-admin-users-drawer">
           إدارة المستخدمين والأرصدة
         </button>
         <button class="btn-action-secondary" onclick="openAdminOrdersModal()" style="height: 44px; font-size: 12px;" id="btn-admin-orders-drawer">
-          مراقبة الطلبات والاسترداد
+          مراقبة طلبات المتجر
+        </button>
+        <button class="btn-action-secondary" onclick="openAdminStuckOrdersPage()" style="height: 44px; font-size: 12px; border-color: rgba(245,158,11,0.4); color: #f59e0b;" id="btn-stuck-orders-label">
+          العمليات المعلقة والاسترداد
         </button>
         <button class="btn-action-secondary" onclick="openAdminCouponsModal()" style="height: 44px; font-size: 12px;" id="btn-admin-coupons-drawer">
           إدارة وإنشاء الكوبونات
         </button>
-        <button class="btn-action-secondary" onclick="openFullSqlAdmin()" style="height: 44px; font-size: 12px;" id="btn-admin-sqladmin-drawer">
-          لوحة SQLAdmin الكاملة
+        <button class="btn-action-secondary" onclick="openAdminConfigPage()" style="height: 44px; font-size: 12px;" id="btn-admin-onetime-label">
+          إعدادات التهيئة
         </button>
-      </div>
-      <!-- Master One-Time System Config Page Button -->
-      <div style="margin-top: 8px;">
-        <button class="btn-action-primary" onclick="openAdminConfigPage()" style="width: 100%; height: 42px; font-size: 12px; background: linear-gradient(135deg, #0284c7, #2563eb); display: flex; align-items: center; justify-content: center; gap: 6px;">
-          <span id="btn-admin-onetime-label">إعدادات التهيئة ومفاتيح الربط</span>
+        <button class="btn-action-secondary" onclick="openFullSqlAdmin()" style="height: 44px; font-size: 12px;" id="btn-admin-sqladmin-drawer">
+          لوحة SQLAdmin
         </button>
       </div>
     </div>

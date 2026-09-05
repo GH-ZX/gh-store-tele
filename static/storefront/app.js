@@ -1121,6 +1121,25 @@ const tg = window.Telegram?.WebApp;
         broadcast_banner_title: "شريط الإعلانات العام في المتجر",
         force_sync_btn: "مزامنة الكتالوج والأسعار من المورد فورياً",
         autorefund_title: "نظام الاسترداد التلقائي",
+        store_settings_title: "إعدادات وتشغيل المتجر",
+        store_settings_drawer: "إعدادات وتشغيل المتجر",
+        back_to_settings: "العودة للإعدادات",
+        sec_hdr_currencies: "العملات وأسعار الصرف",
+        sec_hdr_pricing: "التسعير وهوامش الأرباح",
+        sec_hdr_branding: "هوية المتجر والإعلانات",
+        sec_hdr_operations: "أدوات التشغيل والمزامنة",
+        admin_syp_rate_desc: "مربوط بقاعدة البيانات ويتم تطبيقه فورياً على الشحن بالليرة السورية",
+        admin_stars_rate_desc: "افتراضياً: 0.01$ للنجمة الواحدة (100 نجمة = 1$)",
+        save_stars_rate: "حفظ سعر النجوم",
+        admin_margin_rate_desc: "تحدد نسبة ربح المتجر التلقائية على أسعار المورد لجميع المنتجات",
+        update_margin: "تحديث الهامش",
+        admin_ref_rate_desc: "النسبة التي يحصل عليها العميل من أرباح مشتريات أصدقائه",
+        admin_logo_url_desc: "يظهر في أعلى المتجر بجانب الاسم (يدعم PNG و SVG و WebP)",
+        save_logo: "حفظ الشعار",
+        admin_broadcast_banner_desc: "يظهر أعلى الصفحة لجميع الزوار (اتركه فارغاً لإخفائه)",
+        publish_announcement: "نشر الإعلان",
+        admin_autorefund_desc: "استرداد الطلبات المعلقة فوراً لحساب العميل عند التعثر",
+        update: "تحديث",
         quote_limited_note: "تم تقليص الخصم عند تكلفة المورد حتى لا يسبب خسارة.",
         quote_failed_note: "تعذر حساب السعر النهائي. يرجى إعادة المحاولة.",
         price_unavailable_note: "هذا المنتج غير متاح حالياً بهذا السعر."
@@ -1272,7 +1291,26 @@ const tg = window.Telegram?.WebApp;
         stars_rate_title: "Telegram Stars / USD Rate",
         broadcast_banner_title: "Broadcast Announcement Banner",
         force_sync_btn: "Force Sync Catalog from Supplier",
-        autorefund_title: "Automated Refunds Engine"
+        autorefund_title: "Automated Refunds Engine",
+        store_settings_title: "Store Operations & Rates",
+        store_settings_drawer: "Store Rates & Operations",
+        back_to_settings: "Back to Settings",
+        sec_hdr_currencies: "Currencies & Exchange Rates",
+        sec_hdr_pricing: "Pricing & Profit Margins",
+        sec_hdr_branding: "Store Branding & Announcements",
+        sec_hdr_operations: "Operations & Synchronization",
+        admin_syp_rate_desc: "Database-backed and applied instantly to Syrian Pound top-ups",
+        admin_stars_rate_desc: "Default: $0.01 per star (100 stars = $1.00)",
+        save_stars_rate: "Save Stars Rate",
+        admin_margin_rate_desc: "Sets the store default profit margin over supplier wholesale prices",
+        update_margin: "Update Margin",
+        admin_ref_rate_desc: "Percentage earned by referrer from friend purchase profit margin",
+        admin_logo_url_desc: "Shown in store header next to brand name (PNG, SVG, WebP)",
+        save_logo: "Save Logo",
+        admin_broadcast_banner_desc: "Broadcast banner shown to all customers (leave empty to hide)",
+        publish_announcement: "Publish Announcement",
+        admin_autorefund_desc: "Instantly refunds failed or unfulfilled orders back to customer wallet",
+        update: "Update"
       }
     };
 
@@ -1399,6 +1437,26 @@ const tg = window.Telegram?.WebApp;
       setText('btn-admin-coupons-drawer', d.coupons_manage_btn);
       setText('btn-admin-sqladmin-drawer', d.sqladmin_btn);
       setText('btn-admin-onetime-label', d.one_time_setup);
+      setText('store-settings-header-title', d.store_settings_title);
+      setText('btn-back-store-settings-label', d.back_to_settings);
+      setText('sec-hdr-currencies', d.sec_hdr_currencies);
+      setText('sec-hdr-pricing', d.sec_hdr_pricing);
+      setText('sec-hdr-branding', d.sec_hdr_branding);
+      setText('sec-hdr-operations', d.sec_hdr_operations);
+      setText('admin-syp-rate-desc', d.admin_syp_rate_desc);
+      setText('admin-stars-rate-desc', d.admin_stars_rate_desc);
+      setText('admin-stars-rate-btn', d.save_stars_rate);
+      setText('admin-margin-rate-desc', d.admin_margin_rate_desc);
+      setText('btn-margin-update', d.update_margin);
+      setText('admin-ref-rate-desc', d.admin_ref_rate_desc);
+      setText('admin-logo-url-desc', d.admin_logo_url_desc);
+      setText('btn-logo-update', d.save_logo);
+      setText('admin-broadcast-banner-desc', d.admin_broadcast_banner_desc);
+      setText('btn-announcement-update', d.publish_announcement);
+      setText('admin-autorefund-desc', d.admin_autorefund_desc);
+      setText('btn-syp-rate-update', d.update);
+      setText('btn-ref-rate-update', d.update);
+      setText('btn-store-settings-drawer-label', d.store_settings_drawer);
       setText('admin-stat-label-revenue', d.stat_revenue);
       setText('admin-stat-label-cost', d.stat_cost);
       setText('admin-stat-label-profit', d.stat_profit);
@@ -5038,6 +5096,47 @@ const tg = window.Telegram?.WebApp;
         navStack.pop();
         if (navStack.length === 0 && tg?.BackButton) tg.BackButton.hide();
       }
+    }
+
+    function openAdminStoreSettingsPage() {
+      haptic('pop');
+      document.querySelectorAll('.tab-view').forEach(el => el.classList.remove('active'));
+      const view = document.getElementById('view-admin-store-settings');
+      if (view) view.classList.add('active');
+      window.scrollTo(0, 0);
+      pushNav('admin_store_settings', closeAdminStoreSettingsPage);
+      loadAdminStoreSettingsValues();
+    }
+
+    function closeAdminStoreSettingsPage() {
+      haptic('light');
+      const view = document.getElementById('view-admin-store-settings');
+      if (view) view.classList.remove('active');
+      const setView = document.getElementById('view-settings');
+      if (setView) setView.classList.add('active');
+      if (navStack.length > 0 && navStack[navStack.length - 1].name === 'admin_store_settings') {
+        navStack.pop();
+        if (navStack.length === 0 && tg?.BackButton) tg.BackButton.hide();
+      }
+    }
+
+    function loadAdminStoreSettingsValues() {
+      const s = userData?.admin_stats;
+      if (!s) return;
+      const sypInp = document.getElementById('admin-syp-rate-input');
+      if (sypInp && s.syp_usd_rate) sypInp.value = s.syp_usd_rate;
+      const starsInp = document.getElementById('admin-stars-rate-input');
+      if (starsInp && s.stars_to_usd_rate) starsInp.value = s.stars_to_usd_rate;
+      const marginInp = document.getElementById('admin-margin-input');
+      if (marginInp && s.global_margin_percent) marginInp.value = s.global_margin_percent;
+      const refInp = document.getElementById('admin-ref-rate-input');
+      if (refInp && s.referral_commission_percent) refInp.value = s.referral_commission_percent;
+      const logoInp = document.getElementById('admin-store-logo-input');
+      if (logoInp && userData?.store_logo_url) logoInp.value = userData.store_logo_url;
+      const annInp = document.getElementById('admin-announcement-input');
+      if (annInp && s.store_announcement) annInp.value = s.store_announcement;
+      isAutoRefundEnabled = !!s.autorefund_enabled;
+      updateAutoRefundBtnUI();
     }
 
     async function loadAdminSuppliersDetails() {
