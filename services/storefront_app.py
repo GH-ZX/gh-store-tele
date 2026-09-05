@@ -3233,7 +3233,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         arTitle: "الذكاء الاصطناعي",
         enTitle: "AI & Chatbots",
         icon: "🤖",
-        image: "https://images.unsplash.com/photo-1620712943543-bcc4688e7485?w=800&auto=format&fit=crop&q=85",
+        image: "https://images.unsplash.com/photo-1677442136019-21780ecad995?w=800&auto=format&fit=crop&q=85",
         arPreview: "كلود · شات جي بي تي · جيميني · جروك",
         enPreview: "Claude · ChatGPT · Gemini · Grok"
       },
