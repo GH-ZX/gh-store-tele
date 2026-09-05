@@ -1044,6 +1044,93 @@ async def tma_cart_checkout(request: Request):
             "items_count": len(cart_products)
         }
 
+@app.post("/api/admin/free-order")
+async def admin_free_order(request: Request):
+    """Admin-only zero-cost order and gifting dispatch.
+    Allows administrators to test fulfillment or gift digital credentials directly
+    to themselves or another Telegram user without deducting balance or charging money.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+
+    admin_tg_id = int(body.get("admin_tg_id") or 0)
+    if admin_tg_id not in config.ADMIN_ID_LIST:
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+
+    product_id = int(body.get("product_id") or 0)
+    qty = max(1, int(body.get("quantity") or 1))
+    target_tg_id = int(body.get("target_tg_id") or admin_tg_id)
+
+    async with get_db_session() as session:
+        from repositories.batstore_product import BatStoreProductRepository
+        from repositories.batstore_order import BatStoreOrderRepository
+        from models.batstore_order import BatStoreOrderDTO
+        from services.batstore import BatStoreService
+
+        prod = await BatStoreProductRepository.get_by_product_id(product_id, session)
+        if not prod:
+            return JSONResponse({"error": "product_not_found"}, status_code=404)
+
+        cust_ref = f"admin-gift-{product_id}-{target_tg_id}-{uuid.uuid4().hex[:6]}"
+        goods_list = []
+        try:
+            placed = await BatStoreService.place_order(
+                session, prod.product_id, qty,
+                customer_reference=cust_ref,
+                idempotency_key=cust_ref
+            )
+            items = placed.get("order", {}).get("items") or []
+            goods_list = [it.get("value") or it.get("data") or str(it) for it in items] if items else []
+        except Exception as e:
+            logging.error("Admin free-order placement error for product #%s: %s", product_id, e)
+            return JSONResponse({"error": f"فشل المورد في تنفيذ الطلب: {str(e)[:100]}"}, status_code=502)
+
+        order_details = [{
+            "product_id": prod.product_id,
+            "name": prod.name,
+            "quantity": qty,
+            "cost_usd": prod.cost_usd,
+            "sell_usd": 0.0,
+            "delivery_type": prod.delivery_type,
+            "delivery_goods": goods_list,
+            "warranty_days": prod.warranty_days or 0,
+            "admin_gift": True,
+            "gifted_by": admin_tg_id,
+        }]
+
+        order = await BatStoreOrderRepository.create(BatStoreOrderDTO(
+            telegram_id=target_tg_id,
+            total_sell=0.0,
+            status="completed",
+            customer_reference=cust_ref,
+            details=order_details
+        ), session)
+        await session_commit(session)
+
+        # Notify the recipient if gifted to another user
+        if target_tg_id != admin_tg_id and goods_list:
+            try:
+                credentials_text = "\n".join(f"<code>{g}</code>" for g in goods_list)
+                gift_msg = (
+                    f"🎁 <b>هدية من إدارة المتجر!</b>\n\n"
+                    f"تم تسليمك: <b>{prod.name}</b> (الكمية: {qty})\n\n"
+                    f"<b>بيانات الحساب / المفتاح:</b>\n{credentials_text}\n\n"
+                    f"شكراً لتسوقك معنا في GH Store! 🛍️"
+                )
+                await bot.send_message(chat_id=target_tg_id, text=gift_msg, parse_mode="HTML")
+            except Exception as e:
+                logging.warning("Could not send gift DM to user %s: %s", target_tg_id, e)
+
+        return {
+            "status": "success",
+            "order_id": order.id,
+            "target_tg_id": target_tg_id,
+            "goods": goods_list,
+            "product_name": prod.name,
+            "quantity": qty
+        }
 
 @app.post("/api/warranty/claim")
 async def tma_claim_warranty(request: Request):
@@ -1630,6 +1717,172 @@ async def admin_get_stuck_orders(tg_id: int):
                 "customer_reference": o.customer_reference or "",
             })
     return {"stuck_orders": stuck_list}
+
+@app.get("/api/admin/live-activity")
+async def admin_get_live_activity(tg_id: int, limit: int = 50):
+    """Real-time store activity radar for admin: live stream of all customer orders & recharges."""
+    if not _verify_admin(tg_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+
+    async with get_db_session() as session:
+        from models.batstore_order import BatStoreOrder
+        from models.sam_payment import SamPayment
+        from models.stars_payment import StarsPayment
+        from models.user import User
+
+        activities = []
+        sym = config.CURRENCY.get_localized_symbol()
+
+        # 1. Orders
+        stmt_orders = select(BatStoreOrder).order_by(BatStoreOrder.id.desc()).limit(limit)
+        orders = (await session_execute(stmt_orders, session)).scalars().all()
+        for o in orders:
+            product_names = []
+            for d in (o.details or []):
+                product_names.append(d.get("name") or "Product")
+            activities.append({
+                "id": f"order_{o.id}",
+                "raw_id": o.id,
+                "type": "order",
+                "title": ", ".join(product_names) if product_names else "طلب منتج",
+                "telegram_id": o.telegram_id,
+                "total_usd": round(float(o.total_sell or 0.0), 2),
+                "sym": sym,
+                "status": o.status,
+                "needs_attention": o.status in ("pending_fulfillment", "failed", "pending"),
+                "created_at": o.created_at.strftime("%b %d, %H:%M") if getattr(o, "created_at", None) else "",
+                "timestamp": o.created_at.timestamp() if getattr(o, "created_at", None) else 0,
+            })
+
+        # 2. SAM Recharges (ShamCash & SyriatelCash)
+        stmt_sam = select(SamPayment).order_by(SamPayment.id.desc()).limit(limit)
+        sam_rows = (await session_execute(stmt_sam, session)).scalars().all()
+        for sp in sam_rows:
+            is_paid = (sp.event == "invoice.paid")
+            is_expired = (sp.event == "invoice.expired")
+            status_label = "completed" if is_paid else ("failed" if is_expired else "pending")
+            activities.append({
+                "id": f"sam_{sp.id}",
+                "raw_id": sp.id,
+                "type": "recharge",
+                "method": sp.method or "shamcash",
+                "title": f"شحن {sp.method.upper() if sp.method else 'SAM'}",
+                "telegram_id": sp.telegram_id,
+                "amount_usd": round(float(sp.usd_amount or 0.0), 2),
+                "local_amount": round(float(sp.amount or 0.0), 2),
+                "currency": sp.currency or "USD",
+                "invoice_id": sp.invoice_id or "",
+                "status": status_label,
+                "needs_attention": not is_paid,
+                "created_at": sp.created_at.strftime("%b %d, %H:%M") if getattr(sp, "created_at", None) else "",
+                "timestamp": sp.created_at.timestamp() if getattr(sp, "created_at", None) else 0,
+            })
+
+        # 3. Stars Recharges
+        stmt_stars = select(StarsPayment).order_by(StarsPayment.id.desc()).limit(limit)
+        stars_rows = (await session_execute(stmt_stars, session)).scalars().all()
+        for stp in stars_rows:
+            activities.append({
+                "id": f"stars_{stp.id}",
+                "raw_id": stp.id,
+                "type": "recharge",
+                "method": "stars",
+                "title": "شحن نجوم تيليجرام (Stars)",
+                "telegram_id": stp.telegram_id,
+                "amount_usd": round(float(stp.usd_amount or 0.0), 2),
+                "local_amount": float(stp.stars_amount or 0.0),
+                "currency": "XTR",
+                "invoice_id": stp.telegram_payment_charge_id or "",
+                "status": "completed",
+                "needs_attention": False,
+                "created_at": stp.created_at.strftime("%b %d, %H:%M") if getattr(stp, "created_at", None) else "",
+                "timestamp": stp.created_at.timestamp() if getattr(stp, "created_at", None) else 0,
+            })
+
+        activities.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
+
+        user_tg_ids = {a["telegram_id"] for a in activities if a.get("telegram_id")}
+        if user_tg_ids:
+            u_stmt = select(User.telegram_id, User.telegram_username).where(User.telegram_id.in_(user_tg_ids))
+            user_map = {row[0]: (row[1] or "") for row in (await session_execute(u_stmt, session)).all()}
+            for a in activities:
+                a["username"] = user_map.get(a["telegram_id"], "")
+
+        needs_attention_count = sum(1 for a in activities if a.get("needs_attention"))
+
+        return {
+            "status": "ok",
+            "count": len(activities),
+            "needs_attention_count": needs_attention_count,
+            "activities": activities[:limit]
+        }
+
+
+@app.post("/api/admin/recharge/approve")
+async def admin_approve_recharge(request: Request):
+    """Admin manually approves a failed or pending recharge, credits customer balance, and sends Telegram alert."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+
+    admin_tg_id = int(body.get("admin_tg_id") or 0)
+    if not _verify_admin(admin_tg_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+
+    recharge_id = str(body.get("recharge_id") or "")
+    target_tg_id = int(body.get("telegram_id") or 0)
+    amount_usd = float(body.get("amount_usd") or 0.0)
+
+    if not target_tg_id or amount_usd <= 0:
+        return JSONResponse({"error": "invalid_params"}, status_code=400)
+
+    async with get_db_session() as session:
+        user = await UserRepository.get_by_tgid(target_tg_id, session)
+        if not user:
+            return JSONResponse({"error": "user_not_found"}, status_code=404)
+
+        # Credit user balance
+        current_topup = float(user.top_up_amount or 0.0)
+        user.top_up_amount = round(current_topup + amount_usd, 2)
+        await UserRepository.update(user, session)
+
+        # Update record if it's SAM payment
+        if recharge_id.startswith("sam_"):
+            raw_sam_id = int(recharge_id.replace("sam_", ""))
+            from models.sam_payment import SamPayment
+            sp = (await session_execute(select(SamPayment).where(SamPayment.id == raw_sam_id), session)).scalar_one_or_none()
+            if sp:
+                sp.event = "invoice.paid"
+
+        # Log in Admin Audit Log
+        from models.admin_audit_log import AdminAuditLog
+        session.add(AdminAuditLog(
+            admin_id=admin_tg_id,
+            action="recharge_approved",
+            details={"target_user": target_tg_id, "amount_usd": amount_usd, "recharge_id": recharge_id}
+        ))
+        await session_commit(session)
+
+        # Send celebration Telegram notification to customer
+        try:
+            msg = (
+                f"✅ <b>تم اعتماد عملية شحن رصيدك بنجاح!</b>\n\n"
+                f"تمت مراجعة العملية واعتمادها من قبل إدارة المتجر.\n"
+                f"💰 <b>المبلغ المضاف:</b> +${amount_usd:.2f} USD\n"
+                f"🛍️ رصيدك الحالي جاهز للتسوق والاستخدام الفوري داخل المتجر!\n\n"
+                f"شكراً لصبرك وتسوقك معنا في GH Store! ✨"
+            )
+            await bot.send_message(chat_id=target_tg_id, text=msg, parse_mode="HTML")
+        except Exception as e:
+            logging.warning("Could not send recharge approval DM to %s: %s", target_tg_id, e)
+
+        return {
+            "status": "ok",
+            "credited_amount": amount_usd,
+            "target_tg_id": target_tg_id,
+            "new_balance": round((user.top_up_amount or 0.0) - (user.consume_records or 0.0), 2)
+        }
 
 
 @app.post("/api/admin/stuck-orders/refund")

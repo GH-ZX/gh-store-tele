@@ -1659,6 +1659,43 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     </div>
   </div>
 
+  <!-- ADMIN GIFT & FREE DISPATCH MODAL SHEET -->
+  <div class="admin-modal-overlay" id="admin-gift-modal">
+    <div class="admin-modal-sheet">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <h3 style="font-size: 17px; font-weight: 800;">🎁 تسليم منتج مجاني / إهداء (0$)</h3>
+        <button class="circle-icon-btn" onclick="closeAdminGiftModal()">✕</button>
+      </div>
+      <div style="font-size: 13px; color: var(--accent); font-weight: 700; margin-bottom: 12px;" id="admin-gift-prod-title">اسم المنتج</div>
+
+      <div class="admin-input-row">
+        <label class="admin-input-label">وجهة التسليم (Recipient)</label>
+        <div class="theme-segmented-control" style="margin-top: 4px;">
+          <div class="theme-segment-btn active" id="gift-type-self" onclick="selectGiftTargetType('self')">تسليم لحسابي (مسؤول)</div>
+          <div class="theme-segment-btn" id="gift-type-user" onclick="selectGiftTargetType('user')">إهداء لعميل آخر</div>
+        </div>
+      </div>
+
+      <div class="admin-input-row" id="gift-user-row" style="display: none;">
+        <label class="admin-input-label">معرف تيليجرام للعميل (Telegram ID)</label>
+        <input type="number" class="admin-text-input" id="gift-target-id" placeholder="e.g. 123456789">
+        <div style="font-size: 11px; color: var(--hint); margin-top: 4px;">سيتم تسليم الطلب وإرسال بيانات المفتاح برسالة خاصة من البوت فورياً</div>
+      </div>
+
+      <div class="admin-input-row">
+        <label class="admin-input-label">الكمية (Quantity)</label>
+        <input type="number" class="admin-text-input" id="gift-qty" value="1" min="1" max="20" style="font-family: monospace; font-weight: 700;">
+      </div>
+
+      <div style="display: flex; gap: 8px; margin-top: 16px;">
+        <button class="btn-action-secondary" onclick="closeAdminGiftModal()" style="flex: 1; height: 44px;">إلغاء</button>
+        <button class="btn-action-primary" id="btn-submit-free-order" onclick="submitAdminFreeOrder()" style="flex: 2; height: 44px; background: linear-gradient(135deg, #10b981, #059669); font-weight: 800;">
+          <span>تأكيد التسليم الفوري (0$)</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- MULTI-ITEM CART DRAWER MODAL SHEET -->
   <div class="admin-modal-overlay" id="cart-drawer-sheet">
     <div class="admin-modal-sheet" style="max-height: 85vh; display: flex; flex-direction: column;">
@@ -1853,6 +1890,13 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         تعديل بيانات المنتج كمسؤول (Admin Edit)
       </button>
     </div>
+    <!-- Admin Quick Gift / Free Dispatch Button on Product Detail (Only for Admins) -->
+    <div id="admin-detail-gift-container" style="display: none; margin-bottom: 10px;">
+      <button class="btn-action-primary" onclick="openAdminGiftModal()" style="width: 100%; height: 42px; background: linear-gradient(135deg, #10b981, #059669); font-weight: 700; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+        <span>🎁 تسليم فوري للمسؤول أو إهداء لمستخدم (0$)</span>
+      </button>
+    </div>
+
 
     <div class="inset-card">
       <div style="font-size: 12px; font-weight: 700; color: var(--hint); margin-bottom: 6px;" id="label-desc-title">الوصف</div>
@@ -2096,139 +2140,199 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
   <!-- TAB 2: PROCESSES & ACTIVITY VIEW (ORDERS & RECHARGES) -->
   <main id="view-orders" class="tab-view">
+    <!-- Admin Live Radar / My Orders Switcher (Visible ONLY for Admins) -->
+    <div id="admin-activity-mode-switcher" style="display: none; margin-bottom: 14px;">
+      <div class="theme-segmented-control">
+        <div class="theme-segment-btn active" id="btn-mode-live-radar" onclick="switchAdminActivityMode('radar')">
+          <span>🔥 رادار العمليات المباشر (Live Radar)</span>
+        </div>
+        <div class="theme-segment-btn" id="btn-mode-my-orders" onclick="switchAdminActivityMode('my_orders')">
+          <span>👤 طلباتي الشخصية (My Orders)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Admin Radar Header & Actions (Visible ONLY for Admins in Radar Mode) -->
+    <div id="admin-radar-header-box" style="display: none; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 14px; padding: 12px; margin-bottom: 14px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: #10b981; display: inline-block; box-shadow: 0 0 8px #10b981;"></span>
+          <span style="font-size: 13px; font-weight: 800; color: var(--text);">بث مباشر لعمليات المتجر</span>
+          <span class="pill-badge" id="admin-radar-attention-badge" style="display: none; background: rgba(239,68,68,0.2); color: #ef4444; font-size: 10px;">0 تحتاج اعتماد</span>
+        </div>
+        <button class="btn-copy-mini" onclick="loadAdminLiveRadar(true)" style="padding: 3px 8px; font-size: 11px;">
+          <span>🔄 تحديث حي</span>
+        </button>
+      </div>
+      <div style="font-size: 11px; color: var(--hint); line-height: 1.4;">
+        متابعة حية وفورية لكافة طلبات الشراء وعمليات الشحن في البوت، مع إمكانية اعتماد الشحن المعلق أو الفاشل فورياً.
+      </div>
+    </div>
+
     <div class="section-title" id="title-orders-history">العمليات والسجل</div>
     <div class="filter-chips-row" id="activity-filter-row" style="margin-bottom: 14px;">
       <div class="filter-chip active" id="act-filter-all" onclick="filterActivityView('all')">الكل (All)</div>
+      <div class="filter-chip" id="act-filter-attention" onclick="filterActivityView('attention')" style="display: none; color: #ef4444; font-weight: 700;">⚠️ المعلقة والفاشلة</div>
+      <div class="filter-chip" id="act-filter-recharges" onclick="filterActivityView('recharges')">💳 عمليات الشحن</div>
       <div class="filter-chip" id="act-filter-orders" onclick="filterActivityView('orders')">🛍️ مشتريات المنتجات</div>
-      <div class="filter-chip" id="act-filter-recharges" onclick="filterActivityView('recharges')">💳 شحن الرصيد</div>
     </div>
     <div id="orders-container-box">
       <div class="skeleton-card"></div>
       <div class="skeleton-card"></div>
     </div>
   </main>
-
-  <!-- TAB 3: WALLET VIEW (4 USER-FACING RECHARGE METHODS) -->
   <main id="view-wallet" class="tab-view">
-    <div class="hero-banner" style="text-align: center; padding: 24px 16px;">
-      <div style="font-size: 12px; color: var(--hint); text-transform: uppercase; letter-spacing: 0.5px;" id="label-wallet-balance-title">الرصيد المتاح للشراء</div>
-      <div style="font-size: 36px; font-weight: 800; margin: 4px 0;" id="wallet-balance-hero">$0.00</div>
-      <div style="font-size: 13px; color: var(--accent); font-weight: 700;" id="wallet-balance-approx">جاهز للشراء</div>
+    <!-- User-facing Recharge Section (Hidden for Admins) -->
+    <div id="wallet-user-recharge-section">
+      <div class="hero-banner" style="text-align: center; padding: 24px 16px;">
+        <div style="font-size: 12px; color: var(--hint); text-transform: uppercase; letter-spacing: 0.5px;" id="label-wallet-balance-title">الرصيد المتاح للشراء</div>
+        <div style="font-size: 36px; font-weight: 800; margin: 4px 0;" id="wallet-balance-hero">$0.00</div>
+        <div style="font-size: 13px; color: var(--accent); font-weight: 700;" id="wallet-balance-approx">جاهز للشراء</div>
+      </div>
+
+      <!-- VIP Progress Bar -->
+      <div class="inset-card" id="wallet-vip-progress-card" style="padding: 14px;">
+        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px;">
+          <span><span id="label-vip-progress-prefix">التقدم نحو رتبة</span> <strong id="next-vip-rank" style="color: var(--warning);">Gold VIP</strong></span>
+          <span id="vip-progress-num" style="color: var(--accent); font-weight: 700;">60%</span>
+        </div>
+        <div style="width: 100%; height: 6px; background: var(--card-hover); border-radius: 3px; overflow: hidden;">
+          <div id="vip-progress-fill" style="width: 0%; height: 100%; background: var(--accent); transition: width 0.3s;"></div>
+        </div>
+      </div>
+
+      <!-- Step 1: Choose Payment Method (4 Distinct Options, Zero API Names) -->
+      <div class="section-title" id="recharge-method-title">1. اختر وسيلة الشحن</div>
+      <div class="recharge-methods-grid">
+        <!-- 1. Telegram Stars -->
+        <div class="recharge-method-card active" id="method-card-stars" onclick="selectRechargeMethod('stars')">
+          <div class="method-card-left">
+            <span class="method-icon">⭐</span>
+            <div>
+              <div class="method-name" id="label-method-stars-name">نجوم تيليجرام (Telegram Stars)</div>
+              <div class="method-sub" id="label-method-stars-sub">دفع عبر Apple Pay أو Google Pay أو النجوم</div>
+            </div>
+          </div>
+          <div class="method-radio-check">✓</div>
+        </div>
+
+        <!-- 2. Cryptocurrency -->
+        <div class="recharge-method-card" id="method-card-crypto" onclick="selectRechargeMethod('crypto')">
+          <div class="method-card-left">
+            <div style="width: 32px; height: 32px; border-radius: 50%; background: #26a17b; display: flex; align-items: center; justify-content: center; color: white; font-weight: 800; font-size: 15px; flex-shrink: 0;">₮</div>
+            <div>
+              <div class="method-name" id="label-method-crypto-name">USDT (BEP-20 / BNB Chain)</div>
+              <div class="method-sub" id="label-method-crypto-sub">دفع مباشر وسريع عبر شبكة BEP20 (Binance Smart Chain)</div>
+            </div>
+          </div>
+          <div class="method-radio-check">✓</div>
+        </div>
+
+        <!-- 3. Sham Cash -->
+        <div class="recharge-method-card" id="method-card-shamcash" onclick="selectRechargeMethod('shamcash')">
+          <div class="method-card-left">
+            <img src="https://shamcash.sy/_next/static/media/logo.5be69def.svg" class="method-brand-img" alt="Sham Cash" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+            <span class="method-icon" style="display: none;">💳</span>
+            <div>
+              <div class="method-name" id="label-method-shamcash-name">شام كاش (Sham Cash)</div>
+              <div class="method-sub" id="label-method-shamcash-sub">دفع مباشر وسريع عبر بنك شام كاش</div>
+            </div>
+          </div>
+          <div class="method-radio-check">✓</div>
+        </div>
+
+        <!-- 4. Syriatel Cash (SYP only) -->
+        <div class="recharge-method-card" id="method-card-syriatelcash" onclick="selectRechargeMethod('syriatelcash')">
+          <div class="method-card-left">
+            <img src="https://www.syriatel.sy/assets/img/logo.png" class="method-brand-img" alt="Syriatel Cash" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+            <span class="method-icon" style="display: none;">📱</span>
+            <div>
+              <div class="method-name" id="label-method-syriatelcash-name">سيرياتيل كاش (Syriatel Cash)</div>
+              <div class="method-sub" id="label-method-syriatelcash-sub">دفع مباشر بالليرة السورية (SYP فقط)</div>
+            </div>
+          </div>
+          <div class="method-radio-check">✓</div>
+        </div>
+      </div>
+
+      <!-- Step 2: Choose Amount with $1 Choice or Custom -->
+      <div class="section-title" id="recharge-amount-title">2. حدد المبلغ أو أدخل مخصصاً</div>
+      <div class="quick-amounts-grid">
+        <div class="quick-amount-chip" id="chip-amt-1" onclick="selectTopupAmount(1)">+$1</div>
+        <div class="quick-amount-chip" id="chip-amt-5" onclick="selectTopupAmount(5)">+$5</div>
+        <div class="quick-amount-chip active" id="chip-amt-10" onclick="selectTopupAmount(10)">+$10</div>
+        <div class="quick-amount-chip" id="chip-amt-25" onclick="selectTopupAmount(25)">+$25</div>
+        <div class="quick-amount-chip" id="chip-amt-50" onclick="selectTopupAmount(50)">+$50</div>
+        <div class="quick-amount-chip" id="chip-amt-100" onclick="selectTopupAmount(100)">+$100</div>
+      </div>
+
+      <div class="custom-amount-box">
+        <span style="font-size: 16px; font-weight: 800; color: var(--accent);">$</span>
+        <input type="number" id="custom-topup-input" min="1" max="1000" step="any" placeholder="10.00" value="10.00" oninput="onCustomAmountInput()">
+        <span style="font-size: 12px; color: var(--hint);" id="custom-amt-curr-tag">USD</span>
+      </div>
+
+      <!-- Step 3: Action Button with Loading State -->
+      <button class="btn-action-primary" id="btn-execute-recharge" onclick="executeSelectedRecharge()" style="margin-top: 14px; height: 52px;">
+        <span id="recharge-btn-text">شحن 10.00$ عبر نجوم تيليجرام</span>
+      </button>
+
+      <!-- Redeem Gift Voucher -->
+      <div class="section-title" id="voucher-section-title" style="margin-top: 24px;">شحن عبر كرت هدية (Voucher)</div>
+      <div class="inset-card" style="display: flex; gap: 8px; padding: 10px;">
+        <input type="text" id="voucher-code-input" placeholder="GH-XXXX-YYYY" style="flex: 1; background: transparent; border: none; color: var(--text); font-size: 14px; outline: none; font-family: monospace; text-transform: uppercase;">
+        <button class="btn-action-secondary" id="voucher-redeem-btn" onclick="submitVoucherRedeem()" style="padding: 6px 14px;">شحن</button>
+      </div>
     </div>
 
-    <!-- VIP Progress Bar -->
-    <div class="inset-card" style="padding: 14px;">
-      <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px;">
-        <span><span id="label-vip-progress-prefix">التقدم نحو رتبة</span> <strong id="next-vip-rank" style="color: var(--warning);">Gold VIP</strong></span>
-        <span id="vip-progress-num" style="color: var(--accent); font-weight: 700;">60%</span>
-      </div>
-      <div style="width: 100%; height: 6px; background: var(--card-hover); border-radius: 3px; overflow: hidden;">
-        <div id="vip-progress-fill" style="width: 0%; height: 100%; background: var(--accent); transition: width 0.3s;"></div>
-      </div>
-    </div>
-
-    <!-- Step 1: Choose Payment Method (4 Distinct Options, Zero API Names) -->
-    <div class="section-title" id="recharge-method-title">1. اختر وسيلة الشحن</div>
-    <div class="recharge-methods-grid">
-      <!-- 1. Telegram Stars -->
-      <div class="recharge-method-card active" id="method-card-stars" onclick="selectRechargeMethod('stars')">
-        <div class="method-card-left">
-          <span class="method-icon">⭐</span>
-          <div>
-            <div class="method-name" id="label-method-stars-name">نجوم تيليجرام (Telegram Stars)</div>
-            <div class="method-sub" id="label-method-stars-sub">دفع عبر Apple Pay أو Google Pay أو النجوم</div>
-          </div>
-        </div>
-        <div class="method-radio-check">✓</div>
+    <!-- Dedicated Admin Store Reserves & Liquidity Section (Shown ONLY for Admins) -->
+    <div id="wallet-admin-management-section" style="display: none;">
+      <div class="hero-banner" style="text-align: center; padding: 20px 16px; background: linear-gradient(135deg, rgba(56, 189, 248, 0.12), rgba(99, 102, 241, 0.12)); border: 1px solid rgba(56, 189, 248, 0.35);">
+        <div style="font-size: 12px; color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">💼 الخزينة واحتياطي الموردين</div>
+        <div style="font-size: 26px; font-weight: 800; margin: 6px 0;" id="admin-wallet-headline-bal">$0.00</div>
+        <div style="font-size: 12px; color: var(--hint);">لوحة السيولة والتحكم المالي للمتجر</div>
       </div>
 
-      <!-- 2. Cryptocurrency -->
-      <div class="recharge-method-card" id="method-card-crypto" onclick="selectRechargeMethod('crypto')">
-        <div class="method-card-left">
-          <div style="width: 32px; height: 32px; border-radius: 50%; background: #26a17b; display: flex; align-items: center; justify-content: center; color: white; font-weight: 800; font-size: 15px; flex-shrink: 0;">₮</div>
-          <div>
-            <div class="method-name" id="label-method-crypto-name">USDT (BEP-20 / BNB Chain)</div>
-            <div class="method-sub" id="label-method-crypto-sub">دفع مباشر وسريع عبر شبكة BEP20 (Binance Smart Chain)</div>
-          </div>
+      <!-- Supplier Balances Grid -->
+      <div class="section-title" style="margin-top: 16px;">أرصدة محافظ الموردين والسيولة</div>
+      <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px;">
+        <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; text-align: center;">
+          <div style="font-size: 11px; color: var(--hint); margin-bottom: 4px;">📦 رصيد BatStore</div>
+          <div style="font-size: 20px; font-weight: 800; color: #10b981;" id="admin-wallet-batstore">$0.00</div>
+          <div style="font-size: 10px; color: var(--hint); margin-top: 2px;">تجهيز الحسابات</div>
         </div>
-        <div class="method-radio-check">✓</div>
+        <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; text-align: center;">
+          <div style="font-size: 11px; color: var(--hint); margin-bottom: 4px;">🏦 محفظة SAM (USD)</div>
+          <div style="font-size: 20px; font-weight: 800; color: #38bdf8;" id="admin-wallet-sam-usd">$0.00 USD</div>
+          <div style="font-size: 11px; font-weight: 700; color: #f59e0b; margin-top: 2px;" id="admin-wallet-sam-syp">0 ل.س</div>
+        </div>
       </div>
 
-      <!-- 3. Sham Cash -->
-      <div class="recharge-method-card" id="method-card-shamcash" onclick="selectRechargeMethod('shamcash')">
-        <div class="method-card-left">
-          <img src="https://shamcash.sy/_next/static/media/logo.5be69def.svg" class="method-brand-img" alt="Sham Cash" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-          <span class="method-icon" style="display: none;">💳</span>
+      <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
           <div>
-            <div class="method-name" id="label-method-shamcash-name">شام كاش (Sham Cash)</div>
-            <div class="method-sub" id="label-method-shamcash-sub">دفع مباشر وسريع عبر بنك شام كاش</div>
+            <div style="font-size: 11px; color: var(--hint);">👥 إجمالي أرصدة العملاء الحالية</div>
+            <div style="font-size: 18px; font-weight: 800; color: var(--text);" id="admin-wallet-users-total">$0.00</div>
           </div>
+          <button class="btn-action-secondary" onclick="refreshSupplierBalances()" style="padding: 6px 12px; font-size: 11px; height: 36px;">
+            <span>🔄 تحديث الأرصدة</span>
+          </button>
         </div>
-        <div class="method-radio-check">✓</div>
       </div>
 
-      <!-- 4. Syriatel Cash (SYP only) -->
-      <div class="recharge-method-card" id="method-card-syriatelcash" onclick="selectRechargeMethod('syriatelcash')">
-        <div class="method-card-left">
-          <img src="https://www.syriatel.sy/assets/img/logo.png" class="method-brand-img" alt="Syriatel Cash" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-          <span class="method-icon" style="display: none;">📱</span>
-          <div>
-            <div class="method-name" id="label-method-syriatelcash-name">سيرياتيل كاش (Syriatel Cash)</div>
-            <div class="method-sub" id="label-method-syriatelcash-sub">دفع مباشر بالليرة السورية (SYP فقط)</div>
-          </div>
-        </div>
-        <div class="method-radio-check">✓</div>
-      </div>
-    </div>
-    <!-- ShamCash Currency Toggle (USD vs SYP) -->
-    <div id="shamcash-currency-box" style="display: none; background: var(--input-bg); border: 1px solid var(--border); border-radius: 14px; padding: 12px; margin-bottom: 12px;">
-      <div style="font-size: 12px; font-weight: 700; color: var(--hint); margin-bottom: 8px;" id="label-sham-curr-title">عملة السداد في شام كاش (Payment Currency):</div>
-      <div style="display: flex; gap: 8px;">
-        <button class="filter-chip active" id="btn-sham-curr-usd" onclick="setShamCurrency('USD')" style="flex: 1; text-align: center; height: 38px;">
-          💵 بالدولار (USD)
+      <!-- Quick Admin Actions -->
+      <div class="section-title">إجراءات الإدارة السريعة</div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <button class="btn-action-primary" onclick="openAdminUserSearchPage()" style="height: 46px; background: linear-gradient(135deg, #0284c7, #2563eb); font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 8px;">
+          <span>💰 تعديل أو إيداع رصيد لأي عميل (User Balances)</span>
         </button>
-        <button class="filter-chip" id="btn-sham-curr-syp" onclick="setShamCurrency('SYP')" style="flex: 1; text-align: center; height: 38px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
-          <svg class="syria-flag-svg" viewBox="0 0 30 20" width="18" height="12" style="border-radius: 2px; vertical-align: middle; display: inline-block; box-shadow: 0 0 1px rgba(0,0,0,0.5); flex-shrink: 0;" xmlns="http://www.w3.org/2000/svg">
-            <rect width="30" height="6.67" y="0" fill="#007A3D"/>
-            <rect width="30" height="6.67" y="6.67" fill="#FFFFFF"/>
-            <rect width="30" height="6.67" y="13.33" fill="#000000"/>
-            <polygon points="8.5,7.7 9.1,9.2 10.7,9.2 9.4,10.2 9.9,11.7 8.5,10.7 7.1,11.7 7.6,10.2 6.3,9.2 7.9,9.2" fill="#CE1126"/>
-            <polygon points="15,7.7 15.6,9.2 17.2,9.2 15.9,10.2 16.4,11.7 15,10.7 13.6,11.7 14.1,10.2 12.8,9.2 14.4,9.2" fill="#CE1126"/>
-            <polygon points="21.5,7.7 22.1,9.2 23.7,9.2 22.4,10.2 22.9,11.7 21.5,10.7 20.1,11.7 20.6,10.2 19.3,9.2 20.9,9.2" fill="#CE1126"/>
-          </svg>
-          <span>بالليرة السورية (SYP)</span>
+        <button class="btn-action-secondary" onclick="openAdminConfigPage()" style="height: 44px; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 8px;">
+          <span>⚙️ إعدادات المتجر وأسعار الصرف (Store Setup)</span>
+        </button>
+        <button class="btn-action-secondary" onclick="openAdminPanel()" style="height: 44px; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 8px;">
+          <span>🔗 الانتقال إلى لوحة SQLAdmin الكاملة</span>
         </button>
       </div>
-    </div>
-
-
-    <!-- Step 2: Choose Amount with $1 Choice or Custom -->
-    <div class="section-title" id="recharge-amount-title">2. اختر المبلغ أو حدد مخصصاً</div>
-    <div class="quick-amounts-grid">
-      <div class="quick-amount-chip" id="chip-amt-1" onclick="selectTopupAmount(1)">+$1</div>
-      <div class="quick-amount-chip" id="chip-amt-5" onclick="selectTopupAmount(5)">+$5</div>
-      <div class="quick-amount-chip active" id="chip-amt-10" onclick="selectTopupAmount(10)">+$10</div>
-      <div class="quick-amount-chip" id="chip-amt-25" onclick="selectTopupAmount(25)">+$25</div>
-      <div class="quick-amount-chip" id="chip-amt-50" onclick="selectTopupAmount(50)">+$50</div>
-      <div class="quick-amount-chip" id="chip-amt-100" onclick="selectTopupAmount(100)">+$100</div>
-    </div>
-
-    <div class="custom-amount-box">
-      <span style="font-size: 16px; font-weight: 800; color: var(--accent);">$</span>
-      <input type="number" id="custom-topup-input" min="1" max="1000" step="any" placeholder="10.00" value="10.00" oninput="onCustomAmountInput()">
-      <span style="font-size: 12px; color: var(--hint);" id="custom-amt-curr-tag">USD</span>
-    </div>
-
-    <!-- Step 3: Action Button with Loading State -->
-    <button class="btn-action-primary" id="btn-execute-recharge" onclick="executeSelectedRecharge()" style="margin-top: 14px; height: 52px;">
-      <span id="recharge-btn-text">شحن 10.00$ عبر نجوم تيليجرام</span>
-    </button>
-
-    <!-- Redeem Gift Voucher -->
-    <div class="section-title" id="voucher-section-title" style="margin-top: 24px;">شحن عبر كرت هدية (Voucher)</div>
-    <div class="inset-card" style="display: flex; gap: 8px; padding: 10px;">
-      <input type="text" id="voucher-code-input" placeholder="GH-XXXX-YYYY" style="flex: 1; background: transparent; border: none; color: var(--text); font-size: 14px; outline: none; font-family: monospace; text-transform: uppercase;">
-      <button class="btn-action-secondary" id="voucher-redeem-btn" onclick="submitVoucherRedeem()" style="padding: 6px 14px;">شحن</button>
     </div>
   </main>
 
@@ -2488,7 +2592,8 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       </div>
     </div>
     <!-- Referral Program (Comprehensive Details & Breakdown) -->
-    <div class="inset-card">
+    <!-- Referral Program (Hidden for Admins) -->
+    <div class="inset-card" id="user-referral-system-card">
       <div class="section-title" style="margin-top: 0;" id="label-referral-title">برنامج الإحالة والأرباح</div>
       <div style="font-size: 12px; color: var(--hint); margin-bottom: 12px;" id="label-referral-desc">
         شارك رابط الإحالة الخاص بك واحصل على <strong>0.2% عمولة أرباح</strong> مباشرة من هامش كل عملية شراء يقوم بها أصدقاؤك!
@@ -3779,7 +3884,21 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       const btn = document.getElementById('tab-' + tab);
       if (btn) btn.classList.add('active');
 
-      if (tab === 'orders' || tab === 'wallet' || tab === 'settings') {
+      if (tab === 'orders') {
+        if (userData?.is_admin) {
+          const switcher = document.getElementById('admin-activity-mode-switcher');
+          if (switcher) switcher.style.display = 'block';
+          if (adminActivityMode === 'radar') {
+            switchAdminActivityMode('radar');
+          } else {
+            switchAdminActivityMode('my_orders');
+          }
+        } else {
+          const switcher = document.getElementById('admin-activity-mode-switcher');
+          if (switcher) switcher.style.display = 'none';
+          renderUnifiedActivity();
+        }
+      } else if (tab === 'wallet' || tab === 'settings') {
         loadUserData();
       }
       if (tab === 'store') {
@@ -4202,10 +4321,14 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
           ? (currentAppLanguage === 'ar' ? 'نفد المخزون' : 'Out of Stock')
           : (selectedProduct.stock ? `${currentAppLanguage === 'ar' ? 'متوفر' : 'In Stock'} (${selectedProduct.stock})` : (currentAppLanguage === 'ar' ? 'تسليم مباشر' : 'Direct Delivery')));
 
-        // Admin detail edit button
+        // Admin detail edit and gift buttons
         const adminDetailEdit = document.getElementById('admin-detail-edit-container');
         if (adminDetailEdit) {
           adminDetailEdit.style.display = (userData && userData.is_admin) ? 'block' : 'none';
+        }
+        const adminDetailGift = document.getElementById('admin-detail-gift-container');
+        if (adminDetailGift) {
+          adminDetailGift.style.display = (userData && userData.is_admin) ? 'block' : 'none';
         }
 
         // Spec badges in product detail
@@ -5806,6 +5929,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
           updateAutoRefundBtnUI();
           showToast(isAutoRefundEnabled ? 'تم تفعيل نظام الاسترداد التلقائي!' : 'تم تعطيل الاسترداد التلقائي (الوضع اليدوي نشط)');
         }
+
       } catch (e) {
         showToast('فشل تبديل إعداد الاسترداد');
       }
@@ -5816,6 +5940,101 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       if (btn) {
         btn.innerText = isAutoRefundEnabled ? 'مفعل تلقائياً' : 'معطل (يدوي)';
         btn.style.color = isAutoRefundEnabled ? '#10b981' : '#f59e0b';
+      }
+    }
+    // Admin Free Order & Gifting Handlers
+    function openAdminGiftModal() {
+      if (!selectedProduct) return;
+      haptic('light');
+      const titleEl = document.getElementById('admin-gift-prod-title');
+      if (titleEl) titleEl.innerText = selectedProduct.clean_name || selectedProduct.name;
+      const qtyInput = document.getElementById('gift-qty');
+      if (qtyInput) qtyInput.value = '1';
+      selectGiftTargetType('self');
+      const modal = document.getElementById('admin-gift-modal');
+      if (modal) modal.classList.add('active');
+    }
+
+    function closeAdminGiftModal() {
+      haptic('light');
+      const modal = document.getElementById('admin-gift-modal');
+      if (modal) modal.classList.remove('active');
+    }
+
+    let currentGiftTargetType = 'self';
+    function selectGiftTargetType(type) {
+      haptic('light');
+      currentGiftTargetType = type;
+      const btnSelf = document.getElementById('gift-type-self');
+      const btnUser = document.getElementById('gift-type-user');
+      if (btnSelf) btnSelf.classList.toggle('active', type === 'self');
+      if (btnUser) btnUser.classList.toggle('active', type === 'user');
+      const userRow = document.getElementById('gift-user-row');
+      if (userRow) userRow.style.display = (type === 'user') ? 'block' : 'none';
+    }
+
+    async function submitAdminFreeOrder() {
+      if (!selectedProduct) return;
+      haptic('medium');
+      const btn = document.getElementById('btn-submit-free-order');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span>جاري التجهيز والتسليم...</span>';
+      }
+
+      const qty = parseInt(document.getElementById('gift-qty')?.value || '1', 10);
+      let targetTgId = userId;
+      if (currentGiftTargetType === 'user') {
+        const rawTarget = document.getElementById('gift-target-id')?.value?.trim();
+        if (!rawTarget) {
+          showToast('يرجى إدخال معرف تيليجرام للعميل');
+          if (btn) { btn.disabled = false; btn.innerHTML = '<span>تأكيد التسليم الفوري (0$)</span>'; }
+          return;
+        }
+        targetTgId = parseInt(rawTarget, 10);
+      }
+
+      try {
+        const res = await fetch('/api/admin/free-order', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            admin_tg_id: userId,
+            product_id: selectedProduct.id,
+            quantity: qty,
+            target_tg_id: targetTgId
+          })
+        });
+        const d = await res.json();
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<span>تأكيد التسليم الفوري (0$)</span>';
+        }
+
+        if (d.status === 'success') {
+          closeAdminGiftModal();
+          fireConfetti();
+          haptic('success');
+          showToast(currentGiftTargetType === 'self' ? '✅ تم استلام المنتج بنجاح!' : `✅ تم إرسال الهدية للعميل (${targetTgId}) بنجاح!`);
+
+          if (currentGiftTargetType === 'self' && d.goods && d.goods.length > 0) {
+            document.getElementById('success-meta-sub').innerText = `طلب للمسؤول #${d.order_id} · تسليم مجاني مباشر`;
+            const keysBox = document.getElementById('success-delivered-keys');
+            if (keysBox) keysBox.innerHTML = renderStructuredCredentials(d.goods);
+            document.querySelectorAll('.tab-view').forEach(el => el.classList.remove('active'));
+            const successView = document.getElementById('view-order-success');
+            if (successView) successView.classList.add('active');
+          }
+          loadUserData();
+        } else {
+          showToast(d.error || 'فشل تنفيذ الطلب');
+        }
+      } catch (e) {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<span>تأكيد التسليم الفوري (0$)</span>';
+        }
+        showToast('خطأ في الاتصال بالخادم أثناء التسليم');
       }
     }
 
@@ -5952,6 +6171,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         updateBalancePills();
 
         // Check & Render Admin Control Center in Settings
+        // 1. Check & Render Admin Control Center in Settings
         const adminCenterCard = document.getElementById('admin-control-center-card');
         if (adminCenterCard) {
           if (d.is_admin) {
@@ -5962,30 +6182,31 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
               setText('admin-stat-balances', `$${d.admin_stats.total_users_balance.toFixed(2)}`);
               setText('admin-stat-users', String(d.admin_stats.total_users_count));
               setText('admin-stat-orders', String(d.admin_stats.total_orders_count));
-
+            }
               const sypInput = document.getElementById('admin-syp-rate-input');
-              if (sypInput && !sypInput.value) sypInput.value = d.admin_stats.syp_usd_rate || 15000;
+              if (sypInput && !sypInput.value && d.admin_stats?.syp_usd_rate) sypInput.value = d.admin_stats.syp_usd_rate;
 
               const refInput = document.getElementById('admin-ref-rate-input');
-              if (refInput && !refInput.value) refInput.value = d.admin_stats.referral_commission_percent || 0.2;
-            }
+              if (refInput && !refInput.value && d.admin_stats?.referral_commission_percent) refInput.value = d.admin_stats.referral_commission_percent;
+
               const logoInput = document.getElementById('admin-store-logo-input');
               if (logoInput && !logoInput.value && d.store_logo_url) logoInput.value = d.store_logo_url;
+
               const marginInput = document.getElementById('admin-margin-input');
-              if (marginInput && !marginInput.value && d.admin_stats.global_margin_percent) {
+              if (marginInput && !marginInput.value && d.admin_stats?.global_margin_percent) {
                 marginInput.value = d.admin_stats.global_margin_percent;
               }
 
               const starsRateInput = document.getElementById('admin-stars-rate-input');
-              if (starsRateInput && !starsRateInput.value && d.admin_stats.stars_to_usd_rate) {
+              if (starsRateInput && !starsRateInput.value && d.admin_stats?.stars_to_usd_rate) {
                 starsRateInput.value = d.admin_stats.stars_to_usd_rate;
               }
 
               const announceInput = document.getElementById('admin-announcement-input');
-              if (announceInput && !announceInput.value && d.admin_stats.store_announcement) {
+              if (announceInput && !announceInput.value && d.admin_stats?.store_announcement) {
                 announceInput.value = d.admin_stats.store_announcement;
               }
-              if (d.admin_stats.supplier_wallets) {
+              if (d.admin_stats?.supplier_wallets) {
                 const sw = d.admin_stats.supplier_wallets;
                 const batEl = document.getElementById('admin-bal-batstore');
                 const samUsdEl = document.getElementById('admin-bal-sam-usd');
@@ -5994,12 +6215,41 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
                 if (samUsdEl) samUsdEl.innerText = `$${(sw.sam_usd || 0.0).toFixed(2)} USD`;
                 if (samSypEl) samSypEl.innerText = `${Math.round(sw.sam_syp || 0.0).toLocaleString()} ل.س`;
               }
-              isAutoRefundEnabled = !!d.admin_stats.autorefund_enabled;
+              isAutoRefundEnabled = !!d.admin_stats?.autorefund_enabled;
               updateAutoRefundBtnUI();
           } else {
             adminCenterCard.style.display = 'none';
           }
         }
+
+        // 2. Configure Dedicated Admin Wallet View (Supplier Reserves vs Customer Recharge)
+        const userWalletSection = document.getElementById('wallet-user-recharge-section');
+        const adminWalletSection = document.getElementById('wallet-admin-management-section');
+        if (d.is_admin) {
+          if (userWalletSection) userWalletSection.style.display = 'none';
+          if (adminWalletSection) {
+            adminWalletSection.style.display = 'block';
+            if (d.admin_stats && d.admin_stats.supplier_wallets) {
+              const sw = d.admin_stats.supplier_wallets;
+              const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val; };
+              setVal('admin-wallet-headline-bal', `$${(sw.batstore_usd || 0.0).toFixed(2)}`);
+              setVal('admin-wallet-batstore', `$${(sw.batstore_usd || 0.0).toFixed(2)}`);
+              setVal('admin-wallet-sam-usd', `$${(sw.sam_usd || 0.0).toFixed(2)} USD`);
+              setVal('admin-wallet-sam-syp', `${Math.round(sw.sam_syp || 0.0).toLocaleString()} ل.س`);
+              setVal('admin-wallet-users-total', `$${(d.admin_stats.total_users_balance || 0.0).toFixed(2)}`);
+            }
+          }
+        } else {
+          if (userWalletSection) userWalletSection.style.display = 'block';
+          if (adminWalletSection) adminWalletSection.style.display = 'none';
+        }
+
+        // 3. Hide Referrals & VIP for Admins
+        const refCard = document.getElementById('user-referral-system-card');
+        if (refCard) refCard.style.display = d.is_admin ? 'none' : 'block';
+
+        const adminGiftBtn = document.getElementById('admin-detail-gift-container');
+        if (adminGiftBtn) adminGiftBtn.style.display = d.is_admin ? 'block' : 'none';
 
         // Profile Picture
         const topAvatarBox = document.getElementById('top-avatar-box');
@@ -6033,7 +6283,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         const topVipTag = document.getElementById('top-vip-tag');
         const hasVipDiscount = d.vip_discount > 0 && d.vip_tier && d.vip_tier !== 'Standard';
 
-        if (hasVipDiscount) {
+        if (!d.is_admin && hasVipDiscount) {
           vipBox.innerHTML = `<span class="vip-tag">${d.vip_tier} (${currentAppLanguage === 'ar' ? 'خصم' : 'Discount'} ${d.vip_discount}%)</span>`;
           vipBox.style.display = 'block';
           topVipTag.innerText = d.vip_tier;
@@ -6303,11 +6553,187 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     function filterActivityView(filterKey) {
       haptic('pop');
       activeActivityFilter = filterKey;
-      ['all', 'orders', 'recharges'].forEach(f => {
+      ['all', 'attention', 'orders', 'recharges'].forEach(f => {
         const btn = document.getElementById('act-filter-' + f);
         if (btn) btn.classList.toggle('active', f === filterKey);
       });
-      renderUnifiedActivity();
+      if (userData?.is_admin && adminActivityMode === 'radar') {
+        renderAdminLiveRadar();
+      } else {
+        renderUnifiedActivity();
+      }
+    }
+
+    let adminActivityMode = 'radar';
+    let adminLiveActivities = [];
+
+    function switchAdminActivityMode(mode) {
+      haptic('pop');
+      adminActivityMode = mode;
+      document.getElementById('btn-mode-live-radar')?.classList.toggle('active', mode === 'radar');
+      document.getElementById('btn-mode-my-orders')?.classList.toggle('active', mode === 'my_orders');
+      const radarHeader = document.getElementById('admin-radar-header-box');
+      const attentionChip = document.getElementById('act-filter-attention');
+      const titleOrders = document.getElementById('title-orders-history');
+
+      if (mode === 'radar') {
+        if (radarHeader) radarHeader.style.display = 'block';
+        if (attentionChip) attentionChip.style.display = 'inline-block';
+        if (titleOrders) titleOrders.innerText = 'رادار العمليات المباشرة للعملاء';
+        loadAdminLiveRadar();
+      } else {
+        if (radarHeader) radarHeader.style.display = 'none';
+        if (attentionChip) attentionChip.style.display = 'none';
+        if (titleOrders) titleOrders.innerText = (currentAppLanguage === 'ar') ? 'طلباتي وسجل عملياتي' : 'My Orders & Activity';
+        renderUnifiedActivity();
+      }
+    }
+
+    async function loadAdminLiveRadar(showToastOnDone = false) {
+      if (!userData?.is_admin) return;
+      try {
+        const res = await fetch(`/api/admin/live-activity?tg_id=${userId}&limit=60`);
+        const d = await res.json();
+        if (d.status === 'ok') {
+          adminLiveActivities = d.activities || [];
+          const attentionBadge = document.getElementById('admin-radar-attention-badge');
+          if (attentionBadge) {
+            if (d.needs_attention_count > 0) {
+              attentionBadge.innerText = `⚠️ ${d.needs_attention_count} بحاجة اعتماد`;
+              attentionBadge.style.display = 'inline-block';
+            } else {
+              attentionBadge.style.display = 'none';
+            }
+          }
+          renderAdminLiveRadar();
+          if (showToastOnDone) {
+            showToast(currentAppLanguage === 'ar' ? '✅ تم تحديث الرادار المباشر' : '✅ Live radar refreshed');
+          }
+        }
+      } catch (e) {
+        console.error("Live radar error:", e);
+      }
+    }
+
+    function renderAdminLiveRadar() {
+      const container = document.getElementById('orders-container-box');
+      if (!container) return;
+
+      let list = [...adminLiveActivities];
+      if (activeActivityFilter === 'attention') {
+        list = list.filter(a => a.needs_attention);
+      } else if (activeActivityFilter === 'recharges') {
+        list = list.filter(a => a.type === 'recharge');
+      } else if (activeActivityFilter === 'orders') {
+        list = list.filter(a => a.type === 'order');
+      }
+
+      if (!list.length) {
+        container.innerHTML = `
+          <div style="text-align: center; padding: 36px 16px; color: var(--hint); background: var(--input-bg); border-radius: 14px; border: 1px solid var(--border);">
+            <div style="font-size: 28px; margin-bottom: 8px;">📡</div>
+            <div style="font-size: 14px; font-weight: 700; color: var(--text);">لا توجد عمليات في هذا التصنيف حالياً</div>
+            <div style="font-size: 12px; margin-top: 4px;">ستظهر أي عمليات شراء أو شحن جديدة فور إجرائها في المتجر.</div>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = list.map(item => {
+        const isOrder = (item.type === 'order');
+        const isCompleted = (item.status === 'completed');
+        const isPending = (item.status === 'pending' || item.status === 'pending_fulfillment');
+
+        const statusColor = isCompleted ? '#10b981' : (isPending ? '#f59e0b' : '#ef4444');
+        const statusBg = isCompleted ? 'rgba(16,185,129,0.18)' : (isPending ? 'rgba(245,158,11,0.18)' : 'rgba(239,68,68,0.18)');
+        const statusText = isCompleted ? 'مكتمل ✅' : (isPending ? 'بانتظار التحويل / التفعيل ⏳' : 'فشل / منتهي ❌');
+
+        const userTag = item.username ? `@${item.username}` : `مستخدم`;
+        const tgIdStr = item.telegram_id || '';
+
+        return `
+          <div class="inset-card" style="margin-bottom: 12px; border-color: ${item.needs_attention ? 'rgba(239,68,68,0.45)' : 'var(--border)'}; background: ${item.needs_attention ? 'linear-gradient(135deg, rgba(239,68,68,0.06), var(--card))' : 'var(--card)'};">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span style="font-size: 15px;">${isOrder ? '🛍️' : '💳'}</span>
+                <strong style="font-size: 13px; color: var(--text);">${item.title}</strong>
+              </div>
+              <span class="pill-badge" style="background: ${statusBg}; color: ${statusColor}; font-size: 11px;">
+                ${statusText}
+              </span>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; margin-bottom: 8px;">
+              <div>
+                <span style="font-weight: 700; color: var(--accent);">${userTag}</span>
+                <span style="font-family: monospace; color: var(--hint); margin-inline-start: 4px;">(ID: ${tgIdStr})</span>
+              </div>
+              <span style="font-size: 11px; color: var(--hint);">${item.created_at || ''}</span>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; font-size: 13px;">
+              <span style="color: var(--hint); font-size: 11px;">${isOrder ? 'قيمة الطلب' : 'المبلغ المدفوع'}</span>
+              <div style="text-align: right;">
+                <strong style="font-size: 15px; color: var(--text);">$${(item.amount_usd || item.total_usd || 0.0).toFixed(2)} USD</strong>
+                ${item.local_amount && item.currency !== 'USD' ? `
+                  <div style="font-size: 11px; color: var(--warning); font-weight: 700;">≈ ${Math.round(item.local_amount).toLocaleString()} ${item.currency === 'XTR' ? '⭐' : 'ل.س'}</div>
+                ` : ''}
+              </div>
+            </div>
+
+            ${!isOrder && item.needs_attention ? `
+              <div style="margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 10px;">
+                <button class="btn-action-primary" onclick="adminApproveRechargeAction('${item.id}', ${item.telegram_id}, ${item.amount_usd})" style="width: 100%; height: 42px; background: linear-gradient(135deg, #10b981, #059669); font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                  <span>✅ اعتماد وإيداع الرصيد للعميل (+$${(item.amount_usd || 0).toFixed(2)})</span>
+                </button>
+              </div>
+            ` : ''}
+
+            ${isOrder && item.needs_attention ? `
+              <div style="margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 10px; display: flex; gap: 8px;">
+                <button class="btn-action-warning" onclick="executeAdminRefundStuck(${item.raw_id}, ${item.total_usd})" style="flex: 1; height: 38px; font-size: 12px;">
+                  <span>↩️ استرداد الرصيد</span>
+                </button>
+                <button class="btn-action-secondary" onclick="openAdminOrdersModal()" style="flex: 1; height: 38px; font-size: 12px;">
+                  <span>🔍 فحص في المورد</span>
+                </button>
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function adminApproveRechargeAction(rechargeId, targetTgId, amountUsd) {
+      haptic('medium');
+      if (!confirm(`هل أنت متأكد من رغبتك في اعتماد شحن رصيد العميل (${targetTgId}) بمبلغ $${amountUsd.toFixed(2)} USD وإرسال إشعار فوري له؟`)) {
+        return;
+      }
+
+      showToast('جاري اعتماد الشحن وإيداع الرصيد...');
+      try {
+        const res = await fetch('/api/admin/recharge/approve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            admin_tg_id: userId,
+            recharge_id: rechargeId,
+            telegram_id: targetTgId,
+            amount_usd: amountUsd
+          })
+        });
+        const d = await res.json();
+        if (d.status === 'ok') {
+          fireConfetti();
+          haptic('success');
+          showToast(`✅ تم اعتماد الشحن وإيداع $${d.credited_amount.toFixed(2)} للعميل بنجاح!`);
+          loadAdminLiveRadar();
+        } else {
+          showToast(d.error || 'فشل اعتماد الشحن');
+        }
+      } catch (e) {
+        showToast('خطأ في الاتصال أثناء اعتماد الشحن');
+      }
     }
 
     function openExternalPaymentUrl(url) {
