@@ -44,7 +44,8 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       --warning: #f59e0b;
       --danger: #ef4444;
       --nav-height: 62px;
-      --safe-bottom: env(safe-area-inset-bottom, 16px);
+      --safe-top: var(--tg-content-safe-area-inset-top, var(--tg-safe-area-inset-top, env(safe-area-inset-top, 0px)));
+      --safe-bottom: var(--tg-content-safe-area-inset-bottom, var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom, 16px)));
     }
 
     [data-theme="light"] {
@@ -72,6 +73,8 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       user-select: none;
       -webkit-user-select: none;
       overflow-x: hidden;
+      overscroll-behavior-y: none;
+      touch-action: manipulation;
       transition: background-color 0.25s, color 0.25s;
     }
 
@@ -84,7 +87,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       -webkit-backdrop-filter: blur(28px) saturate(200%);
       background: var(--header-bg);
       border-bottom: 1px solid var(--border);
-      padding: 10px 16px;
+      padding: calc(var(--safe-top, 0px) + 10px) 16px 10px 16px;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -1103,7 +1106,29 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       letter-spacing: -0.2px;
     }
 
-    /* Skeleton Loader */
+    /* Skeleton Loaders & Shimmer */
+    .skeleton-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .skeleton-box {
+      height: 130px;
+      border-radius: 18px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      position: relative;
+      overflow: hidden;
+    }
+    .skeleton-box::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      transform: translateX(-100%);
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+      animation: shimmer 1.4s infinite;
+    }
     .skeleton-card {
       background: var(--card);
       border-radius: 14px;
@@ -1979,7 +2004,48 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     if (tg) {
       tg.ready();
       tg.expand();
+      if (tg.isVersionAtLeast && tg.isVersionAtLeast('8.0')) {
+        try { tg.requestFullscreen?.(); } catch (e) {}
+      }
+      if (tg.isVersionAtLeast && tg.isVersionAtLeast('7.7')) {
+        try { tg.disableVerticalSwipes?.(); } catch (e) {}
+      }
       if (tg.enableClosingConfirmation) tg.enableClosingConfirmation();
+    }
+
+    // Centralized Navigation Stack for Native Telegram BackButton
+    const navStack = [];
+
+    function getTg() {
+      return window.Telegram?.WebApp || tg;
+    }
+
+    function pushNav(name, onBack) {
+      navStack.push({ name, onBack });
+      const t = getTg();
+      if (t?.BackButton) {
+        t.BackButton.show();
+        t.BackButton.offClick(handleNativeBack);
+        t.BackButton.onClick(handleNativeBack);
+      }
+    }
+
+    function popNav() {
+      if (navStack.length > 0) {
+        const item = navStack.pop();
+        if (typeof item.onBack === 'function') {
+          item.onBack();
+        }
+      }
+      const t = getTg();
+      if (navStack.length === 0 && t?.BackButton) {
+        t.BackButton.hide();
+        t.BackButton.offClick(handleNativeBack);
+      }
+    }
+    function handleNativeBack() {
+      haptic('selection');
+      popNav();
     }
 
     // Zero-Asset Synthesized Web Audio Micro-Clicks
@@ -2756,6 +2822,14 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       if (tab === 'store') {
         returnToCollections();
       }
+      if (tab === 'wallet') {
+        updateRechargeButtonText();
+      } else {
+        if (tg?.MainButton && !selectedProduct) {
+          tg.MainButton.offClick(executeSelectedRecharge);
+          tg.MainButton.hide();
+        }
+      }
     }
 
     // SWR Cache Storage & Fetching
@@ -2777,6 +2851,19 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     }
 
     async function fetchCatalogData() {
+      if (!allProducts.length) {
+        const grid = document.getElementById('catalogs-grid');
+        if (grid) {
+          grid.innerHTML = `
+            <div class="skeleton-grid">
+              <div class="skeleton-box"></div>
+              <div class="skeleton-box"></div>
+              <div class="skeleton-box"></div>
+              <div class="skeleton-box"></div>
+            </div>
+          `;
+        }
+      }
       try {
         const res = await fetch('/api/catalog');
         const d = await res.json();
@@ -2913,10 +3000,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       filtered = filterAndSortProducts(filtered);
       renderProductItems(filtered);
 
-      if (tg?.BackButton) {
-        tg.BackButton.show();
-        tg.BackButton.onClick(returnToCollections);
-      }
+      pushNav('collection', returnToCollections);
     }
 
     function returnToCollections() {
@@ -2927,8 +3011,9 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       document.getElementById('products-catalog-mode').style.display = 'none';
       document.getElementById('catalogs-collection-mode').style.display = 'block';
 
-      if (tg?.BackButton) {
-        tg.BackButton.hide();
+      if (navStack.length > 0 && navStack[navStack.length - 1].name === 'collection') {
+        navStack.pop();
+        if (navStack.length === 0 && tg?.BackButton) tg.BackButton.hide();
       }
     }
 
@@ -3190,10 +3275,9 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         console.error("Setup product detail error:", err);
       }
 
-      if (tg?.BackButton) {
-        tg.BackButton.show();
-        tg.BackButton.onClick(closeProductDetailPage);
-      }
+      pushNav('product_detail', closeProductDetailPage);
+      if (tg?.disableVerticalSwipes) tg.disableVerticalSwipes();
+      if (tg?.enableClosingConfirmation) tg.enableClosingConfirmation();
 
       document.querySelectorAll('.tab-view').forEach(el => el.classList.remove('active'));
       const detailView = document.getElementById('view-product-detail');
@@ -3202,18 +3286,25 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
     function closeProductDetailPage() {
       haptic('light');
+      selectedProduct = null;
       const detailView = document.getElementById('view-product-detail');
       if (detailView) detailView.classList.remove('active');
       const storeView = document.getElementById('view-store');
       if (storeView) storeView.classList.add('active');
 
-      if (tg?.BackButton) {
-        if (activeCatalog) {
-          tg.BackButton.show();
-          tg.BackButton.onClick(returnToCollections);
-        } else {
-          tg.BackButton.hide();
-        }
+      if (tg?.MainButton) {
+        tg.MainButton.offClick(executeProductBuy);
+        tg.MainButton.offClick(goToWalletFromMainBtn);
+        tg.MainButton.offClick(triggerInAppRestockSubscribe);
+        tg.MainButton.hide();
+      }
+
+      if (tg?.enableVerticalSwipes) tg.enableVerticalSwipes();
+      if (tg?.disableClosingConfirmation) tg.disableClosingConfirmation();
+
+      if (navStack.length > 0 && navStack[navStack.length - 1].name === 'product_detail') {
+        navStack.pop();
+        if (navStack.length === 0 && tg?.BackButton) tg.BackButton.hide();
       }
     }
 
@@ -3319,6 +3410,32 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         if (priceTag) priceTag.style.display = 'inline';
         if (buyBtn) buyBtn.onclick = executeProductBuy;
       }
+
+      if (tg?.MainButton && selectedProduct) {
+        tg.MainButton.offClick(executeProductBuy);
+        tg.MainButton.offClick(goToWalletFromMainBtn);
+        tg.MainButton.offClick(triggerInAppRestockSubscribe);
+
+        const isOutOfStock = (selectedProduct.stock !== null && selectedProduct.stock <= 0);
+        if (isOutOfStock) {
+          tg.MainButton.setText(currentAppLanguage === 'ar' ? 'تنبيه عند التوفر 🔔' : 'Notify on Restock 🔔')
+            .setParams({ color: '#f59e0b', text_color: '#ffffff', is_visible: true, is_active: true });
+          tg.MainButton.onClick(triggerInAppRestockSubscribe);
+        } else if (userBalance < total) {
+          tg.MainButton.setText(currentAppLanguage === 'ar' ? `شحن الرصيد للمتابعة ($${userBalance.toFixed(2)})` : `Top Up to Continue ($${userBalance.toFixed(2)})`)
+            .setParams({ color: '#f59e0b', text_color: '#ffffff', is_visible: true, is_active: true });
+          tg.MainButton.onClick(goToWalletFromMainBtn);
+        } else {
+          tg.MainButton.setText(`${d.buy_now} • $${total.toFixed(2)}`)
+            .setParams({ has_shine_effect: true, color: '#2481cc', text_color: '#ffffff', is_visible: true, is_active: true });
+          tg.MainButton.onClick(executeProductBuy);
+        }
+      }
+    }
+
+    function goToWalletFromMainBtn() {
+      closeProductDetailPage();
+      switchTab('wallet');
     }
 
     // 1-Tap Restock Notification Subscribe
@@ -3410,6 +3527,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
     async function processOrderPlacement() {
       haptic('light');
+      if (tg?.MainButton) tg.MainButton.showProgress(false);
       const buyBtn = document.getElementById('btn-inapp-purchase');
       if (buyBtn) {
         buyBtn.disabled = true;
@@ -3431,6 +3549,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         });
         const d = await res.json();
         if (buyBtn) buyBtn.disabled = false;
+        if (tg?.MainButton) tg.MainButton.hideProgress();
 
         if (d.status === 'success') {
           fireConfetti();
@@ -3448,6 +3567,12 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
           const keysBox = document.getElementById('success-delivered-keys');
           if (keysBox) keysBox.innerHTML = renderStructuredCredentials(d.goods);
 
+          if (tg?.MainButton) {
+            tg.MainButton.offClick(executeProductBuy);
+            tg.MainButton.offClick(goToWalletFromMainBtn);
+            tg.MainButton.offClick(triggerInAppRestockSubscribe);
+            tg.MainButton.hide();
+          }
           document.querySelectorAll('.tab-view').forEach(el => el.classList.remove('active'));
           const successView = document.getElementById('view-order-success');
           if (successView) successView.classList.add('active');
@@ -3458,6 +3583,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         }
       } catch (e) {
         if (buyBtn) buyBtn.disabled = false;
+        if (tg?.MainButton) tg.MainButton.hideProgress();
         haptic('error');
         showToast(currentAppLanguage === 'ar' ? 'خطأ في الاتصال. يرجى إعادة المحاولة.' : 'Connection error. Please retry.');
         updateDetailPagePrice();
@@ -3566,6 +3692,16 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
           btn.innerHTML = `<span>Recharge $${amtStr} via ${methodName}</span>`;
         }
       }
+
+      if (tg?.MainButton && activeTab === 'wallet' && !selectedProduct) {
+        tg.MainButton.offClick(executeSelectedRecharge);
+        const actionText = (currentAppLanguage === 'ar')
+          ? `شحن $${amtStr} عبر ${methodName}`
+          : `Recharge $${amtStr} via ${methodName}`;
+        tg.MainButton.setText(actionText)
+          .setParams({ has_shine_effect: true, color: '#10b981', text_color: '#ffffff', is_visible: true, is_active: true });
+        tg.MainButton.onClick(executeSelectedRecharge);
+      }
     }
 
     async function executeSelectedRecharge() {
@@ -3578,7 +3714,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         return;
       }
       haptic('light');
-
+      if (tg?.MainButton) tg.MainButton.showProgress(false);
       const btn = document.getElementById('btn-execute-recharge');
       if (btn) {
         btn.disabled = true;
@@ -3598,6 +3734,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         });
         const d = await res.json();
         if (btn) btn.disabled = false;
+        if (tg?.MainButton) tg.MainButton.hideProgress();
         updateRechargeButtonText();
 
         if (d.type === 'stars' && d.invoice_link) {
@@ -3736,10 +3873,17 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     function openAdminUsersModal() {
       haptic('pop');
       document.getElementById('admin-users-modal').style.display = 'flex';
+      pushNav('admin_users', closeAdminUsersModal);
+      if (tg?.disableVerticalSwipes) tg.disableVerticalSwipes();
       executeAdminUserSearch();
     }
     function closeAdminUsersModal() {
       document.getElementById('admin-users-modal').style.display = 'none';
+      if (tg?.enableVerticalSwipes) tg.enableVerticalSwipes();
+      if (navStack.length > 0 && navStack[navStack.length - 1].name === 'admin_users') {
+        navStack.pop();
+        if (navStack.length === 0 && tg?.BackButton) tg.BackButton.hide();
+      }
     }
 
     async function executeAdminUserSearch() {
@@ -3794,10 +3938,17 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       document.getElementById('admin-bal-amount-input').value = '10.00';
       setAdminBalanceAction('add');
       document.getElementById('admin-balance-modal').style.display = 'flex';
+      pushNav('admin_balance', closeAdminBalanceModal);
+      if (tg?.disableVerticalSwipes) tg.disableVerticalSwipes();
     }
 
     function closeAdminBalanceModal() {
       document.getElementById('admin-balance-modal').style.display = 'none';
+      if (tg?.enableVerticalSwipes) tg.enableVerticalSwipes();
+      if (navStack.length > 0 && navStack[navStack.length - 1].name === 'admin_balance') {
+        navStack.pop();
+        if (navStack.length === 0 && tg?.BackButton) tg.BackButton.hide();
+      }
     }
 
     function setAdminBalanceAction(act) {
@@ -3864,12 +4015,18 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       document.getElementById('admin-disc-user-id').innerText = `ID: ${targetTgId}`;
       document.getElementById('admin-disc-input').value = (currentDisc !== null && currentDisc !== undefined) ? currentDisc : '';
       document.getElementById('admin-discount-modal').style.display = 'flex';
+      pushNav('admin_discount', closeAdminDiscountModal);
+      if (tg?.disableVerticalSwipes) tg.disableVerticalSwipes();
     }
 
     function closeAdminDiscountModal() {
       document.getElementById('admin-discount-modal').style.display = 'none';
+      if (tg?.enableVerticalSwipes) tg.enableVerticalSwipes();
+      if (navStack.length > 0 && navStack[navStack.length - 1].name === 'admin_discount') {
+        navStack.pop();
+        if (navStack.length === 0 && tg?.BackButton) tg.BackButton.hide();
+      }
     }
-
     function setAdminDiscVal(val) {
       haptic('light');
       document.getElementById('admin-disc-input').value = val;
@@ -3945,10 +4102,17 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     function openAdminOrdersModal() {
       haptic('pop');
       document.getElementById('admin-orders-modal').style.display = 'flex';
+      pushNav('admin_orders', closeAdminOrdersModal);
+      if (tg?.disableVerticalSwipes) tg.disableVerticalSwipes();
       loadAdminOrders('all');
     }
     function closeAdminOrdersModal() {
       document.getElementById('admin-orders-modal').style.display = 'none';
+      if (tg?.enableVerticalSwipes) tg.enableVerticalSwipes();
+      if (navStack.length > 0 && navStack[navStack.length - 1].name === 'admin_orders') {
+        navStack.pop();
+        if (navStack.length === 0 && tg?.BackButton) tg.BackButton.hide();
+      }
     }
 
     async function loadAdminOrders(status) {
@@ -4017,10 +4181,17 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     function openAdminCouponsModal() {
       haptic('pop');
       document.getElementById('admin-coupons-modal').style.display = 'flex';
+      pushNav('admin_coupons', closeAdminCouponsModal);
+      if (tg?.disableVerticalSwipes) tg.disableVerticalSwipes();
       loadAdminCoupons();
     }
     function closeAdminCouponsModal() {
       document.getElementById('admin-coupons-modal').style.display = 'none';
+      if (tg?.enableVerticalSwipes) tg.enableVerticalSwipes();
+      if (navStack.length > 0 && navStack[navStack.length - 1].name === 'admin_coupons') {
+        navStack.pop();
+        if (navStack.length === 0 && tg?.BackButton) tg.BackButton.hide();
+      }
     }
 
     async function loadAdminCoupons() {
