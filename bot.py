@@ -1012,7 +1012,8 @@ async def create_tma_topup_invoice(request: Request):
                     callbackUrl=f"{(config.WEBHOOK_HOST or '').rstrip('/')}{config.WEBHOOK_PATH}cryptoprocessing/event",
                     callbackSecret="secret",
                 ))
-                return {"status": "ok", "type": "url", "url": payment.paymentUrl or payment.address}
+                inv_uuid = str(uuid.uuid4().hex[:10])
+                return {"status": "ok", "type": "url", "url": payment.paymentUrl or payment.address, "invoice_id": getattr(payment, "id", "") or inv_uuid, "amount": amount, "currency": "USD"}
             except Exception as e:
                 logging.error("Failed to create crypto invoice: %s", e)
                 return JSONResponse({"error": "crypto_failed", "detail": str(e)}, status_code=502)
@@ -1059,6 +1060,7 @@ async def create_tma_topup_invoice(request: Request):
                     "status": "ok",
                     "type": "url",
                     "url": invoice.get("paymentUrl"),
+                    "invoice_id": str(invoice_id or ""),
                     "provider": provider,
                     "amount": amount,
                     "invoice_amount": inv_amount,
@@ -1072,6 +1074,65 @@ async def create_tma_topup_invoice(request: Request):
                     return JSONResponse({"status": "error", "error": user_msg}, status_code=400)
                 return JSONResponse({"status": "error", "error": "تعذر إنشاء فاتورة الشحن حالياً. يرجى إعادة المحاولة.", "detail": err_str}, status_code=502)
     return JSONResponse({"error": "unknown_method"}, status_code=400)
+
+
+@app.post("/api/invoice/check")
+async def check_tma_invoice(request: Request):
+    """Check payment status of a top-up invoice in real-time and refresh user balance."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+
+    tg_id = int(body.get("tg_id") or 0)
+    invoice_id = str(body.get("invoice_id") or "").strip()
+    method = str(body.get("method") or "").lower()
+
+    if not tg_id:
+        return JSONResponse({"error": "missing_tg_id"}, status_code=400)
+
+    async with get_db_session() as session:
+        user = await UserRepository.get_by_tgid(tg_id, session)
+        if not user:
+            return JSONResponse({"error": "user_not_found"}, status_code=404)
+
+        is_paid = False
+        credited_now = False
+
+        if invoice_id and method in ("sam", "shamcash", "syriatelcash", "syriatel"):
+            try:
+                from services.sam import SamService
+                from repositories.sam_payment import SamPaymentRepository
+                from services.referral import ReferralService
+                payment = await SamPaymentRepository.get_by_invoice_id(invoice_id, session)
+                if payment:
+                    if payment.event == "invoice.paid":
+                        is_paid = True
+                    else:
+                        status_info = await SamService.get_invoice(session, invoice_id)
+                        upstream_status = (status_info.get("status") or "").lower()
+                        if upstream_status == "paid":
+                            is_paid = True
+                            credited_now = True
+                            await ReferralService.apply_deposit_referral(payment.usd_amount, user, session)
+                            await SamPaymentRepository.mark_event(invoice_id, "invoice.paid", status_info.get("transactionRef"), session)
+                            await session_commit(session)
+            except Exception as e:
+                logging.warning("Failed to check SAM invoice %s: %s", invoice_id, e)
+
+        current_balance = round((user.top_up_amount or 0.0) - (user.consume_records or 0.0), 2)
+        curr_pref = getattr(user, "currency_preference", "USD") or "USD"
+        from services.user import format_currency_display
+
+        msg = "تم تأكيد الدفع وإضافة الرصيد بنجاح! 🎉" if is_paid else "الفاتورة بانتظار الدفع أو التحويل."
+        return {
+            "status": "paid" if is_paid else "pending",
+            "is_paid": is_paid,
+            "credited_now": credited_now,
+            "balance": current_balance,
+            "display_balance": format_currency_display(current_balance, curr_pref),
+            "message": msg
+        }
 
 
 @app.post("/api/restock/subscribe")

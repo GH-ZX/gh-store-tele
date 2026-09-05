@@ -1646,26 +1646,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- External Browser Payment Link Modal / Sheet -->
-  <div id="payment-link-sheet" style="position: fixed; inset: 0; background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); z-index: 200; display: none; align-items: flex-end; justify-content: center;">
-    <div class="inset-card" style="width: 100%; max-width: 480px; margin: 0; border-radius: 24px 24px 0 0; padding: 24px 20px calc(var(--safe-bottom) + 20px) 20px; box-shadow: 0 -8px 32px rgba(0,0,0,0.5);">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
-        <h3 style="font-size: 18px; font-weight: 800;" id="sheet-payment-title">إتمام عملية الشحن</h3>
-        <button class="circle-icon-btn" onclick="closePaymentLinkSheet()">✕</button>
-      </div>
-      <p style="font-size: 13px; color: var(--hint); margin-bottom: 18px; line-height: 1.5;" id="sheet-payment-desc">
-        تم إنشاء فاتورة الشحن بنجاح. يمكنك المتابعة في المتصفح الخارجي لإتمام الدفع، أو نسخ رابط الفاتورة:
-      </p>
-      <div style="display: flex; flex-direction: column; gap: 10px;">
-        <button class="btn-action-primary" id="sheet-btn-open-browser" onclick="openPaymentInExternalBrowser()">
-          <span id="sheet-label-open">فتح صفحة الدفع في المتصفح</span>
-        </button>
-        <button class="btn-action-secondary" id="sheet-btn-copy-link" onclick="copyPaymentInvoiceLink()" style="height: 48px;">
-          <span id="sheet-label-copy">نسخ رابط الفاتورة المباشر</span>
-        </button>
-      </div>
-    </div>
-  </div>
   <!-- MULTI-ITEM CART DRAWER MODAL SHEET -->
   <div class="admin-modal-overlay" id="cart-drawer-sheet">
     <div class="admin-modal-sheet" style="max-height: 85vh; display: flex; flex-direction: column;">
@@ -1940,6 +1920,75 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       <button class="btn-action-primary" id="btn-success-continue" onclick="switchTab('store')" style="flex: 1; height: 48px;">متابعة التسوق</button>
     </div>
   </section>
+  <!-- DEDICATED IN-APP INVOICE VIEW -->
+  <section id="view-invoice" class="tab-view">
+    <div class="subview-header">
+      <button class="btn-back-catalog" onclick="closeInvoicePage()">
+        <span id="icon-back-invoice">→</span>
+        <span id="btn-back-invoice">العودة للمحفظة</span>
+      </button>
+      <span style="font-size: 13px; color: var(--accent); font-weight: 700;">فاتورة شحن الرصيد</span>
+    </div>
+
+    <!-- Invoice Card Container -->
+    <div class="inset-card" style="margin-top: 10px; border-color: rgba(56, 189, 248, 0.35);">
+      <!-- Status Badge & ID -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <span class="pill-badge" id="invoice-status-badge" style="background: rgba(245, 158, 11, 0.18); color: #f59e0b; font-size: 12px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 6px;">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: #f59e0b; display: inline-block;"></span>
+          <span id="invoice-status-text">بانتظار التحويل / الدفع</span>
+        </span>
+        <span style="font-size: 12px; color: var(--hint); font-family: monospace;" id="invoice-id-display">#INV-0000</span>
+      </div>
+
+      <!-- Payment Method Row -->
+      <div style="display: flex; align-items: center; gap: 12px; background: var(--input-bg); border: 1px solid var(--border); border-radius: 14px; padding: 12px; margin-bottom: 14px;">
+        <div id="invoice-method-icon-box" style="width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+          💳
+        </div>
+        <div>
+          <div style="font-size: 15px; font-weight: 800; color: var(--text);" id="invoice-method-name">وسيلة الدفع</div>
+          <div style="font-size: 11px; color: var(--hint);" id="invoice-method-sub">دفع مباشر وسريع</div>
+        </div>
+      </div>
+
+      <!-- Amount Box -->
+      <div style="text-align: center; padding: 18px; background: rgba(56, 189, 248, 0.08); border: 1px dashed rgba(56, 189, 248, 0.35); border-radius: 16px; margin-bottom: 16px;">
+        <div style="font-size: 12px; color: var(--hint); margin-bottom: 4px;">المبلغ المطلوب سداده</div>
+        <div style="font-size: 28px; font-weight: 800; color: var(--accent);" id="invoice-amount-usd">$10.00</div>
+        <div style="font-size: 13px; color: var(--text); font-weight: 700; margin-top: 3px;" id="invoice-amount-local"></div>
+      </div>
+
+      <!-- Instructions Note -->
+      <div style="font-size: 12px; color: var(--hint); line-height: 1.6; margin-bottom: 18px;" id="invoice-instructions-text">
+        انقر على <b>فتح بوابة الدفع</b> للمتابعة في صفحة السداد الرسمية. بعد إتمام التحويل، اضغط على زر <b>التحقق من وصول الدفع</b> بالأسفل لتحديث رصيدك فورياً.
+      </div>
+
+      <!-- Action Buttons Stack -->
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <!-- 1. Open Payment Gateway -->
+        <button class="btn-action-primary" id="btn-open-payment-gateway" onclick="openActiveInvoiceGateway()" style="height: 48px;">
+          <span>🌐 فتح بوابة الدفع المباشرة</span>
+        </button>
+
+        <!-- 2. Check Payment Status Button -->
+        <button class="btn-action-warning" id="btn-check-invoice-status" onclick="checkActiveInvoiceStatus()" style="height: 48px; background: linear-gradient(135deg, #10b981, #059669); color: white;">
+          <span id="label-check-invoice">🔄 التحقق من وصول الدفع وتحديث الرصيد</span>
+        </button>
+
+        <!-- 3. Secondary Actions -->
+        <div style="display: flex; gap: 8px;">
+          <button class="btn-action-secondary" onclick="copyActiveInvoiceLink()" style="flex: 1; height: 42px; font-size: 12px;">
+            <span>📋 نسخ الرابط</span>
+          </button>
+          <button class="btn-action-secondary" onclick="closeInvoicePage()" style="flex: 1; height: 42px; font-size: 12px;">
+            <span>✕ العودة للمحفظة</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
 
   <!-- TAB 2: ORDERS VIEW -->
   <main id="view-orders" class="tab-view">
@@ -4362,8 +4411,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
             }
           });
         } else if (d.type === 'url' && d.url) {
-          activeInvoiceUrl = d.url;
-          openPaymentLinkSheet(d.url);
+          openInvoicePage(d);
         } else {
           showToast(d.error || (currentAppLanguage === 'ar' ? 'تعذر إنشاء فاتورة الشحن' : 'Failed to create invoice'));
         }
@@ -4374,24 +4422,95 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       }
     }
 
-    function openPaymentLinkSheet(url) {
-      activeInvoiceUrl = url;
-      const sheet = document.getElementById('payment-link-sheet');
-      if (sheet) {
-        sheet.style.display = 'flex';
-        haptic('pop');
+    let currentInvoiceData = null;
+
+    function openInvoicePage(invoiceData) {
+      currentInvoiceData = invoiceData;
+      activeInvoiceUrl = invoiceData.url || '';
+      haptic('pop');
+
+      // 1. Populate Invoice Meta
+      const invId = invoiceData.invoice_id ? `#INV-${invoiceData.invoice_id}` : '#INV-TOPUP';
+      const idEl = document.getElementById('invoice-id-display');
+      if (idEl) idEl.innerText = invId;
+
+      // 2. Populate Status Badge
+      const statusBadge = document.getElementById('invoice-status-badge');
+      const statusText = document.getElementById('invoice-status-text');
+      if (statusBadge) {
+        statusBadge.style.background = 'rgba(245, 158, 11, 0.18)';
+        statusBadge.style.color = '#f59e0b';
       }
-      if (tg?.openLink) {
-        try { tg.openLink(url); } catch (e) {}
+      if (statusText) statusText.innerText = (currentAppLanguage === 'ar') ? 'بانتظار التحويل / الدفع' : 'Pending Payment';
+
+      // 3. Populate Method Icon and Title
+      const iconBox = document.getElementById('invoice-method-icon-box');
+      const nameEl = document.getElementById('invoice-method-name');
+      const subEl = document.getElementById('invoice-method-sub');
+      const prov = invoiceData.provider || selectedRechargeMethod;
+
+      if (prov === 'shamcash') {
+        if (iconBox) iconBox.innerHTML = '<img src="https://shamcash.sy/_next/static/media/logo.5be69def.svg" class="method-brand-img" alt="Sham Cash">';
+        if (nameEl) nameEl.innerText = (currentAppLanguage === 'ar') ? 'شام كاش (Sham Cash)' : 'Sham Cash';
+        if (subEl) subEl.innerText = (currentAppLanguage === 'ar') ? 'دفع مباشر وفوري عبر بنك شام كاش' : 'Direct payment via Sham Cash';
+      } else if (prov === 'syriatelcash') {
+        if (iconBox) iconBox.innerHTML = '<img src="https://www.syriatel.sy/assets/img/logo.png" class="method-brand-img" alt="Syriatel Cash">';
+        if (nameEl) nameEl.innerText = (currentAppLanguage === 'ar') ? 'سيرياتيل كاش (Syriatel Cash)' : 'Syriatel Cash';
+        if (subEl) subEl.innerText = (currentAppLanguage === 'ar') ? 'دفع بالليرة السورية (SYP)' : 'Direct payment in SYP';
+      } else {
+        if (iconBox) iconBox.innerHTML = '<span style="font-size: 24px;">🪙</span>';
+        if (nameEl) nameEl.innerText = (currentAppLanguage === 'ar') ? 'العملات الرقمية (Crypto)' : 'Cryptocurrency';
+        if (subEl) subEl.innerText = 'USDT, Bitcoin, Solana, TON';
+      }
+
+      // 4. Populate Amounts
+      const usdEl = document.getElementById('invoice-amount-usd');
+      const localEl = document.getElementById('invoice-amount-local');
+      const amt = Number(invoiceData.amount || selectedRechargeAmount || 10);
+      if (usdEl) usdEl.innerText = `$${amt.toFixed(2)} USD`;
+
+      if (invoiceData.invoice_amount && invoiceData.currency === 'SYP') {
+        if (localEl) {
+          localEl.innerText = `≈ ${Number(invoiceData.invoice_amount).toLocaleString()} ل.س`;
+          localEl.style.display = 'block';
+        }
+      } else {
+        if (localEl) localEl.style.display = 'none';
+      }
+
+      // 5. Reset Check Status Button
+      const checkBtn = document.getElementById('btn-check-invoice-status');
+      const checkLabel = document.getElementById('label-check-invoice');
+      if (checkBtn) checkBtn.disabled = false;
+      if (checkLabel) checkLabel.innerText = (currentAppLanguage === 'ar') ? '🔄 التحقق من وصول الدفع وتحديث الرصيد' : '🔄 Check Payment Status & Refresh';
+
+      // 6. Navigate to Invoice Page
+      document.querySelectorAll('.tab-view').forEach(el => el.classList.remove('active'));
+      const invoiceView = document.getElementById('view-invoice');
+      if (invoiceView) invoiceView.classList.add('active');
+
+      pushNav('invoice', closeInvoicePage);
+
+      // Auto-open link if supported
+      if (invoiceData.url && tg?.openLink) {
+        try { tg.openLink(invoiceData.url); } catch (e) {}
       }
     }
 
-    function closePaymentLinkSheet() {
-      const sheet = document.getElementById('payment-link-sheet');
-      if (sheet) sheet.style.display = 'none';
+    function closeInvoicePage() {
+      haptic('light');
+      const invoiceView = document.getElementById('view-invoice');
+      if (invoiceView) invoiceView.classList.remove('active');
+      const walletView = document.getElementById('view-wallet');
+      if (walletView) walletView.classList.add('active');
+
+      if (navStack.length > 0 && navStack[navStack.length - 1].name === 'invoice') {
+        navStack.pop();
+        if (navStack.length === 0 && tg?.BackButton) tg.BackButton.hide();
+      }
     }
 
-    function openPaymentInExternalBrowser() {
+    function openActiveInvoiceGateway() {
       if (!activeInvoiceUrl) return;
       haptic('light');
       if (tg?.openLink) {
@@ -4399,16 +4518,58 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       } else {
         window.open(activeInvoiceUrl, '_blank');
       }
-      closePaymentLinkSheet();
-      showToast(currentAppLanguage === 'ar' ? 'تم فتح صفحة الدفع في المتصفح' : 'Opening payment page in browser...');
     }
 
-    function copyPaymentInvoiceLink() {
+    function copyActiveInvoiceLink() {
       if (!activeInvoiceUrl) return;
-      haptic('success');
-      navigator.clipboard.writeText(activeInvoiceUrl).then(() => {
-        showToast(currentAppLanguage === 'ar' ? 'تم نسخ رابط الفاتورة المباشر!' : 'Payment link copied!');
-      });
+      copyCredText(activeInvoiceUrl);
+    }
+
+    async function checkActiveInvoiceStatus() {
+      if (!currentInvoiceData || !userId) return;
+      haptic('light');
+      const btn = document.getElementById('btn-check-invoice-status');
+      const label = document.getElementById('label-check-invoice');
+      if (btn) btn.disabled = true;
+      if (label) label.innerText = (currentAppLanguage === 'ar') ? 'جاري التحقق من الفاتورة والرصيد...' : 'Checking payment status...';
+
+      try {
+        const res = await fetch('/api/invoice/check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tg_id: userId,
+            invoice_id: currentInvoiceData.invoice_id,
+            method: currentInvoiceData.provider || selectedRechargeMethod
+          })
+        });
+        const d = await res.json();
+        if (btn) btn.disabled = false;
+
+        if (d.is_paid || d.status === 'paid') {
+          fireConfetti();
+          haptic('success');
+          const statusBadge = document.getElementById('invoice-status-badge');
+          const statusText = document.getElementById('invoice-status-text');
+          if (statusBadge) {
+            statusBadge.style.background = 'rgba(16, 185, 129, 0.2)';
+            statusBadge.style.color = '#10b981';
+          }
+          if (statusText) statusText.innerText = (currentAppLanguage === 'ar') ? '✅ تم استلام الدفع بنجاح!' : '✅ Payment Confirmed!';
+          if (label) label.innerText = (currentAppLanguage === 'ar') ? '✅ تم تأكيد الدفع وإضافة الرصيد!' : '✅ Payment Confirmed!';
+          showToast(d.message || (currentAppLanguage === 'ar' ? 'تم تأكيد الدفع وإضافة الرصيد بنجاح! 🎉' : 'Payment confirmed! Balance updated.'));
+          loadUserData();
+        } else {
+          haptic('warning');
+          if (label) label.innerText = (currentAppLanguage === 'ar') ? '🔄 إعادة فحص حالة الدفع' : '🔄 Check Again';
+          showToast(currentAppLanguage === 'ar' ? 'الفاتورة بانتظار التحويل، لم يصل الدفع بعد. يرجى إتمام التحويل والمحاولة ثانية.' : 'Payment not confirmed yet. Please complete transfer and check again.');
+          loadUserData();
+        }
+      } catch (e) {
+        if (btn) btn.disabled = false;
+        if (label) label.innerText = (currentAppLanguage === 'ar') ? '🔄 إعادة المحاولة' : '🔄 Retry Check';
+        showToast(currentAppLanguage === 'ar' ? 'تعذر التحقق من الفاتورة حالياً' : 'Network error checking invoice');
+      }
     }
 
     async function submitVoucherRedeem() {
