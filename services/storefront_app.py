@@ -2083,8 +2083,16 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         <button class="filter-chip active" id="btn-sham-curr-usd" onclick="setShamCurrency('USD')" style="flex: 1; text-align: center; height: 38px;">
           💵 بالدولار (USD)
         </button>
-        <button class="filter-chip" id="btn-sham-curr-syp" onclick="setShamCurrency('SYP')" style="flex: 1; text-align: center; height: 38px;">
-          🇸🇾 بالليرة السورية (SYP)
+        <button class="filter-chip" id="btn-sham-curr-syp" onclick="setShamCurrency('SYP')" style="flex: 1; text-align: center; height: 38px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
+          <svg class="syria-flag-svg" viewBox="0 0 30 20" width="18" height="12" style="border-radius: 2px; vertical-align: middle; display: inline-block; box-shadow: 0 0 1px rgba(0,0,0,0.5); flex-shrink: 0;" xmlns="http://www.w3.org/2000/svg">
+            <rect width="30" height="6.67" y="0" fill="#007A3D"/>
+            <rect width="30" height="6.67" y="6.67" fill="#FFFFFF"/>
+            <rect width="30" height="6.67" y="13.33" fill="#000000"/>
+            <polygon points="8.5,7.7 9.1,9.2 10.7,9.2 9.4,10.2 9.9,11.7 8.5,10.7 7.1,11.7 7.6,10.2 6.3,9.2 7.9,9.2" fill="#CE1126"/>
+            <polygon points="15,7.7 15.6,9.2 17.2,9.2 15.9,10.2 16.4,11.7 15,10.7 13.6,11.7 14.1,10.2 12.8,9.2 14.4,9.2" fill="#CE1126"/>
+            <polygon points="21.5,7.7 22.1,9.2 23.7,9.2 22.4,10.2 22.9,11.7 21.5,10.7 20.1,11.7 20.6,10.2 19.3,9.2 20.9,9.2" fill="#CE1126"/>
+          </svg>
+          <span>بالليرة السورية (SYP)</span>
         </button>
       </div>
     </div>
@@ -2241,7 +2249,17 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       <div style="display: flex; gap: 8px; flex-wrap: wrap;" id="currency-picker-chips">
         <div class="filter-chip" onclick="selectDisplayCurrency('USD')">USD ($)</div>
         <div class="filter-chip" onclick="selectDisplayCurrency('EUR')">EUR (€)</div>
-        <div class="filter-chip" onclick="selectDisplayCurrency('SYP')">SYP (ل.س)</div>
+        <div class="filter-chip" onclick="selectDisplayCurrency('SYP')" style="display: inline-flex; align-items: center; gap: 6px;">
+          <svg class="syria-flag-svg" viewBox="0 0 30 20" width="16" height="11" style="border-radius: 2px; vertical-align: middle; display: inline-block; box-shadow: 0 0 1px rgba(0,0,0,0.5); flex-shrink: 0;" xmlns="http://www.w3.org/2000/svg">
+            <rect width="30" height="6.67" y="0" fill="#007A3D"/>
+            <rect width="30" height="6.67" y="6.67" fill="#FFFFFF"/>
+            <rect width="30" height="6.67" y="13.33" fill="#000000"/>
+            <polygon points="8.5,7.7 9.1,9.2 10.7,9.2 9.4,10.2 9.9,11.7 8.5,10.7 7.1,11.7 7.6,10.2 6.3,9.2 7.9,9.2" fill="#CE1126"/>
+            <polygon points="15,7.7 15.6,9.2 17.2,9.2 15.9,10.2 16.4,11.7 15,10.7 13.6,11.7 14.1,10.2 12.8,9.2 14.4,9.2" fill="#CE1126"/>
+            <polygon points="21.5,7.7 22.1,9.2 23.7,9.2 22.4,10.2 22.9,11.7 21.5,10.7 20.1,11.7 20.6,10.2 19.3,9.2 20.9,9.2" fill="#CE1126"/>
+          </svg>
+          <span>SYP (ل.س)</span>
+        </div>
         <div class="filter-chip" onclick="selectDisplayCurrency('XTR')">Stars (⭐)</div>
       </div>
     </div>
