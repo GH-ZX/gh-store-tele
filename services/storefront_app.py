@@ -3433,11 +3433,9 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       }
       if (tab === 'wallet') {
         updateRechargeButtonText();
-      } else {
-        if (tg?.MainButton && !selectedProduct) {
-          tg.MainButton.offClick(executeSelectedRecharge);
-          tg.MainButton.hide();
-        }
+      }
+      if (tg?.MainButton && !selectedProduct) {
+        tg.MainButton.hide();
       }
     }
 
@@ -4316,15 +4314,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         }
       }
 
-      if (tg?.MainButton && activeTab === 'wallet' && !selectedProduct) {
-        tg.MainButton.offClick(executeSelectedRecharge);
-        const actionText = (currentAppLanguage === 'ar')
-          ? `شحن $${amtStr} عبر ${methodName}`
-          : `Recharge $${amtStr} via ${methodName}`;
-        tg.MainButton.setText(actionText)
-          .setParams({ has_shine_effect: true, color: '#10b981', text_color: '#ffffff', is_visible: true, is_active: true });
-        tg.MainButton.onClick(executeSelectedRecharge);
-      }
+
     }
 
     async function executeSelectedRecharge() {
@@ -4337,7 +4327,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         return;
       }
       haptic('light');
-      if (tg?.MainButton) tg.MainButton.showProgress(false);
+
       const btn = document.getElementById('btn-execute-recharge');
       if (btn) {
         btn.disabled = true;
@@ -4357,7 +4347,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         });
         const d = await res.json();
         if (btn) btn.disabled = false;
-        if (tg?.MainButton) tg.MainButton.hideProgress();
+
         updateRechargeButtonText();
 
         if (d.type === 'stars' && d.invoice_link) {
