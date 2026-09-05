@@ -34,15 +34,17 @@ def get_vip_tier_info(consume_records: float | None, custom_discount_pct: float 
     return "Standard", 0.0
 
 
-def format_currency_display(amount_usd: float, currency_code: str = "USD") -> str:
+def format_currency_display(amount_usd: float, currency_code: str = "USD", syp_rate: float | None = None) -> str:
     """Format USD amount into user's preferred currency."""
     code = (currency_code or "USD").upper()
     if code == "EUR":
         eur_amt = amount_usd * 0.92
         return f"€{eur_amt:.2f}"
     elif code == "SYP":
-        rate = float(config.SAM_SYP_USD_RATE or 0.002551)
-        syp_amt = amount_usd / rate if rate > 0 else amount_usd * 392.0
+        rate = float(syp_rate) if syp_rate else (1.0 / float(config.SAM_SYP_USD_RATE or 0.002551))
+        if 0 < rate < 1.0:
+            rate = 1.0 / rate
+        syp_amt = round(amount_usd * rate)
         return f"{int(syp_amt):,} ل.س"
     elif code == "XTR":
         stars_rate = float(config.GHSTORE_STARS_TO_USD or 0.01)

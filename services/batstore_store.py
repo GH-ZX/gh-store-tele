@@ -192,13 +192,20 @@ class BatStoreStoreService:
         await state.update_data({CART_KEY: cart})
 
         from services.user import get_vip_tier_info
+        from services.sale_pricing import price_lines
         tier_label, discount_pct = get_vip_tier_info(getattr(user, "consume_records", 0.0))
-        total = round(callback_data.quantity * product.sell_price_usd, 2)
+        try:
+            (total_dec,), _ = price_lines(
+                [(product.sell_price_usd, product.cost_usd, callback_data.quantity, 0)],
+                discount_pct=discount_pct)
+        except ValueError:
+            return get_text(language, BotEntity.USER, "batstore_not_found"), kb_builder
+        total = float(total_dec)
         discount_note = ""
         if discount_pct > 0:
-            disc_val = round(total * (discount_pct / 100.0), 2)
-            discount_note = f"\n🎖️ {tier_label}: -{discount_pct:.0f}% (-{disc_val:.2f}{sym})"
-            total = max(0.01, round(total - disc_val, 2))
+            disc_val = round(callback_data.quantity * product.sell_price_usd - total, 2)
+            if disc_val > 0:
+                discount_note = f"\n🎖️ {tier_label}: -{discount_pct:.0f}% (-{disc_val:.2f}{sym})"
         caption = ""
         if not callback_data.confirmation:
             caption = get_text(language, BotEntity.USER, "batstore_added").format(
@@ -238,12 +245,16 @@ class BatStoreStoreService:
 
         sym = config.CURRENCY.get_localized_symbol()
         qty = callback_data.quantity or 1
-        from services.user import get_vip_tier_info
-        tier_label, discount_pct = get_vip_tier_info(getattr(user, "consume_records", 0.0))
-        total = round(qty * product.sell_price_usd, 2)
-        if discount_pct > 0:
-            disc_val = round(total * (discount_pct / 100.0), 2)
-            total = max(0.01, round(total - disc_val, 2))
+        from services.user import get_vip_tier_info as _vip_info
+        from services.sale_pricing import price_lines as _price_lines
+        tier_label, discount_pct = _vip_info(getattr(user, "consume_records", 0.0))
+        try:
+            (total_dec,), _ = _price_lines(
+                [(product.sell_price_usd, product.cost_usd, qty, 0)],
+                discount_pct=discount_pct)
+        except ValueError:
+            return get_text(language, BotEntity.USER, "batstore_not_found"), kb_builder
+        total = float(total_dec)
         balance = round((user.top_up_amount or 0) - (user.consume_records or 0), 2)
 
         if callback_data.confirmation is False:

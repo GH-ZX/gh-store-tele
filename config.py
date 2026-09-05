@@ -71,6 +71,9 @@ BATSTORE_API_URL = os.environ.get("BATSTORE_API_URL")
 BATSTORE_API_KEY = os.environ.get("BATSTORE_API_KEY")
 BATSTORE_SYNC_ENABLED = os.environ.get("BATSTORE_SYNC_ENABLED", "true") == 'true'
 BATSTORE_WEBHOOK_URL = os.environ.get("BATSTORE_WEBHOOK_URL")
+PRODSELLER_API_KEY = os.environ.get("PRODSELLER_API_KEY", "psk_c663c10d4af1e615f62e0c5dc5a36915aee83c71c43590a1")
+PRODSELLER_SYNC_ENABLED = os.environ.get("PRODSELLER_SYNC_ENABLED", "true").lower() == "true"
+SUPPLIER_ROUTING_STRATEGY = os.environ.get("SUPPLIER_ROUTING_STRATEGY", "auto_cheapest")
 SAM_API_BASE = os.environ.get("SAM_API_BASE")
 SAM_API_KEY = os.environ.get("SAM_API_KEY")
 SAM_RECEIVING_WALLET = os.environ.get("SAM_RECEIVING_WALLET")

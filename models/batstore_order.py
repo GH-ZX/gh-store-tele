@@ -1,7 +1,7 @@
 import datetime
 from pydantic import BaseModel
 from sqladmin import ModelView
-from sqlalchemy import Column, Integer, BigInteger, Float, Text, DateTime, JSON, Boolean
+from sqlalchemy import Column, Integer, BigInteger, Float, Text, DateTime, JSON, Boolean, Index
 from sqlalchemy.orm import relationship
 
 from models.base import Base
@@ -15,7 +15,10 @@ class BatStoreOrder(Base):
     reseller API order id when the upstream created one.
     """
     __tablename__ = "batstore_orders"
-
+    __table_args__ = (
+        Index("idx_orders_status_created", "status", "created_at"),
+        Index("idx_orders_tg_created", "telegram_id", "created_at"),
+    )
     id = Column(Integer, primary_key=True)
     telegram_id = Column(BigInteger, nullable=False, index=True)
     total_sell = Column(Float, nullable=False, default=0.0)

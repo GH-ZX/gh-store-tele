@@ -43,6 +43,30 @@ class BatStoreProductRepository:
                 .order_by(BatStoreProduct.name.asc()))
         rows = await session_execute(stmt, session)
         return [BatStoreProductDTO.model_validate(o, from_attributes=True) for o in rows.scalars().all()]
+    @staticmethod
+    async def find_alternate_in_stock(
+        name_or_clean: str,
+        target_supplier: str,
+        session: AsyncSession | Session
+    ) -> BatStoreProductDTO | None:
+        """Find an in-stock equivalent product from an alternate supplier for auto-failover."""
+        clean = (name_or_clean or "").strip().lower()
+        if not clean:
+            return None
+        stmt = (
+            select(BatStoreProduct)
+            .where(
+                BatStoreProduct.supplier == target_supplier,
+                BatStoreProduct.hidden == False,
+                or_(BatStoreProduct.stock == None, BatStoreProduct.stock > 0)
+            )
+        )
+        rows = (await session_execute(stmt, session)).scalars().all()
+        for p in rows:
+            p_name = (p.custom_name or p.name or "").lower()
+            if clean in p_name or p_name in clean:
+                return BatStoreProductDTO.model_validate(p, from_attributes=True)
+        return None
 
     @classmethod
     async def get_categories(cls, session: AsyncSession | Session) -> list[str]:

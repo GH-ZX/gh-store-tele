@@ -311,8 +311,16 @@ async def batstore_checkout(callback: CallbackQuery,
     sym = _sym()
     qty = callback_data.quantity or 1
     total = round(qty * (product.sell_price_usd or 0), 2)
-    balance = round((user.top_up_amount or 0) - (user.consume_records or 0), 2)
+    from services.sale_pricing import money as _money2
+    from decimal import Decimal as _Dec2, ROUND_CEILING as _Ceil2
+    _floor2 = max(0.01, float((_money2(product.cost_usd or 0) * _money2(qty)).quantize(_Dec2("0.01"), rounding=_Ceil2)))
+    if total < _floor2:
+        await callback.message.edit_text(
+            get_text(language, BotEntity.USER, "batstore_not_found"),
+            reply_markup=kb.as_markup())
+        return
 
+    balance = round((user.top_up_amount or 0) - (user.consume_records or 0), 2)
     if balance < total:
         caption = get_text(language, BotEntity.USER, "batstore_insufficient").format(
             need=f"{total}", balance=f"{balance}", sym=sym)

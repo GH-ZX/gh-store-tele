@@ -24,6 +24,9 @@ class BatStoreAPIError(Exception):
     """Raised when the BatStore/VenteBot reseller API returns an error."""
 
 
+class BatStoreOutOfStockError(BatStoreAPIError):
+    """Raised when the upstream product is out of stock."""
+
 class _PersistentClientContext:
     def __init__(self, client: "httpx.AsyncClient"):
         self._client = client
@@ -153,11 +156,57 @@ class BatStoreService:
         resp = await BatStoreService._request("POST", "/api/reseller/orders", session,
                                               key_override=key_override, json=payload)
         if resp.status_code not in (200, 402):
-            raise BatStoreAPIError(f"POST /orders {resp.status_code}: {resp.text[:200]}")
+            raw_err = resp.text[:200]
+            lower_err = raw_err.lower()
+            if any(k in lower_err for k in ("out of stock", "insufficient stock", "no items", "stock unavailable", "not enough stock")):
+                raise BatStoreOutOfStockError(f"Product #{product_id} is out of stock upstream: {raw_err}")
+            raise BatStoreAPIError(f"POST /orders {resp.status_code}: {raw_err}")
         data = resp.json()
         if not data.get("success"):
-            raise BatStoreAPIError(f"POST /orders failed: {resp.text[:200]}")
+            err_msg = str(data.get("message") or data.get("error") or data)[:200]
+            lower_msg = err_msg.lower()
+            if any(k in lower_msg for k in ("out of stock", "insufficient stock", "no items", "stock unavailable", "not enough stock")):
+                raise BatStoreOutOfStockError(f"Product #{product_id} is out of stock upstream: {err_msg}")
+            raise BatStoreAPIError(f"POST /orders failed: {err_msg}")
         return data
+
+    @staticmethod
+    async def get_cached_reseller_balance(session: AsyncSession | Session, redis_client=None) -> float:
+        """Fetch reseller wallet balance with 30-second Redis TTL caching to circuit-break empty balances."""
+        cache_key = "ghstore:cache:reseller_balance"
+        r = redis_client or BatStoreProductRepository._redis
+        if r is not None:
+            try:
+                cached = await r.get(cache_key)
+                if cached is not None:
+                    return float(cached)
+            except Exception:
+                pass
+
+        try:
+            me_info = await BatStoreService.me(session)
+            raw_b = me_info.get("wallet_balance")
+            if raw_b is None:
+                raw_b = me_info.get("wallet", {}).get("balance", 0.0)
+            bal = float(raw_b or 0.0)
+            if r is not None:
+                try:
+                    await r.setex(cache_key, 30, str(bal))
+                except Exception:
+                    pass
+            return bal
+        except Exception as e:
+            logging.warning("Failed to fetch reseller balance for circuit breaker: %s", e)
+            return 9999.0
+
+    @staticmethod
+    async def ping_health(session: AsyncSession | Session) -> bool:
+        """Fast ping to check if upstream reseller API is responsive."""
+        try:
+            resp = await BatStoreService._request("GET", "/api/reseller/me", session, timeout=5.0)
+            return resp.status_code == 200
+        except Exception:
+            return False
 
     @staticmethod
     async def get_order(session: AsyncSession | Session, order_id: int) -> dict:
@@ -348,9 +397,21 @@ class BatStoreService:
                     restocked_products.append((pid, p.get("name") or existing.name))
 
                 is_price_spike = False
-                if existing.cost_usd and existing.cost_usd > 0 and (cost - existing.cost_usd) / existing.cost_usd > 0.30:
-                    is_price_spike = True
-                    price_spikes.append((pid, p.get("name") or existing.name, existing.cost_usd, cost))
+                if existing.cost_usd and existing.cost_usd > 0:
+                    delta_ratio = (cost - existing.cost_usd) / existing.cost_usd
+                    if delta_ratio >= 0.10:
+                        delta_pct = round(delta_ratio * 100.0, 1)
+                        from models.price_audit import ProductPriceAudit
+                        session.add(ProductPriceAudit(
+                            product_id=pid,
+                            product_name=p.get("name") or existing.name,
+                            old_cost=existing.cost_usd,
+                            new_cost=cost,
+                            delta_percent=delta_pct
+                        ))
+                        if delta_ratio >= 0.30:
+                            is_price_spike = True
+                            price_spikes.append((pid, p.get("name") or existing.name, existing.cost_usd, cost))
                 sell = BatStoreService.compute_sell_price(
                     cost, global_percent, global_fixed, existing.margin_type,
                     existing.margin_value if existing.margin_type != MarginType.FIXED_PRICE

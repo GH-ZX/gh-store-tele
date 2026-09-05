@@ -12,7 +12,8 @@ class Review(Base):
     __tablename__ = "reviews"
 
     id = Column(Integer, primary_key=True)
-    buyItem_id = Column(Integer, ForeignKey("buyItem.id", ondelete="CASCADE"), nullable=False, unique=True)
+    buyItem_id = Column(Integer, ForeignKey("buyItem.id", ondelete="CASCADE"), nullable=True, unique=True)
+    batstore_order_id = Column(Integer, ForeignKey("batstore_orders.id", ondelete="CASCADE"), nullable=True)
     buy_item = relationship(
         "BuyItem",
         back_populates="review"

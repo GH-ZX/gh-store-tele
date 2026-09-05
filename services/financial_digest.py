@@ -49,10 +49,10 @@ class FinancialDigestService:
 
         total_inflow = float(crypto_total) + float(stars_total) + float(sam_total)
 
-        # 4. Sales & Fulfillment (BatStore Orders)
+        # 4. Sales & Fulfillment (completed BatStore orders only)
         stmt_orders = (
             select(BatStoreOrder)
-            .where(BatStoreOrder.created_at >= since, BatStoreOrder.status != "failed")
+            .where(BatStoreOrder.created_at >= since, BatStoreOrder.status == "completed")
         )
         res_orders = await session_execute(stmt_orders, session)
         orders = list(res_orders.scalars().all())
@@ -88,7 +88,7 @@ class FinancialDigestService:
             f"• Orders: {len(orders)} fulfilled\n"
             f"• Customer Revenue: {total_sales:.2f}{sym}\n"
             f"• Wholesale Cost: {wholesale_cost:.2f}{sym}\n"
-            f"• <b>Net Gross Profit:</b> <b>{'+' if gross_profit >= 0 else ''}{gross_profit:.2f}{sym}</b> ({margin_pct:.1f}%)\n\n"
+            f"• <b>Gross Profit (before fees):</b> <b>{'+' if gross_profit >= 0 else ''}{gross_profit:.2f}{sym}</b> ({margin_pct:.1f}%)\n\n"
             f"👥 <b>New Customers:</b> {new_users} registrations"
         )
 

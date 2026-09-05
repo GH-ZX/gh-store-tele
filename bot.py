@@ -100,15 +100,15 @@ async def _set_webhook_with_retry() -> None:
             await _asyncio.sleep(15)
 
 
-async def _sync_batstore_catalog() -> None:
-    """Sync the BatStore catalog from the reseller API on startup (best-effort)."""
+async def _sync_all_supplier_catalogs() -> None:
+    """Sync catalogs from all suppliers (BatStore and ProdSeller) on startup."""
     try:
         async with get_db_session() as session:
-            created, updated = await BatStoreService.sync_catalog(session)
-        logging.info("BatStore catalog sync complete: %s created, %s updated", created, updated)
+            from services.multi_supplier import MultiSupplierService
+            res = await MultiSupplierService.sync_all_suppliers(session)
+        logging.info("All supplier catalogs synced: %s", res)
     except Exception as e:  # noqa: BLE001
-        logging.error("BatStore catalog sync failed (continuing): %s", e)
-
+        logging.error("Supplier catalog sync failed (continuing): %s", e)
 
 _polling_task: asyncio.Task | None = None
 _sync_loop_task: asyncio.Task | None = None
@@ -116,17 +116,15 @@ _balance_monitor_task: asyncio.Task | None = None
 _digest_task: asyncio.Task | None = None
 _recovery_task: asyncio.Task | None = None
 _rates_task: asyncio.Task | None = None
-
-
-_recovery_task: asyncio.Task | None = None
+_backup_task: asyncio.Task | None = None
 async def _startup() -> None:
     global _polling_task
     await create_db_and_tables()
     async with get_db_session() as session:
         await ConfigService.seed_defaults(session)
         await ConfigService.seed_from_env(session)
-    if config.BATSTORE_SYNC_ENABLED:
-        asyncio.create_task(_sync_batstore_catalog())
+    if config.BATSTORE_SYNC_ENABLED or getattr(config, "PRODSELLER_SYNC_ENABLED", True):
+        asyncio.create_task(_sync_all_supplier_catalogs())
     asyncio.create_task(_set_webhook_with_retry())
     try:
         tma_host = (config.WEBHOOK_HOST or "").strip().rstrip('/')
@@ -161,10 +159,12 @@ async def _startup() -> None:
     from services.financial_digest import daily_digest_cron
     _digest_task = asyncio.create_task(daily_digest_cron())
     _recovery_task = asyncio.create_task(cart_recovery_cron())
-    static = Path("static")
+    from services.backup_service import periodic_backup_cron
+    _backup_task = asyncio.create_task(periodic_backup_cron())
     from services.currency_rates import currency_rates_cron, CurrencyRateService
     _rates_task = asyncio.create_task(currency_rates_cron())
     asyncio.create_task(CurrencyRateService.update_rates())
+    static = Path("static")
     if static.exists() is False:
         static.mkdir()
     me = await bot.get_me()
@@ -240,6 +240,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+from middleware.rate_limit import RateLimitMiddleware
+app.add_middleware(RateLimitMiddleware, redis_client=redis)
 
 
 @app.middleware("http")
@@ -275,10 +277,14 @@ admin.add_model_view(BatStoreOrderAdmin)
 admin.add_model_view(SamPaymentAdmin)
 admin.add_model_view(RestockSubscriptionAdmin)
 admin.add_model_view(StarsPaymentAdmin)
-admin.add_model_view(AdminAuditLogAdmin)
-admin.add_model_view(GiftVoucherAdmin)
 admin.add_model_view(StorefrontCategoryAdmin)
+from models.referral_withdrawal import ReferralWithdrawalAdmin
+admin.add_model_view(ReferralWithdrawalAdmin)
 app.include_router(processing_router)
+from fastapi.staticfiles import StaticFiles
+_static_dir = Path(__file__).resolve().parent / "static"
+_static_dir.mkdir(exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 @app.get("/health")
 @app.get("/status")
 async def health_check():
@@ -363,9 +369,21 @@ async def get_tma_catalog():
                 "custom_emoji_id": p.custom_emoji_id,
                 "stock": p.stock,
                 "delivery_type": p.delivery_type or "stock",
+                "supplier": getattr(p, "supplier", "batstore") or "batstore",
+                "server_badge": getattr(p, "server_badge", "⚡ سيرفر 1 (BatStore)") or "⚡ سيرفر 1 (BatStore)",
             })
         store_logo_url = await ConfigService.get(session, "STORE_LOGO_URL", env_fallback=os.environ.get("STORE_LOGO_URL", ""))
-    return {"categories": cats_list, "products": data, "store_logo_url": store_logo_url or ""}
+        flash_enabled = (await ConfigService.get(session, "FLASH_SALE_ENABLED", default="false")).lower() in ("true", "1", "yes")
+        flash_pct = float(await ConfigService.get(session, "FLASH_SALE_PERCENT", default="15") or 15)
+        flash_end = int(await ConfigService.get(session, "FLASH_SALE_END_TIMESTAMP", default="0") or 0)
+        flash_sale = {
+            "enabled": flash_enabled,
+            "percent": flash_pct,
+            "end_timestamp": flash_end,
+            "title_ar": await ConfigService.get(session, "FLASH_SALE_TITLE_AR", default="عروض فلاش محدودة 🔥"),
+            "title_en": await ConfigService.get(session, "FLASH_SALE_TITLE_EN", default="Limited Flash Sale 🔥"),
+        }
+    return {"categories": cats_list, "products": data, "store_logo_url": store_logo_url or "", "flash_sale": flash_sale}
 
 
 _sse_subscribers: set[asyncio.Queue] = set()
@@ -450,6 +468,11 @@ _SUPPLIER_WALLETS_CACHE: dict = {"data": None, "expire_time": 0.0}
 
 @app.get("/api/user-data")
 async def get_tma_user_data(tg_id: int, request: Request):
+    from services.telegram_auth import extract_and_verify_telegram_user
+    try:
+        tg_id = extract_and_verify_telegram_user(request, tg_id)
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
     async with get_db_session() as session:
         user = await UserRepository.get_by_tgid(tg_id, session)
         if not user:
@@ -459,6 +482,9 @@ async def get_tma_user_data(tg_id: int, request: Request):
         tier_label, discount_pct = get_vip_tier_info(user.consume_records)
         balance = round((user.top_up_amount or 0.0) - (user.consume_records or 0.0), 2)
         curr_pref = getattr(user, "currency_preference", "USD") or "USD"
+        syp_cfg = await ConfigService.get(session, "SAM_SYP_USD_RATE", env_fallback=os.environ.get("SAM_SYP_USD_RATE"))
+        syp_val = float(syp_cfg or 0.002551)
+        syp_market = int(round(1.0 / syp_val)) if syp_val < 1.0 else int(round(syp_val))
 
         orders_db = await BatStoreOrderRepository.get_by_telegram_id(tg_id, session, limit=15)
         orders_data = []
@@ -601,6 +627,12 @@ async def get_tma_user_data(tg_id: int, request: Request):
                 from models.user import User
                 stmt_rev = select(func.coalesce(func.sum(BatStoreOrder.total_sell), 0.0)).where(BatStoreOrder.status == "completed")
                 tot_rev = (await session_execute(stmt_rev, session)).scalar_one()
+                stmt_cost_orders = select(BatStoreOrder.details).where(BatStoreOrder.status == "completed")
+                cost_rows = (await session_execute(stmt_cost_orders, session)).scalars().all()
+                from decimal import Decimal as _ProfitDecimal
+                from services.sale_pricing import order_cost as _order_cost
+                tot_cost = round(float(sum((_order_cost(d) for d in cost_rows), _ProfitDecimal(0))), 2)
+                tot_profit = round(float(tot_rev or 0.0) - tot_cost, 2)
                 stmt_ord = select(func.count(BatStoreOrder.id))
                 tot_ord = (await session_execute(stmt_ord, session)).scalar_one()
                 stmt_usr = select(func.count(User.id))
@@ -636,6 +668,15 @@ async def get_tma_user_data(tg_id: int, request: Request):
                             logging.warning("Could not fetch BatStore balance: %s", e)
                             prev = _SUPPLIER_WALLETS_CACHE.get("data") or {}
                             return prev.get("batstore_usd", 0.08)
+                    async def _get_prodseller():
+                        try:
+                            from services.prodseller import ProdSellerService
+                            info = await asyncio.wait_for(ProdSellerService.get_balance(session), timeout=2.5)
+                            return round(float(info.get("balance") or 0.0), 2)
+                        except Exception as e:
+                            logging.warning("Could not fetch ProdSeller balance: %s", e)
+                            prev = _SUPPLIER_WALLETS_CACHE.get("data") or {}
+                            return prev.get("prodseller_usd", 13.18)
 
                     async def _get_sam():
                         sam_acc = {"usd": 0.0, "syp": 0.0}
@@ -673,18 +714,21 @@ async def get_tma_user_data(tg_id: int, request: Request):
                         return sam_acc
 
                     try:
-                        bat_val, sam_val = await asyncio.gather(_get_batstore(), _get_sam())
+                        bat_val, prod_val, sam_val = await asyncio.gather(_get_batstore(), _get_prodseller(), _get_sam())
                         supplier_wallets = {
                             "batstore_usd": bat_val,
+                            "prodseller_usd": prod_val,
                             "sam_usd": sam_val["usd"],
                             "sam_syp": sam_val["syp"],
+                            "total_supplier_usd": round(bat_val + prod_val + sam_val["usd"], 2),
                         }
                         _SUPPLIER_WALLETS_CACHE = {"data": supplier_wallets, "expire_time": now_ts + 60.0}
                     except Exception as e:
-                        supplier_wallets = _SUPPLIER_WALLETS_CACHE.get("data") or {"batstore_usd": 0.08, "sam_usd": 0.0, "sam_syp": 0.0}
-
+                        supplier_wallets = _SUPPLIER_WALLETS_CACHE.get("data") or {"batstore_usd": 0.08, "prodseller_usd": 13.18, "sam_usd": 0.0, "sam_syp": 0.0, "total_supplier_usd": 13.26}
                 admin_stats = {
                     "total_revenue": round(float(tot_rev), 2),
+                    "total_cost": tot_cost,
+                    "gross_profit": tot_profit,
                     "total_orders_count": int(tot_ord),
                     "total_users_count": int(tot_usr),
                     "total_users_balance": round(float(tot_bal), 2),
@@ -695,6 +739,8 @@ async def get_tma_user_data(tg_id: int, request: Request):
                     "store_announcement": announcement_cfg or "",
                     "autorefund_enabled": (await ConfigService.get(session, "AUTOREFUND_ENABLED", default="false")).lower() in ("true", "1", "yes"),
                     "supplier_wallets": supplier_wallets,
+                    "supplier_routing_strategy": await ConfigService.get(session, "SUPPLIER_ROUTING_STRATEGY", default="auto_cheapest"),
+                    "prodseller_api_key_set": bool(await ConfigService.get(session, "PRODSELLER_API_KEY")),
                 }
             except Exception as e:
                 logging.error("Failed to compile admin stats: %s", e)
@@ -703,8 +749,9 @@ async def get_tma_user_data(tg_id: int, request: Request):
             "username": user.telegram_username or "",
             "photo_url": photo_url,
             "balance": balance,
-            "display_balance": format_currency_display(balance, curr_pref),
+            "display_balance": format_currency_display(balance, curr_pref, syp_rate=syp_market),
             "currency_preference": curr_pref,
+            "syp_rate": syp_market,
             "language": user.language.value if hasattr(user.language, "value") else str(user.language),
             "vip_tier": tier_label,
             "vip_discount": discount_pct,
@@ -735,6 +782,12 @@ async def update_tma_user_settings(request: Request):
     tg_id = body.get("tg_id")
     if not tg_id:
         return JSONResponse({"error": "missing_tg_id"}, status_code=400)
+
+    from services.telegram_auth import extract_and_verify_telegram_user
+    try:
+        tg_id = extract_and_verify_telegram_user(request, int(tg_id))
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
 
     async with get_db_session() as session:
         user = await UserRepository.get_by_tgid(int(tg_id), session)
@@ -768,164 +821,386 @@ async def tma_instant_buy(request: Request):
     except Exception:
         return JSONResponse({"error": "invalid_json"}, status_code=400)
 
-    tg_id = int(body.get("tg_id") or 0)
+    from services.telegram_auth import extract_and_verify_telegram_user
+    try:
+        tg_id = extract_and_verify_telegram_user(request, int(body.get("tg_id") or 0))
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
+
     product_id = int(body.get("product_id") or 0)
     quantity = max(1, min(10, int(body.get("quantity") or 1)))
 
     if not tg_id or not product_id:
         return JSONResponse({"error": "missing_parameters"}, status_code=400)
 
-    async with get_db_session() as session:
-        user = await UserRepository.get_by_tgid(tg_id, session)
-        if not user:
-            return JSONResponse({"error": "user_not_found"}, status_code=404)
-
-        product = await BatStoreProductRepository.get_by_product_id(product_id, session)
-        if not product or product.hidden:
-            return JSONResponse({"error": "product_not_found"}, status_code=404)
-
-        total = round(quantity * product.sell_price_usd, 2)
-        tier_label, discount_pct = get_vip_tier_info(getattr(user, "consume_records", 0.0))
-        if discount_pct > 0:
-            disc_val = round(total * (discount_pct / 100.0), 2)
-            total = max(0.01, round(total - disc_val, 2))
-        vol_disc_pct = BatStoreService.get_volume_discount(quantity)
-        if vol_disc_pct > 0:
-            vol_disc = round(total * (vol_disc_pct / 100.0), 2)
-            total = max(0.01, round(total - vol_disc, 2))
-        coupon_code = (body.get("coupon_code") or "").strip()
-        if coupon_code:
-            from repositories.coupon import CouponRepository
-            from enums.coupon_type import CouponType
-            coupon = await CouponRepository.get_by_code(coupon_code, session)
-            if coupon and coupon.is_active:
-                if not (coupon.usage_limit and coupon.usage_count >= coupon.usage_limit):
-                    if coupon.type == CouponType.PERCENT:
-                        c_disc = total * (float(coupon.value) / 100.0)
-                    else:
-                        c_disc = float(coupon.value)
-                    total = max(0.01, round(total - c_disc, 2))
-                    await CouponRepository.increment_usage(coupon.id, session)
-
-        # 1. Atomically debit customer balance
-        debited = await UserRepository.try_debit_balance(user.telegram_id, total, session)
-        if not debited:
-            available = round((user.top_up_amount or 0.0) - (user.consume_records or 0.0), 2)
-            return JSONResponse({
-                "error": "insufficient_balance",
-                "needed": total,
-                "available": available,
-                "shortage": round(total - available, 2)
-            }, status_code=400)
-        await session_commit(session)
-
-        # 2. Place upstream supplier order
-        customer_ref = f"tma-{user.telegram_id}-{uuid.uuid4().hex[:8]}"
-        try:
-            placed = await BatStoreService.place_order(
-                session, product.product_id, quantity,
-                customer_reference=customer_ref,
-                idempotency_key=customer_ref,
-            )
-            ext_ref = placed.get("order", {}).get("id") or placed.get("order_id")
-            order_obj = placed.get("order", {}) or {}
-            items = order_obj.get("items") or []
-            goods_list = [it.get("value") or it.get("data") or str(it) for it in items] if items else []
-        except Exception as e:
-            logging.error("BatStore in-app checkout failed: %s", e)
-            await UserRepository.refund_balance(user.telegram_id, total, session)
-            await session_commit(session)
-            return JSONResponse({"error": "supplier_failed", "message": str(e)}, status_code=502)
-
-        # 3. Record order
-        order_status = "completed" if product.delivery_type in ("stock", "supplier_api") else "pending_fulfillment"
-        order = await BatStoreOrderRepository.create(BatStoreOrderDTO(
-            telegram_id=user.telegram_id,
-            total_sell=total,
-            status=order_status,
-            external_order_ref=str(ext_ref) if ext_ref else None,
-            customer_reference=customer_ref,
-            details=[{
-                "product_id": product.product_id,
-                "name": product.name,
-                "quantity": quantity,
-                "cost_usd": product.cost_usd,
-                "sell_usd": total,
-                "delivery_type": product.delivery_type,
-                "delivery_goods": goods_list,
-                "warranty_days": product.warranty_days or 0,
-            }],
-        ), session)
-        await session_commit(session)
-
-        # 4. Async notifications
-        sym = config.CURRENCY.get_localized_symbol()
-        await NotificationService.send_to_admins(
-            f"🛒 <b>New In-App Mini App Order #{order.id}</b>\n\n"
-            f"• <b>Customer:</b> tg:{user.telegram_id} (@{user.telegram_username or 'none'})\n"
-            f"• <b>Item:</b> {quantity}× {product.name}\n"
-            f"• <b>Total:</b> {total:.2f}{sym}\n"
-            f"• <b>Status:</b> {order_status}",
-            None
+    # Concurrency Lock: prevent double-tap race conditions
+    lock = redis.lock(f"lock:checkout:{tg_id}", timeout=15)
+    acquired = await lock.acquire(blocking=False)
+    if not acquired:
+        return JSONResponse(
+            {"error": "checkout_in_progress", "message": "Another checkout is currently processing for this user."},
+            status_code=409,
         )
 
-        # Backup delivery into Telegram chat
-        if goods_list:
-            goods_lines = "\n".join(f"• <code>{g}</code>" for g in goods_list[:5])
-            await NotificationService.send_to_user(
-                f"✅ <b>Order #{order.id} Successful!</b>\n\n"
-                f"📦 <b>Delivered Goods:</b>\n{goods_lines}\n\n"
-                "<i>(Tap any credential above to copy it)</i>",
-                user.telegram_id
+    try:
+        async with get_db_session() as session:
+            user = await UserRepository.get_by_tgid(tg_id, session)
+            if not user:
+                return JSONResponse({"error": "user_not_found"}, status_code=404)
+
+            product = await BatStoreProductRepository.get_by_product_id(product_id, session)
+            if not product or product.hidden:
+                return JSONResponse({"error": "product_not_found"}, status_code=404)
+
+            # Multi-Supplier Balance Circuit Breaker
+            from services.multi_supplier import MultiSupplierService
+            from services.batstore import BatStoreOutOfStockError
+            from services.prodseller import ProdSellerOutOfStockError
+            total_cost = (product.cost_usd or 0.0) * quantity
+            supplier_bal = await MultiSupplierService.get_cached_supplier_balance(product, session, redis)
+            if supplier_bal < total_cost:
+                return JSONResponse({
+                    "error": "supplier_replenishing",
+                    "message": "المتجر يقوم حالياً بإعادة شحن الرصيد لدى المورد. يرجى إعادة المحاولة بعد قليل."
+                }, status_code=503)
+
+            from services.sale_pricing import price_lines
+            tier_label, discount_pct = get_vip_tier_info(getattr(user, "consume_records", 0.0))
+            vol_disc_pct = BatStoreService.get_volume_discount(quantity)
+            coupon_code = (body.get("coupon_code") or "").strip()
+            coupon_type = coupon_value = None
+            if coupon_code:
+                from repositories.coupon import CouponRepository
+                coupon = await CouponRepository.get_by_code(coupon_code, session)
+                if coupon and coupon.is_active:
+                    if not (coupon.usage_limit and coupon.usage_count >= coupon.usage_limit):
+                        coupon_type, coupon_value = coupon.type, float(coupon.value or 0.0)
+            try:
+                (total_dec,), discount_limited = price_lines(
+                    [(product.sell_price_usd, product.cost_usd, quantity, vol_disc_pct)],
+                    discount_pct=discount_pct, coupon_type=coupon_type, coupon_value=coupon_value or 0,
+                )
+            except ValueError as e:
+                if str(e) == "price_unavailable":
+                    return JSONResponse({"error": "price_unavailable"}, status_code=400)
+                raise
+            total = float(total_dec)
+            if coupon_code and coupon_type is not None:
+                from repositories.coupon import CouponRepository
+                coupon = await CouponRepository.get_by_code(coupon_code, session)
+                if coupon and coupon.is_active:
+                    await CouponRepository.increment_usage(coupon.id, session)
+
+            # 1. Atomically debit customer balance
+            debited = await UserRepository.try_debit_balance(user.telegram_id, total, session)
+            if not debited:
+                available = round((user.top_up_amount or 0.0) - (user.consume_records or 0.0), 2)
+                return JSONResponse({
+                    "error": "insufficient_balance",
+                    "needed": total,
+                    "available": available,
+                    "shortage": round(total - available, 2)
+                }, status_code=400)
+            await session_commit(session)
+
+            # 2. Place upstream supplier order
+            customer_ref = f"tma-{user.telegram_id}-{uuid.uuid4().hex[:8]}"
+            try:
+                placed = await MultiSupplierService.place_order_with_failover(
+                    session, product, quantity,
+                    customer_reference=customer_ref,
+                    idempotency_key=customer_ref,
+                )
+                ext_ref = placed.get("external_order_ref")
+                goods_list = placed.get("goods") or []
+                supplier_used = placed.get("supplier") or getattr(product, "supplier", "batstore")
+                server_badge = placed.get("server_badge") or getattr(product, "server_badge", "⚡ سيرفر 1 (BatStore)")
+            except (BatStoreOutOfStockError, ProdSellerOutOfStockError) as e:
+                logging.warning("Product #%s out of stock on all suppliers: %s", product.product_id, e)
+                await UserRepository.refund_balance(user.telegram_id, total, session)
+                product.stock = 0
+                await BatStoreProductRepository.update(product, session)
+                await session_commit(session)
+                broadcast_sse_event("stock_update", {"product_id": product.product_id, "stock": 0})
+                return JSONResponse({
+                    "error": "out_of_stock",
+                    "message": "نفد مخزون هذا المنتج مؤقتاً لدى المورد. تم استرداد المبلغ فوراً إلى رصيدك."
+                }, status_code=409)
+            except Exception as e:
+                logging.error("Multi-supplier in-app checkout failed: %s", e)
+                await UserRepository.refund_balance(user.telegram_id, total, session)
+                await session_commit(session)
+                return JSONResponse({"error": "supplier_failed", "message": str(e)}, status_code=502)
+
+            # 3. Record order
+            order_status = "completed" if product.delivery_type in ("stock", "supplier_api") else "pending_fulfillment"
+            order = await BatStoreOrderRepository.create(BatStoreOrderDTO(
+                telegram_id=user.telegram_id,
+                total_sell=total,
+                status=order_status,
+                external_order_ref=str(ext_ref) if ext_ref else None,
+                customer_reference=customer_ref,
+                details=[{
+                    "product_id": product.product_id,
+                    "name": product.name,
+                    "quantity": quantity,
+                    "cost_usd": product.cost_usd,
+                    "sell_usd": total,
+                    "delivery_type": product.delivery_type,
+                    "delivery_goods": goods_list,
+                    "warranty_days": product.warranty_days or 0,
+                    "supplier": supplier_used,
+                    "server_badge": server_badge,
+                }],
+            ), session)
+            await session_commit(session)
+
+            # 4. Async notifications
+            sym = config.CURRENCY.get_localized_symbol()
+            await NotificationService.send_to_admins(
+                f"🛒 <b>New In-App Mini App Order #{order.id}</b>\n\n"
+                f"• <b>Customer:</b> tg:{user.telegram_id} (@{user.telegram_username or 'none'})\n"
+                f"• <b>Item:</b> {quantity}× {product.name}\n"
+                f"• <b>Total:</b> {total:.2f}{sym}\n"
+                f"• <b>Status:</b> {order_status}",
+                None
             )
 
-        # 5. Process 0.2% referral commission from margin
-        if getattr(user, "referred_by_user_id", None):
+            # Backup delivery into Telegram chat
+            if goods_list:
+                goods_lines = "\n".join(f"• <code>{g}</code>" for g in goods_list[:5])
+                await NotificationService.send_to_user(
+                    f"✅ <b>Order #{order.id} Successful!</b>\n\n"
+                    f"📦 <b>Delivered Goods:</b>\n{goods_lines}\n\n"
+                    "<i>(Tap any credential above to copy it)</i>",
+                    user.telegram_id
+                )
+
+            # 5. Process 0.2% referral commission from margin
+            if getattr(user, "referred_by_user_id", None):
+                try:
+                    referrer = await UserRepository.get_by_id(user.referred_by_user_id, session)
+                    if referrer:
+                        cost_total = (product.cost_usd or 0.0) * quantity
+                        margin_profit = max(0.0, total - cost_total)
+                        if margin_profit > 0:
+                            ref_rate = float(os.environ.get("REFERRAL_MARGIN_COMMISSION_PERCENT", "0.2")) / 100.0
+                            commission = round(margin_profit * ref_rate, 2)
+                            if commission < 0.01:
+                                commission = 0.01
+
+                            await UserRepository.refund_balance(referrer.telegram_id, commission, session)
+                            from repositories.referral import ReferralRepository
+                            from models.referral import ReferralBonusDTO
+                            await ReferralRepository.create(ReferralBonusDTO(
+                                referral_user_id=user.id,
+                                referrer_user_id=referrer.id,
+                                payment_amount=total,
+                                applied_referral_bonus=0.0,
+                                applied_referrer_bonus=commission,
+                            ), session)
+                            await session_commit(session)
+
+                            try:
+                                await NotificationService.send_to_user(
+                                    f"🎁 <b>أرباح إحالة جديدة!</b>\n\n"
+                                    f"قام صديقك المدعو بعملية شراء ({product.name}) وتمت إضافة <b>+${commission:.2f}</b> كعمولة إلى رصيدك مباشرة!",
+                                    referrer.telegram_id
+                                )
+                            except Exception:
+                                pass
+                except Exception as e:
+                    logging.error("Failed to process referral margin commission: %s", e)
+
+            return {
+                "status": "success",
+                "order_id": order.id,
+                "product_name": product.name,
+                "quantity": quantity,
+                "total_paid": total,
+                "sym": sym,
+                "goods": goods_list,
+                "delivery_type": product.delivery_type or "stock",
+                "warranty_days": product.warranty_days or 0
+            }
+    finally:
+        try:
+            await lock.release()
+        except Exception:
+            pass
+
+
+@app.post("/api/cart/checkout")
+async def tma_cart_checkout(request: Request):
+    """Atomic multi-item checkout for the Telegram Mini App Cart Drawer."""
+    import uuid
+    from models.batstore_order import BatStoreOrderDTO
+    from services.user import get_vip_tier_info
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+
+    from services.telegram_auth import extract_and_verify_telegram_user
+    try:
+        tg_id = extract_and_verify_telegram_user(request, int(body.get("tg_id") or 0))
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
+
+    items_input = body.get("items") or []
+    if not tg_id or not items_input:
+        return JSONResponse({"error": "missing_parameters"}, status_code=400)
+
+    # Concurrency Lock: prevent double-tap race conditions
+    lock = redis.lock(f"lock:checkout:{tg_id}", timeout=20)
+    acquired = await lock.acquire(blocking=False)
+    if not acquired:
+        return JSONResponse(
+            {"error": "checkout_in_progress", "message": "Another checkout is currently processing for this user."},
+            status_code=409,
+        )
+
+    try:
+        async with get_db_session() as session:
+            user = await UserRepository.get_by_tgid(tg_id, session)
+            if not user:
+                return JSONResponse({"error": "user_not_found"}, status_code=404)
+
+            from services.sale_pricing import price_lines
+            cart_products = []
+            price_inputs = []
+            total_cart_cost = 0.0
+            for it in items_input:
+                pid = int(it.get("product_id") or 0)
+                qty = max(1, min(20, int(it.get("quantity") or 1)))
+                prod = await BatStoreProductRepository.get_by_product_id(pid, session)
+                if not prod or prod.hidden:
+                    return JSONResponse({"error": f"Product #{pid} is unavailable"}, status_code=400)
+                cart_products.append({"product": prod, "quantity": qty})
+                price_inputs.append((prod.sell_price_usd, prod.cost_usd, qty,
+                                    BatStoreService.get_volume_discount(qty)))
+                total_cart_cost += (prod.cost_usd or 0.0) * qty
+
+            # Reseller Balance Circuit Breaker
+            reseller_bal = await BatStoreService.get_cached_reseller_balance(session, redis)
+            if reseller_bal < total_cart_cost:
+                return JSONResponse({
+                    "error": "supplier_replenishing",
+                    "message": "المتجر يقوم حالياً بإعادة شحن الرصيد لدى المورد. يرجى إعادة المحاولة بعد قليل."
+                }, status_code=503)
+
+            tier_label, discount_pct = get_vip_tier_info(getattr(user, "consume_records", 0.0), getattr(user, "custom_discount_pct", None))
+            coupon_code = (body.get("coupon_code") or "").strip()
+            coupon_type = coupon_value = None
+            if coupon_code:
+                from repositories.coupon import CouponRepository
+                coupon = await CouponRepository.get_by_code(coupon_code, session)
+                if coupon and coupon.is_active:
+                    if not (coupon.usage_limit and coupon.usage_count >= coupon.usage_limit):
+                        coupon_type, coupon_value = coupon.type, float(coupon.value or 0.0)
             try:
-                referrer = await UserRepository.get_by_id(user.referred_by_user_id, session)
-                if referrer:
-                    cost_total = (product.cost_usd or 0.0) * quantity
-                    margin_profit = max(0.0, total - cost_total)
-                    if margin_profit > 0:
-                        ref_rate = float(os.environ.get("REFERRAL_MARGIN_COMMISSION_PERCENT", "0.2")) / 100.0
-                        commission = round(margin_profit * ref_rate, 2)
-                        if commission < 0.01:
-                            commission = 0.01
+                line_totals, discount_limited = price_lines(
+                    price_inputs, discount_pct=discount_pct,
+                    coupon_type=coupon_type, coupon_value=coupon_value or 0,
+                )
+            except ValueError as e:
+                if str(e) == "price_unavailable":
+                    return JSONResponse({"error": "price_unavailable"}, status_code=400)
+                raise
+            for cp, line_total in zip(cart_products, line_totals):
+                cp["line_total"] = float(line_total)
+            total = round(float(sum(line_totals)), 2)
+            if coupon_code and coupon_type is not None:
+                from repositories.coupon import CouponRepository
+                coupon = await CouponRepository.get_by_code(coupon_code, session)
+                if coupon and coupon.is_active:
+                    await CouponRepository.increment_usage(coupon.id, session)
 
-                        await UserRepository.refund_balance(referrer.telegram_id, commission, session)
-                        from repositories.referral import ReferralRepository
-                        from models.referral import ReferralBonusDTO
-                        await ReferralRepository.create(ReferralBonusDTO(
-                            referral_user_id=user.id,
-                            referrer_user_id=referrer.id,
-                            payment_amount=total,
-                            applied_referral_bonus=0.0,
-                            applied_referrer_bonus=commission,
-                        ), session)
-                        await session_commit(session)
+            debited = await UserRepository.try_debit_balance(user.telegram_id, total, session)
+            if not debited:
+                available = round((user.top_up_amount or 0.0) - (user.consume_records or 0.0), 2)
+                return JSONResponse({
+                    "error": "insufficient_balance",
+                    "needed": total,
+                    "available": available,
+                    "shortage": round(total - available, 2)
+                }, status_code=400)
+            await session_commit(session)
 
-                        try:
-                            await NotificationService.send_to_user(
-                                f"🎁 <b>أرباح إحالة جديدة!</b>\n\n"
-                                f"قام صديقك المدعو بعملية شراء ({product.name}) وتمت إضافة <b>+${commission:.2f}</b> كعمولة إلى رصيدك مباشرة!",
-                                referrer.telegram_id
-                            )
-                        except Exception:
-                            pass
-            except Exception as e:
-                logging.error("Failed to process referral margin commission: %s", e)
+            all_goods = []
+            order_details = []
+            from services.batstore import BatStoreOutOfStockError
+            for cp in cart_products:
+                prod = cp["product"]
+                qty = cp["quantity"]
+                cust_ref = f"cart-{user.telegram_id}-{uuid.uuid4().hex[:8]}"
+                goods_list = []
+                from services.multi_supplier import MultiSupplierService
+                from services.prodseller import ProdSellerOutOfStockError
+                supplier_used = getattr(prod, "supplier", "batstore")
+                server_badge = getattr(prod, "server_badge", "⚡ سيرفر 1 (BatStore)")
+                try:
+                    placed = await MultiSupplierService.place_order_with_failover(
+                        session, prod, qty,
+                        customer_reference=cust_ref,
+                        idempotency_key=cust_ref,
+                    )
+                    goods_list = placed.get("goods") or []
+                    supplier_used = placed.get("supplier") or supplier_used
+                    server_badge = placed.get("server_badge") or server_badge
+                    all_goods.extend(goods_list)
+                except (BatStoreOutOfStockError, ProdSellerOutOfStockError) as e:
+                    logging.warning("Cart product #%s out of stock upstream: %s", prod.product_id, e)
+                    prod.stock = 0
+                    await BatStoreProductRepository.update(prod, session)
+                    await session_commit(session)
+                    broadcast_sse_event("stock_update", {"product_id": prod.product_id, "stock": 0})
+                except Exception as e:
+                    logging.error("Failed to place item #%s in cart checkout: %s", prod.product_id, e)
 
-        return {
-            "status": "success",
-            "order_id": order.id,
-            "product_name": product.name,
-            "quantity": quantity,
-            "total_paid": total,
-            "sym": sym,
-            "goods": goods_list,
-            "delivery_type": product.delivery_type or "stock",
-            "warranty_days": product.warranty_days or 0
-        }
+                order_details.append({
+                    "product_id": prod.product_id,
+                    "name": prod.name,
+                    "quantity": qty,
+                    "cost_usd": prod.cost_usd,
+                    "sell_usd": cp["line_total"],
+                    "delivery_type": prod.delivery_type,
+                    "delivery_goods": goods_list,
+                    "warranty_days": prod.warranty_days or 0,
+                    "supplier": supplier_used,
+                    "server_badge": server_badge,
+                })
+
+            order = await BatStoreOrderRepository.create(BatStoreOrderDTO(
+                telegram_id=user.telegram_id,
+                total_sell=total,
+                status="completed",
+                customer_reference=f"cart-{uuid.uuid4().hex[:10]}",
+                details=order_details
+            ), session)
+            await session_commit(session)
+
+            # Clear abandoned cart in Redis if synced
+            try:
+                await redis.delete(f"ghstore:tma_cart:{user.telegram_id}")
+            except Exception:
+                pass
+
+            sym = config.CURRENCY.get_localized_symbol()
+            return {
+                "status": "success",
+                "order_id": order.id,
+                "total_paid": total,
+                "sym": sym,
+                "goods": all_goods,
+                "items_count": len(cart_products)
+            }
+    finally:
+        try:
+            await lock.release()
+        except Exception:
+            pass
 
 
 @app.post("/api/cart/checkout")
@@ -950,39 +1225,45 @@ async def tma_cart_checkout(request: Request):
         if not user:
             return JSONResponse({"error": "user_not_found"}, status_code=404)
 
+        from services.sale_pricing import price_lines
         cart_products = []
-        raw_total = 0.0
+        price_inputs = []
         for it in items_input:
             pid = int(it.get("product_id") or 0)
             qty = max(1, min(20, int(it.get("quantity") or 1)))
             prod = await BatStoreProductRepository.get_by_product_id(pid, session)
             if not prod or prod.hidden:
                 return JSONResponse({"error": f"Product #{pid} is unavailable"}, status_code=400)
-            line_total = round(qty * prod.sell_price_usd, 2)
-            raw_total += line_total
-            cart_products.append({"product": prod, "quantity": qty, "line_total": line_total})
+            cart_products.append({"product": prod, "quantity": qty})
+            price_inputs.append((prod.sell_price_usd, prod.cost_usd, qty,
+                                BatStoreService.get_volume_discount(qty)))
 
         tier_label, discount_pct = get_vip_tier_info(getattr(user, "consume_records", 0.0), getattr(user, "custom_discount_pct", None))
-        total = raw_total
-        if discount_pct > 0:
-            disc_val = round(total * (discount_pct / 100.0), 2)
-            total = max(0.01, round(total - disc_val, 2))
-
         coupon_code = (body.get("coupon_code") or "").strip()
+        coupon_type = coupon_value = None
         if coupon_code:
             from repositories.coupon import CouponRepository
-            from enums.coupon_type import CouponType
             coupon = await CouponRepository.get_by_code(coupon_code, session)
             if coupon and coupon.is_active:
                 if not (coupon.usage_limit and coupon.usage_count >= coupon.usage_limit):
-                    if coupon.type == CouponType.PERCENT:
-                        c_disc = total * (float(coupon.value) / 100.0)
-                    else:
-                        c_disc = float(coupon.value)
-                    total = max(0.01, round(total - c_disc, 2))
-                    await CouponRepository.increment_usage(coupon.id, session)
-
-        total = round(total, 2)
+                    coupon_type, coupon_value = coupon.type, float(coupon.value or 0.0)
+        try:
+            line_totals, discount_limited = price_lines(
+                price_inputs, discount_pct=discount_pct,
+                coupon_type=coupon_type, coupon_value=coupon_value or 0,
+            )
+        except ValueError as e:
+            if str(e) == "price_unavailable":
+                return JSONResponse({"error": "price_unavailable"}, status_code=400)
+            raise
+        for cp, line_total in zip(cart_products, line_totals):
+            cp["line_total"] = float(line_total)
+        total = round(float(sum(line_totals)), 2)
+        if coupon_code and coupon_type is not None:
+            from repositories.coupon import CouponRepository
+            coupon = await CouponRepository.get_by_code(coupon_code, session)
+            if coupon and coupon.is_active:
+                await CouponRepository.increment_usage(coupon.id, session)
 
         debited = await UserRepository.try_debit_balance(user.telegram_id, total, session)
         if not debited:
@@ -1044,11 +1325,13 @@ async def tma_cart_checkout(request: Request):
             "items_count": len(cart_products)
         }
 
-@app.post("/api/admin/free-order")
-async def admin_free_order(request: Request):
-    """Admin-only zero-cost order and gifting dispatch.
-    Allows administrators to test fulfillment or gift digital credentials directly
-    to themselves or another Telegram user without deducting balance or charging money.
+@app.post("/api/admin/manual-sale")
+async def admin_manual_sale(request: Request):
+    """Admin-recorded externally paid sale at regular list price.
+
+    No VIP/volume/coupon reductions and no wallet debit: the customer paid
+    outside the store balance (cash, transfer). Historical zero-price gifts
+    are left untouched; new manual sales record real revenue and unit cost.
     """
     try:
         body = await request.json()
@@ -1060,8 +1343,13 @@ async def admin_free_order(request: Request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
 
     product_id = int(body.get("product_id") or 0)
-    qty = max(1, int(body.get("quantity") or 1))
+    qty = max(1, min(10, int(body.get("quantity") or 1)))
     target_tg_id = int(body.get("target_tg_id") or admin_tg_id)
+    payment_confirmed = body.get("payment_confirmed") is True
+    if not product_id or not target_tg_id:
+        return JSONResponse({"error": "missing_parameters"}, status_code=400)
+    if not payment_confirmed:
+        return JSONResponse({"error": "payment_confirmation_required"}, status_code=400)
 
     async with get_db_session() as session:
         from repositories.batstore_product import BatStoreProductRepository
@@ -1072,56 +1360,68 @@ async def admin_free_order(request: Request):
         prod = await BatStoreProductRepository.get_by_product_id(product_id, session)
         if not prod:
             return JSONResponse({"error": "product_not_found"}, status_code=404)
+        recipient = await UserRepository.get_by_tgid(target_tg_id, session)
+        if not recipient:
+            return JSONResponse({"error": "recipient_not_found"}, status_code=404)
 
-        cust_ref = f"admin-gift-{product_id}-{target_tg_id}-{uuid.uuid4().hex[:6]}"
+        from decimal import Decimal, ROUND_HALF_UP
+        total = float((Decimal(str(prod.sell_price_usd)) * qty).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+        cust_ref = f"admin-sale-{product_id}-{target_tg_id}-{uuid.uuid4().hex[:6]}"
         goods_list = []
+        order_status = "completed" if prod.delivery_type in ("stock", "supplier_api") else "pending_fulfillment"
+        external_ref = None
         try:
             placed = await BatStoreService.place_order(
                 session, prod.product_id, qty,
                 customer_reference=cust_ref,
                 idempotency_key=cust_ref
             )
+            external_ref = placed.get("order", {}).get("id") or placed.get("order_id")
             items = placed.get("order", {}).get("items") or []
             goods_list = [it.get("value") or it.get("data") or str(it) for it in items] if items else []
+            if prod.delivery_type == "activation":
+                reseller_status = BatStoreService.get_order_reseller_status(placed)
+                order_status = "completed" if reseller_status == "completed" else "pending_fulfillment"
         except Exception as e:
-            logging.error("Admin free-order placement error for product #%s: %s", product_id, e)
-            return JSONResponse({"error": f"فشل المورد في تنفيذ الطلب: {str(e)[:100]}"}, status_code=502)
+            logging.error("Admin manual-sale placement error for product #%s: %s", product_id, e)
+            return JSONResponse({"error": f"supplier_failed: {str(e)[:100]}"}, status_code=502)
 
         order_details = [{
             "product_id": prod.product_id,
             "name": prod.name,
             "quantity": qty,
             "cost_usd": prod.cost_usd,
-            "sell_usd": 0.0,
+            "sell_usd": total,
             "delivery_type": prod.delivery_type,
             "delivery_goods": goods_list,
             "warranty_days": prod.warranty_days or 0,
-            "admin_gift": True,
-            "gifted_by": admin_tg_id,
+            "payment_method": "external",
+            "sold_by": admin_tg_id,
         }]
 
         order = await BatStoreOrderRepository.create(BatStoreOrderDTO(
             telegram_id=target_tg_id,
-            total_sell=0.0,
-            status="completed",
+            total_sell=total,
+            status=order_status,
+            external_order_ref=str(external_ref) if external_ref else None,
             customer_reference=cust_ref,
             details=order_details
         ), session)
         await session_commit(session)
 
-        # Notify the recipient if gifted to another user
         if target_tg_id != admin_tg_id and goods_list:
             try:
                 credentials_text = "\n".join(f"<code>{g}</code>" for g in goods_list)
-                gift_msg = (
-                    f"🎁 <b>هدية من إدارة المتجر!</b>\n\n"
-                    f"تم تسليمك: <b>{prod.name}</b> (الكمية: {qty})\n\n"
+                sale_msg = (
+                    f"✅ <b>تم تسليم طلبك من إدارة المتجر!</b>\n\n"
+                    f"تم تسليمك: <b>{prod.name}</b> (الكمية: {qty})\n"
+                    f"الإجمالي المدفوع خارج المتجر: <b>${total:.2f}</b>\n\n"
                     f"<b>بيانات الحساب / المفتاح:</b>\n{credentials_text}\n\n"
                     f"شكراً لتسوقك معنا في GH Store! 🛍️"
                 )
-                await bot.send_message(chat_id=target_tg_id, text=gift_msg, parse_mode="HTML")
+                await bot.send_message(chat_id=target_tg_id, text=sale_msg, parse_mode="HTML")
             except Exception as e:
-                logging.warning("Could not send gift DM to user %s: %s", target_tg_id, e)
+                logging.warning("Could not send manual-sale DM to user %s: %s", target_tg_id, e)
 
         return {
             "status": "success",
@@ -1129,8 +1429,16 @@ async def admin_free_order(request: Request):
             "target_tg_id": target_tg_id,
             "goods": goods_list,
             "product_name": prod.name,
-            "quantity": qty
+            "quantity": qty,
+            "total_sell": total,
+            "order_status": order_status,
         }
+
+
+@app.post("/api/admin/free-order")
+async def admin_free_order(request: Request):
+    """Retired zero-price gift route: manual sales are paid externally now."""
+    return JSONResponse({"error": "manual_sale_required"}, status_code=410)
 
 @app.post("/api/warranty/claim")
 async def tma_claim_warranty(request: Request):
@@ -1180,6 +1488,374 @@ async def tma_claim_warranty(request: Request):
             )
             return {"status": "pending_manual_review"}
 
+
+@app.post("/api/admin/warranty/replace")
+async def admin_dispatch_warranty_replacement(request: Request):
+    """Admin 1-click warranty replacement dispatch.
+    Places a fresh upstream replacement, attaches delivered credentials,
+    marks warranty fulfilled, and notifies the customer via Telegram bot DM.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not _verify_admin(admin_id, request):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+
+    order_id = int(body.get("order_id") or 0)
+    if not order_id:
+        return JSONResponse({"error": "missing_order_id"}, status_code=400)
+
+    async with get_db_session() as session:
+        order = await BatStoreOrderRepository.get_by_id(order_id, session)
+        if not order:
+            return JSONResponse({"error": "order_not_found"}, status_code=404)
+
+        details = order.details or []
+        pid = details[0].get("product_id") if details else None
+        pname = details[0].get("name") if details else "Product"
+        if not pid:
+            return JSONResponse({"error": "missing_product_info"}, status_code=400)
+
+        import uuid
+        repl_ref = f"admin-warranty-{order.id}-{uuid.uuid4().hex[:6]}"
+        try:
+            placed = await BatStoreService.place_order(
+                session, pid, 1,
+                customer_reference=repl_ref,
+                idempotency_key=repl_ref,
+            )
+            items = placed.get("order", {}).get("items") or []
+            goods_list = [it.get("value") or it.get("data") or str(it) for it in items] if items else []
+        except Exception as e:
+            logging.error("Admin warranty replacement failed for order #%s: %s", order_id, e)
+            return JSONResponse({"error": f"فشل المورد في توفير البديل: {str(e)[:100]}"}, status_code=502)
+
+        order.warranty_claimed = True
+        order.warranty_claimed_at = datetime.datetime.now(datetime.timezone.utc)
+        details.append({
+            "replacement": True,
+            "product_id": pid,
+            "name": f"{pname} (Warranty Replacement)",
+            "delivery_goods": goods_list,
+            "dispatched_by": admin_id,
+            "dispatched_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+        })
+        order.details = details
+        await BatStoreOrderRepository.update(order, session)
+        await session_commit(session)
+
+        if goods_list:
+            try:
+                cred_lines = "\n".join(f"• <code>{g}</code>" for g in goods_list)
+                msg = (
+                    f"🔄 <b>تم تسليم بديل الضمان لطلبك #{order.id} بنجاح!</b>\n\n"
+                    f"📦 <b>المنتج:</b> {pname}\n"
+                    f"🔑 <b>بيانات الحساب / المفتاح البديل:</b>\n{cred_lines}\n\n"
+                    f"<i>(انقر على أي مفتاح أعلاه لنسخه مباشرة)</i>\n\n"
+                    f"شكراً لتسوقك معنا في GH Store! 🛡️"
+                )
+                await bot.send_message(chat_id=order.telegram_id, text=msg, parse_mode="HTML")
+            except Exception as e:
+                logging.warning("Could not send warranty replacement DM to user %s: %s", order.telegram_id, e)
+
+        return {
+            "status": "success",
+            "order_id": order.id,
+            "goods": goods_list,
+            "message": "تم تسليم بديل الضمان وإرسال البيانات للعميل بنجاح!"
+        }
+
+
+@app.get("/api/admin/reports/export")
+async def admin_export_accounting_ledger(request: Request, tg_id: int, start_date: str = "", end_date: str = ""):
+    """Export accounting CSV ledger of orders and gross profit for reconciliation."""
+    if not _verify_admin(tg_id, request):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+
+    import io
+    import csv
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+    from models.batstore_order import BatStoreOrder
+    from models.user import User
+
+    now = _dt.now(_tz.utc)
+    since = now - _td(days=30)
+    until = now + _td(days=1)
+
+    if start_date:
+        try:
+            since = _dt.fromisoformat(start_date).replace(tzinfo=_tz.utc)
+        except Exception:
+            pass
+    if end_date:
+        try:
+            until = _dt.fromisoformat(end_date).replace(tzinfo=_tz.utc)
+        except Exception:
+            pass
+
+    async with get_db_session() as session:
+        stmt = (
+            select(BatStoreOrder, User.telegram_username)
+            .outerjoin(User, User.telegram_id == BatStoreOrder.telegram_id)
+            .where(BatStoreOrder.created_at >= since, BatStoreOrder.created_at <= until)
+            .order_by(BatStoreOrder.id.asc())
+        )
+        rows = (await session_execute(stmt, session)).all()
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow([
+            "Order ID", "Date UTC", "Telegram ID", "Username", "Status",
+            "Product Names", "Quantity", "Revenue USD", "Wholesale Cost USD",
+            "Gross Profit USD", "Payment Method", "External Ref"
+        ])
+
+        from services.sale_pricing import order_cost, externally_paid
+        for o, uname in rows:
+            items_names = "; ".join(d.get("name") or "Product" for d in (o.details or []))
+            total_qty = sum(int(d.get("quantity") or 1) for d in (o.details or []))
+            cost = float(order_cost(o.details))
+            sell = float(o.total_sell or 0.0)
+            profit = round(sell - cost, 2)
+            method = "external" if externally_paid(o) else "store_balance"
+            date_str = o.created_at.strftime("%Y-%m-%d %H:%M:%S") if o.created_at else ""
+
+            writer.writerow([
+                o.id, date_str, o.telegram_id, f"@{uname}" if uname else "", o.status,
+                items_names, total_qty, f"{sell:.2f}", f"{cost:.2f}",
+                f"{profit:.2f}", method, o.external_order_ref or ""
+            ])
+
+        csv_data = output.getvalue()
+        filename = f"ghstore_ledger_{since.strftime('%Y%m%d')}_{until.strftime('%Y%m%d')}.csv"
+        from fastapi.responses import Response
+        return Response(
+            content=csv_data,
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+
+
+@app.post("/api/cart/sync")
+async def tma_cart_sync(request: Request):
+    """Sync client-side TMA cart to Redis for abandoned cart recovery notifications."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+
+    from services.telegram_auth import extract_and_verify_telegram_user
+    try:
+        tg_id = extract_and_verify_telegram_user(request, int(body.get("tg_id") or 0))
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
+
+    items = body.get("items") or []
+    key = f"ghstore:tma_cart:{tg_id}"
+    if not items:
+        try:
+            await redis.delete(key)
+        except Exception:
+            pass
+        return {"status": "cleared"}
+
+    import time as _time
+    import json as _json
+    cart_data = {
+        "tg_id": tg_id,
+        "items": items,
+        "updated_at": _time.time()
+    }
+    try:
+        await redis.setex(key, 604800, _json.dumps(cart_data))
+    except Exception as e:
+        logging.warning("Failed to sync TMA cart to Redis: %s", e)
+    return {"status": "synced", "items_count": len(items)}
+
+
+@app.post("/api/search/log")
+async def log_search_query(request: Request):
+    """Increment search term frequency in Redis sorted set for real-time trending."""
+    try:
+        body = await request.json()
+    except Exception:
+        return {"status": "ignored"}
+    q = str(body.get("query") or "").strip().lower()
+    if not q or len(q) < 2 or len(q) > 40:
+        return {"status": "ignored"}
+    try:
+        await redis.zincrby("ghstore:search_trends", 1, q)
+        await redis.expire("ghstore:search_trends", 172800)
+    except Exception as e:
+        logging.debug("Failed to log search query: %s", e)
+    return {"status": "logged"}
+
+
+@app.get("/api/search/trending")
+async def get_trending_searches():
+    """Return top 6 real-time trending searches from Redis with fallback."""
+    fallback = ["ChatGPT", "Claude", "Gemini", "Peacock", "Windows", "Canva"]
+    try:
+        raw_items = await redis.zrevrange("ghstore:search_trends", 0, 5)
+        if raw_items:
+            terms = [k.decode() if isinstance(k, bytes) else str(k) for k in raw_items]
+            cleaned = [t.title() if len(t) > 3 else t.upper() for t in terms if t]
+            if len(cleaned) >= 3:
+                return {"trending": cleaned}
+    except Exception as e:
+        logging.debug("Failed to fetch trending searches: %s", e)
+    return {"trending": fallback}
+
+
+@app.post("/api/admin/flash-sale/update")
+async def admin_update_flash_sale(request: Request):
+    """Admin updates store flash sale status and countdown duration."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not _verify_admin(admin_id, request):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    enabled = "true" if body.get("enabled") else "false"
+    pct = str(float(body.get("percent") or 15.0))
+    duration_hours = int(body.get("duration_hours") or 24)
+    import time as _t
+    end_ts = str(int(_t.time()) + (duration_hours * 3600)) if enabled == "true" else "0"
+    async with get_db_session() as session:
+        await ConfigService.set(session, "FLASH_SALE_ENABLED", enabled)
+        await ConfigService.set(session, "FLASH_SALE_PERCENT", pct)
+        await ConfigService.set(session, "FLASH_SALE_END_TIMESTAMP", end_ts)
+        await session_commit(session)
+    return {"status": "ok", "enabled": enabled == "true", "end_timestamp": int(end_ts)}
+
+
+@app.post("/api/support/ticket")
+async def submit_support_ticket(request: Request):
+    """In-app customer support inquiry dispatched to admin Telegram topic."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+
+    from services.telegram_auth import extract_and_verify_telegram_user
+    try:
+        tg_id = extract_and_verify_telegram_user(request, int(body.get("tg_id") or 0))
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
+
+    subject = str(body.get("subject") or "استفسار عام / General Inquiry").strip()
+    message = str(body.get("message") or "").strip()
+    order_id = body.get("order_id")
+
+    if not message or len(message) < 3:
+        return JSONResponse({"error": "message_too_short"}, status_code=400)
+
+    async with get_db_session() as session:
+        user = await UserRepository.get_by_tgid(tg_id, session)
+        username_str = f"@{user.telegram_username}" if (user and user.telegram_username) else f"tg:{tg_id}"
+        import time as _t
+        ticket_id = int(_t.time()) % 100000
+        ticket_card = (
+            f"🎫 <b>تذكرة دعم فني جديدة #{ticket_id}</b>\n\n"
+            f"• <b>العميل:</b> {username_str} (<code>{tg_id}</code>)\n"
+            f"• <b>الطلب المتعلق:</b> #{order_id or 'لا يوجد'}\n"
+            f"• <b>الموضوع:</b> {subject}\n\n"
+            f"📝 <b>نص الرسالة:</b>\n{message}"
+        )
+        await NotificationService.send_to_admins(ticket_card, None)
+    return {"status": "success", "ticket_id": ticket_id}
+
+
+async def _run_admin_broadcast(broadcast_id: str, message: str, target_segment: str):
+    """Rate-limited background broadcast runner (~25 msgs/sec)."""
+    try:
+        async with get_db_session() as session:
+            from models.user import User
+            from sqlalchemy import select
+            stmt = select(User).where(User.can_receive_messages == True, User.is_banned == False)
+            if target_segment == "buyers":
+                stmt = stmt.where(User.consume_records > 0)
+            elif target_segment == "zero_balance":
+                stmt = stmt.where((User.top_up_amount - User.consume_records) <= 0)
+
+            users = (await session_execute(stmt, session)).scalars().all()
+            total = len(users)
+            sent = 0
+            failed = 0
+
+            for u in users:
+                try:
+                    await bot.send_message(u.telegram_id, message, parse_mode="HTML")
+                    sent += 1
+                except Exception:
+                    failed += 1
+                await asyncio.sleep(0.04)  # ~25 msg/sec to respect Telegram limits
+
+                # Update progress every 20 messages
+                if (sent + failed) % 20 == 0:
+                    try:
+                        import json as _j
+                        await redis.setex(
+                            f"ghstore:broadcast:{broadcast_id}",
+                            3600,
+                            _j.dumps({"total": total, "sent": sent, "failed": failed, "active": True})
+                        )
+                    except Exception:
+                        pass
+
+            # Completed
+            import json as _j
+            await redis.setex(
+                f"ghstore:broadcast:{broadcast_id}",
+                7200,
+                _j.dumps({"total": total, "sent": sent, "failed": failed, "active": False})
+            )
+    except Exception as e:
+        logging.error("Broadcast %s failed: %s", broadcast_id, e)
+
+
+@app.post("/api/admin/broadcast")
+async def admin_start_broadcast(request: Request):
+    """Admin starts an asynchronous rate-limited Telegram broadcast."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not _verify_admin(admin_id, request):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+
+    msg = str(body.get("message") or "").strip()
+    segment = str(body.get("target_segment") or "all").strip().lower()
+    if not msg:
+        return JSONResponse({"error": "empty_message"}, status_code=400)
+
+    import uuid as _u
+    broadcast_id = _u.uuid4().hex[:8]
+    asyncio.create_task(_run_admin_broadcast(broadcast_id, msg, segment))
+    return {"status": "started", "broadcast_id": broadcast_id}
+
+
+@app.get("/api/admin/broadcast/status")
+async def admin_broadcast_status(request: Request, tg_id: int, broadcast_id: str):
+    """Check live status and delivery metrics of an active broadcast."""
+    if not _verify_admin(tg_id, request):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    try:
+        import json as _j
+        raw = await redis.get(f"ghstore:broadcast:{broadcast_id}")
+        if raw:
+            return json.loads(raw)
+    except Exception:
+        pass
+    return {"active": False, "sent": 0, "total": 0, "failed": 0}
+
+
 @app.post("/api/invoice/stars")
 async def create_tma_stars_invoice(request: Request):
     """Generate a Telegram Stars invoice link for direct in-app Mini App checkout."""
@@ -1198,12 +1874,15 @@ async def create_tma_stars_invoice(request: Request):
 
         user = await UserRepository.get_by_tgid(tg_id, session)
         from services.user import get_vip_tier_info
+        from services.sale_pricing import price_lines
         tier_label, discount_pct = get_vip_tier_info(getattr(user, "consume_records", 0.0))
-
-        total_usd = round(qty * product.sell_price_usd, 2)
-        if discount_pct > 0:
-            disc = round(total_usd * (discount_pct / 100.0), 2)
-            total_usd = max(0.01, round(total_usd - disc, 2))
+        try:
+            (total_dec,), _ = price_lines(
+                [(product.sell_price_usd, product.cost_usd, qty, 0)],
+                discount_pct=discount_pct)
+        except ValueError:
+            return JSONResponse({"error": "price_unavailable"}, status_code=400)
+        total_usd = float(total_dec)
 
         stars_rate = float(config.GHSTORE_STARS_TO_USD or 0.01)
         stars = max(1, int(total_usd / stars_rate))
@@ -1475,8 +2154,9 @@ async def tma_validate_coupon(request: Request):
         if coupon.usage_limit and coupon.usage_count >= coupon.usage_limit:
             return JSONResponse({"valid": False, "error": "تم استنفاد الحد الأقصى لاستخدام هذا الكود"}, status_code=400)
 
+        from services.sale_pricing import normalize_coupon_type
         discount = 0.0
-        if coupon.type == CouponType.PERCENT:
+        if normalize_coupon_type(coupon.type) == "PERCENTAGE":
             discount = round(subtotal * (float(coupon.value) / 100.0), 2)
         else:
             discount = round(float(coupon.value), 2)
@@ -1493,6 +2173,60 @@ async def tma_validate_coupon(request: Request):
         "new_total": new_total,
         "message": f"تم تطبيق كود الخصم بنجاح (-${discount:.2f})!"
     }
+
+
+@app.post("/api/price-quote")
+async def tma_price_quote(request: Request):
+    """Authoritative cost-floored quote shared by checkout; never exposes supplier costs."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    from services.telegram_auth import extract_and_verify_telegram_user
+    try:
+        tg_id = extract_and_verify_telegram_user(request, int(body.get("tg_id") or 0))
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
+    items_input = body.get("items") or []
+    if not tg_id or not items_input:
+        return JSONResponse({"error": "missing_parameters"}, status_code=400)
+    from services.sale_pricing import price_lines
+    from services.user import get_vip_tier_info
+    async with get_db_session() as session:
+        user = await UserRepository.get_by_tgid(tg_id, session) if tg_id else None
+        if user:
+            _, discount_pct = get_vip_tier_info(getattr(user, "consume_records", 0.0),
+                                                getattr(user, "custom_discount_pct", None))
+        else:
+            discount_pct = 0.0
+        price_inputs, quote_meta = [], []
+        for it in items_input:
+            pid = int(it.get("product_id") or 0)
+            qty = max(1, min(20, int(it.get("quantity") or 1)))
+            prod = await BatStoreProductRepository.get_by_product_id(pid, session)
+            if not prod or prod.hidden:
+                return JSONResponse({"error": f"Product #{pid} is unavailable"}, status_code=400)
+            price_inputs.append((prod.sell_price_usd, prod.cost_usd, qty,
+                                BatStoreService.get_volume_discount(qty)))
+            quote_meta.append({"product_id": pid, "quantity": qty})
+        coupon_code = (body.get("coupon_code") or "").strip()
+        coupon_type = coupon_value = None
+        if coupon_code:
+            from repositories.coupon import CouponRepository
+            coupon = await CouponRepository.get_by_code(coupon_code, session)
+            if coupon and coupon.is_active:
+                if not (coupon.usage_limit and coupon.usage_count >= coupon.usage_limit):
+                    coupon_type, coupon_value = coupon.type, float(coupon.value or 0.0)
+        try:
+            line_totals, discount_limited = price_lines(
+                price_inputs, discount_pct=discount_pct,
+                coupon_type=coupon_type, coupon_value=coupon_value or 0)
+        except ValueError as e:
+            if str(e) == "price_unavailable":
+                return JSONResponse({"error": "price_unavailable"}, status_code=400)
+            raise
+        lines = [{**meta, "total": float(total)} for meta, total in zip(quote_meta, line_totals)]
+    return {"total": round(float(sum(line_totals)), 2), "lines": lines, "discount_limited": discount_limited}
 
 
 @app.post("/api/voucher/redeem")
@@ -1532,9 +2266,15 @@ async def tma_redeem_voucher(request: Request):
 
 
 
-def _verify_admin(tg_id: int | None) -> bool:
+def _verify_admin(tg_id: int | None, request: Request | None = None) -> bool:
     if not tg_id:
         return False
+    if request is not None:
+        from services.telegram_auth import extract_and_verify_telegram_user
+        try:
+            tg_id = extract_and_verify_telegram_user(request, int(tg_id))
+        except Exception:
+            return False
     return int(tg_id) in config.ADMIN_ID_LIST
 
 
@@ -1833,20 +2573,36 @@ async def admin_approve_recharge(request: Request):
     recharge_id = str(body.get("recharge_id") or "")
     target_tg_id = int(body.get("telegram_id") or 0)
     amount_usd = float(body.get("amount_usd") or 0.0)
-
-    if not target_tg_id or amount_usd <= 0:
-        return JSONResponse({"error": "invalid_params"}, status_code=400)
-
     async with get_db_session() as session:
-        user = await UserRepository.get_by_tgid(target_tg_id, session)
-        if not user:
+        if not target_tg_id and recharge_id.startswith("sam_"):
+            try:
+                raw_sam_id = int(recharge_id.replace("sam_", ""))
+                from models.sam_payment import SamPayment
+                sp_check = (await session_execute(select(SamPayment).where(SamPayment.id == raw_sam_id), session)).scalar_one_or_none()
+                if sp_check:
+                    target_tg_id = sp_check.telegram_id
+                    if amount_usd <= 0:
+                        amount_usd = float(sp_check.usd_amount or 0.0)
+            except Exception:
+                pass
+
+        if not target_tg_id or amount_usd <= 0:
+            return JSONResponse({"error": "invalid_params"}, status_code=400)
+
+        from sqlalchemy import update as _sql_update, func as _sql_func
+        from models.user import User as _UserModel
+        res = await session_execute(
+            _sql_update(_UserModel)
+            .where(_UserModel.telegram_id == target_tg_id)
+            .values(top_up_amount=_sql_func.coalesce(_UserModel.top_up_amount, 0.0) + amount_usd)
+            .returning(_UserModel.top_up_amount, _UserModel.consume_records),
+            session
+        )
+        row = res.first()
+        if not row:
             return JSONResponse({"error": "user_not_found"}, status_code=404)
-
-        # Credit user balance
-        current_topup = float(user.top_up_amount or 0.0)
-        user.top_up_amount = round(current_topup + amount_usd, 2)
-        await UserRepository.update(user, session)
-
+        new_topup, consume = row
+        new_balance = round(float(new_topup or 0.0) - float(consume or 0.0), 2)
         # Update record if it's SAM payment
         if recharge_id.startswith("sam_"):
             raw_sam_id = int(recharge_id.replace("sam_", ""))
@@ -1858,7 +2614,7 @@ async def admin_approve_recharge(request: Request):
         # Log in Admin Audit Log
         from models.admin_audit_log import AdminAuditLog
         session.add(AdminAuditLog(
-            admin_id=admin_tg_id,
+            admin_tg_id=admin_tg_id,
             action="recharge_approved",
             details={"target_user": target_tg_id, "amount_usd": amount_usd, "recharge_id": recharge_id}
         ))
@@ -1881,7 +2637,7 @@ async def admin_approve_recharge(request: Request):
             "status": "ok",
             "credited_amount": amount_usd,
             "target_tg_id": target_tg_id,
-            "new_balance": round((user.top_up_amount or 0.0) - (user.consume_records or 0.0), 2)
+            "new_balance": new_balance
         }
 
 
@@ -1906,11 +2662,14 @@ async def admin_refund_stuck_order(request: Request):
         if order.status == "refunded":
             return JSONResponse({"error": "already_refunded"}, status_code=400)
 
+        from services.sale_pricing import externally_paid
         refund_amount = round(float(order.total_sell or 0.0), 2)
+        wallet_credited = False
         user = await UserRepository.get_by_tgid(order.telegram_id, session)
-        if user:
+        if user and not externally_paid(order):
             user.top_up_amount = (user.top_up_amount or 0.0) + refund_amount
             await UserRepository.update(user, session)
+            wallet_credited = True
             try:
                 sym = config.CURRENCY.get_localized_symbol()
                 await bot.send_message(
@@ -1925,9 +2684,84 @@ async def admin_refund_stuck_order(request: Request):
         await BatStoreOrderRepository.update(order, session)
         await session_commit(session)
 
-    return {"status": "ok", "refunded_amount": refund_amount, "order_id": order_id}
+    return {"status": "ok", "refunded_amount": refund_amount if wallet_credited else 0.0, "order_id": order_id, "wallet_credited": wallet_credited}
 
 
+@app.post("/api/admin/prodseller/test-balance")
+async def admin_test_prodseller_balance(request: Request):
+    """Test ProdSeller API key live and return real-time balance and membership tier."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not _verify_admin(admin_id, request):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+
+    api_key = str(body.get("api_key") or "").strip()
+    from services.prodseller import ProdSellerService
+    try:
+        async with get_db_session() as session:
+            if api_key:
+                headers = {"X-API-Key": api_key, "Accept": "application/json"}
+                async with await ProdSellerService._client() as client:
+                    resp = await client.get(f"{ProdSellerService.BASE_URL}/balance", headers=headers)
+                if resp.status_code != 200:
+                    return JSONResponse({"error": f"ProdSeller HTTP {resp.status_code}: {resp.text[:100]}"}, status_code=400)
+                data = resp.json()
+            else:
+                data = await ProdSellerService.get_balance(session)
+        return {
+            "status": "ok",
+            "balance": float(data.get("balance") or 0.0),
+            "membership": str(data.get("membership") or "bronze"),
+            "username": str(data.get("username") or ""),
+            "telegram_id": data.get("telegramId"),
+        }
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+
+@app.post("/api/admin/supplier/config")
+async def admin_update_supplier_config(request: Request):
+    """Save ProdSeller API Key and supplier routing strategy to database."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not _verify_admin(admin_id, request):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+
+    api_key = str(body.get("prodseller_api_key") or "").strip()
+    strategy = str(body.get("routing_strategy") or "auto_cheapest").strip().lower()
+
+    async with get_db_session() as session:
+        if api_key:
+            await ConfigService.set(session, "PRODSELLER_API_KEY", api_key)
+        if strategy in ("auto_cheapest", "batstore_primary", "prodseller_primary"):
+            await ConfigService.set(session, "SUPPLIER_ROUTING_STRATEGY", strategy)
+        await session_commit(session)
+
+    return {"status": "ok", "routing_strategy": strategy}
+
+
+@app.post("/api/admin/supplier/sync")
+async def admin_sync_all_suppliers(request: Request):
+    """Trigger manual 1-tap catalog synchronization across all suppliers."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not _verify_admin(admin_id, request):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+
+    async with get_db_session() as session:
+        from services.multi_supplier import MultiSupplierService
+        res = await MultiSupplierService.sync_all_suppliers(session)
+
+    return {"status": "ok", "result": res}
 @app.get("/api/admin/config/all")
 async def admin_get_all_configs(tg_id: int):
     """Return all system configuration keys, current values, and descriptions."""
@@ -2154,7 +2988,7 @@ async def admin_get_orders(tg_id: int, status: str = "all"):
             items_names = [d.get("name") or "Product" for d in (o.details or [])]
             goods = [str(g) for d in (o.details or []) for g in (d.get("delivery_goods") or [])]
             cost = sum(float(d.get("cost_usd") or 0.0) * float(d.get("quantity") or 1) for d in (o.details or []))
-            margin = max(0.0, float(o.total_sell or 0.0) - cost)
+            gross_profit = round(float(o.total_sell or 0.0) - cost, 2)
             orders_out.append({
                 "id": o.id,
                 "telegram_id": o.telegram_id,
@@ -2162,7 +2996,8 @@ async def admin_get_orders(tg_id: int, status: str = "all"):
                 "status": o.status,
                 "total_sell": round(float(o.total_sell or 0.0), 2),
                 "cost_usd": round(cost, 2),
-                "margin": round(margin, 2),
+                "gross_profit": gross_profit,
+                "margin": gross_profit,
                 "products": ", ".join(items_names) if items_names else "Order",
                 "goods": goods,
                 "created_at": o.created_at.strftime("%b %d, %H:%M") if o.created_at else "",
@@ -2189,7 +3024,9 @@ async def admin_update_order_status(request: Request):
         if not order:
             return JSONResponse({"error": "order_not_found"}, status_code=404)
         if new_status == "refunded" and order.status != "refunded":
-            await UserRepository.refund_balance(order.telegram_id, float(order.total_sell or 0.0), session)
+            from services.sale_pricing import externally_paid as _externally_paid
+            if not _externally_paid(order):
+                await UserRepository.refund_balance(order.telegram_id, float(order.total_sell or 0.0), session)
             try:
                 await bot.send_message(
                     order.telegram_id,
@@ -2353,6 +3190,12 @@ async def tma_submit_review(request: Request):
         return JSONResponse({"error": "invalid_json"}, status_code=400)
 
     tg_id = int(body.get("tg_id") or 0)
+    from services.telegram_auth import extract_and_verify_telegram_user
+    try:
+        tg_id = extract_and_verify_telegram_user(request, tg_id)
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
+
     rating = int(body.get("rating") or 5)
     text = (body.get("text") or "").strip()
     order_id = body.get("order_id")
@@ -2362,9 +3205,12 @@ async def tma_submit_review(request: Request):
 
     async with get_db_session() as session:
         from models.review import Review
+        import datetime as _dt
         review = Review(
             rating=rating,
             text=text or "Instant delivery, key activated smoothly!",
+            create_datetime=_dt.datetime.now(_dt.timezone.utc),
+            batstore_order_id=int(order_id) if order_id else None,
         )
         session.add(review)
         await session_commit(session)
@@ -2379,8 +3225,12 @@ async def tma_submit_review(request: Request):
 @app.get("/app", response_class=HTMLResponse)
 async def tma_storefront():
     """Interactive mobile-first Telegram Mini App (TMA) storefront."""
-    from services.storefront_app import STOREFRONT_HTML
-    return HTMLResponse(content=STOREFRONT_HTML)
+    from services.storefront_app import get_storefront_html
+    response = HTMLResponse(content=get_storefront_html(reload=True))
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @app.post(config.WEBHOOK_PATH)
@@ -2392,11 +3242,175 @@ async def webhook(request: Request):
     try:
         update_data = await request.json()
         await dp.feed_webhook_update(bot, update_data)
-        return {"status": "ok"}
     except Exception as e:
-        logging.error(f"Error processing webhook: {e}")
-        return {"status": "error"}, status.HTTP_500_INTERNAL_SERVER_ERROR
+        logging.error("Webhook processing error: %s", e)
+    return {"status": "ok"}
 
+
+_mirror_bots: dict = {}
+
+def _get_mirror_bot(token: str):
+    if token not in _mirror_bots:
+        from aiogram import Bot as _AiogramBot
+        _mirror_bots[token] = _AiogramBot(token=token, session=session)
+    return _mirror_bots[token]
+
+
+@app.post("/webhook/bot/{bot_token}")
+async def mirror_bot_webhook(bot_token: str, request: Request):
+    """Route updates for secondary/mirror clone bots through the primary Aiogram dispatcher."""
+    from services.multibot import MultibotService
+    if not await MultibotService.has_token(bot_token):
+        raise HTTPException(status_code=403, detail="Unregistered bot token")
+
+    try:
+        mirror_bot = _get_mirror_bot(bot_token)
+        update_data = await request.json()
+        await dp.feed_webhook_update(mirror_bot, update_data)
+    except Exception as e:
+        logging.error("Mirror bot webhook error for token %s: %s", bot_token[:8], e)
+    return {"status": "ok"}
+
+
+@app.post("/api/referral/withdraw")
+async def request_referral_withdrawal(request: Request):
+    """Customer requests affiliate commission payout to USDT BEP-20 or ShamCash."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+
+    from services.telegram_auth import extract_and_verify_telegram_user
+    try:
+        tg_id = extract_and_verify_telegram_user(request, int(body.get("tg_id") or 0))
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
+
+    amount = float(body.get("amount_usd") or 0.0)
+    method = str(body.get("method") or "usdt_bep20").strip().lower()
+    address = str(body.get("destination_address") or "").strip()
+
+    if amount < 20.0:
+        return JSONResponse({"error": "minimum_withdrawal_is_20_usd"}, status_code=400)
+    if method not in ("usdt_bep20", "shamcash"):
+        return JSONResponse({"error": "invalid_withdrawal_method"}, status_code=400)
+    if not address or len(address) < 6:
+        return JSONResponse({"error": "invalid_destination_address"}, status_code=400)
+
+    async with get_db_session() as session:
+        user = await UserRepository.get_by_tgid(tg_id, session)
+        if not user:
+            return JSONResponse({"error": "user_not_found"}, status_code=404)
+
+        debited = await UserRepository.try_debit_balance(user.telegram_id, amount, session)
+        if not debited:
+            available = round((user.top_up_amount or 0.0) - (user.consume_records or 0.0), 2)
+            return JSONResponse({
+                "error": "insufficient_balance",
+                "needed": amount,
+                "available": available
+            }, status_code=400)
+
+        from models.referral_withdrawal import ReferralWithdrawalDTO
+        from repositories.referral_withdrawal import ReferralWithdrawalRepository
+        withdrawal = await ReferralWithdrawalRepository.create(ReferralWithdrawalDTO(
+            telegram_id=user.telegram_id,
+            amount_usd=amount,
+            method=method,
+            destination_address=address,
+            status="pending"
+        ), session)
+        await session_commit(session)
+
+        # Notify admins
+        await NotificationService.send_to_admins(
+            f"💸 <b>طلب سحب أرباح إحالة جديد #{withdrawal.id}</b>\n\n"
+            f"• <b>العميل:</b> tg:{user.telegram_id} (@{user.telegram_username or 'none'})\n"
+            f"• <b>المبلغ:</b> ${amount:.2f} USD\n"
+            f"• <b>الوسيلة:</b> {method.upper()}\n"
+            f"• <b>العنوان / الحساب:</b> <code>{address}</code>\n"
+            f"• <b>الحالة:</b> قيد المراجعة والاعتماد",
+            None
+        )
+
+        return {
+            "status": "success",
+            "withdrawal_id": withdrawal.id,
+            "amount_usd": amount,
+            "method": method,
+            "new_balance": round((user.top_up_amount or 0.0) - (user.consume_records or 0.0), 2)
+        }
+
+
+@app.post("/api/admin/referral/withdraw/action")
+async def admin_process_referral_withdrawal(request: Request):
+    """Admin approves or rejects an affiliate commission withdrawal request."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not _verify_admin(admin_id, request):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+
+    withdrawal_id = int(body.get("withdrawal_id") or 0)
+    action = str(body.get("action") or "").strip().lower()  # 'approve' | 'reject'
+    notes = str(body.get("notes") or "").strip()
+
+    if not withdrawal_id or action not in ("approve", "reject"):
+        return JSONResponse({"error": "invalid_parameters"}, status_code=400)
+
+    async with get_db_session() as session:
+        from repositories.referral_withdrawal import ReferralWithdrawalRepository
+        withdrawal = await ReferralWithdrawalRepository.get_by_id(withdrawal_id, session)
+        if not withdrawal:
+            return JSONResponse({"error": "withdrawal_not_found"}, status_code=404)
+        if withdrawal.status != "pending":
+            return JSONResponse({"error": "already_processed"}, status_code=400)
+
+        user = await UserRepository.get_by_tgid(withdrawal.telegram_id, session)
+
+        if action == "approve":
+            await ReferralWithdrawalRepository.update_status(withdrawal_id, "approved", notes or "Approved by admin", session)
+            await session_commit(session)
+            if user:
+                try:
+                    await bot.send_message(
+                        chat_id=user.telegram_id,
+                        text=(
+                            f"✅ <b>تم اعتماد وتحويل سحب الأرباح #{withdrawal.id}!</b>\n\n"
+                            f"💰 <b>المبلغ:</b> ${withdrawal.amount_usd:.2f} USD\n"
+                            f"🌐 <b>الوسيلة:</b> {withdrawal.method.upper()}\n"
+                            f"📍 <b>العنوان:</b> <code>{withdrawal.destination_address}</code>\n\n"
+                            f"تم إرسال الحوالة بنجاح. شكراً لتعاونك المثمر مع GH Store! 🤝"
+                        ),
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass
+            return {"status": "ok", "action": "approved", "withdrawal_id": withdrawal_id}
+
+        elif action == "reject":
+            if user:
+                user.top_up_amount = (user.top_up_amount or 0.0) + withdrawal.amount_usd
+                await UserRepository.update(user, session)
+            await ReferralWithdrawalRepository.update_status(withdrawal_id, "rejected", notes or "Rejected by admin", session)
+            await session_commit(session)
+            if user:
+                try:
+                    await bot.send_message(
+                        chat_id=user.telegram_id,
+                        text=(
+                            f"❌ <b>تم رفض طلب سحب الأرباح #{withdrawal.id}</b>\n\n"
+                            f"💰 تمت إعادة <b>${withdrawal.amount_usd:.2f} USD</b> إلى رصيدك في المتجر.\n"
+                            f"📝 <b>السبب:</b> {notes or 'يرجى التواصل مع الدعم للتفاصيل.'}"
+                        ),
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass
+            return {"status": "ok", "action": "rejected", "withdrawal_id": withdrawal_id}
 
 @app.post("/samwebhook")
 async def sam_webhook(request: Request):
@@ -2413,38 +3427,52 @@ async def sam_webhook(request: Request):
     event = body.get("event")
     invoice_id = body.get("invoiceId") or body.get("invoice_id")
     txn_ref = body.get("transactionRef") or body.get("transaction_ref")
+    if not invoice_id:
+        return {"status": "ok"}
 
-    async with get_db_session() as session:
+    # Idempotency Lock: Deduplicate concurrent gateway retries
+    lock = redis.lock(f"lock:webhook:sam:{invoice_id}", timeout=30)
+    acquired = await lock.acquire(blocking=False)
+    if not acquired:
+        return {"status": "ok", "message": "already_processing"}
+
+    try:
+        async with get_db_session() as session:
+            try:
+                payment = await SamPaymentRepository.get_by_invoice_id(invoice_id, session)
+                if payment is None:
+                    logging.warning("SAM webhook for unknown invoice %s", invoice_id)
+                    return {"status": "ok"}
+
+                if event == "invoice.paid" and payment.event != "invoice.paid":
+                    user = await UserRepository.get_by_tgid(payment.telegram_id, session)
+                    if user is not None:
+                        await ReferralService.apply_deposit_referral(payment.usd_amount, user, session)
+                        await session_commit(session)
+                        sym = config.CURRENCY.get_localized_symbol()
+                        caption = f"✅ Top-up via {payment.method}:\n{payment.usd_amount:.2f}{sym} added to your balance."
+                        try:
+                            await bot.send_message(payment.telegram_id, caption)
+                        except Exception as e:
+                            logging.error("Failed to notify SAM payer %s: %s", payment.telegram_id, e)
+                    else:
+                        logging.error("SAM payer user not found: %s", payment.telegram_id)
+                    await NotificationService.send_to_admins(
+                        f"💰 SAM invoice paid: {invoice_id} · tg:{payment.telegram_id} · "
+                        f"{payment.usd_amount:.2f}$ · {txn_ref}", None)
+                elif event == "invoice.expired":
+                    await NotificationService.send_to_admins(
+                        f"⏰ SAM invoice expired: {invoice_id} · tg:{payment.telegram_id}", None)
+
+                await SamPaymentRepository.mark_event(invoice_id, event, txn_ref, session)
+                await session_commit(session)
+            except Exception as e:
+                logging.error("SAM webhook processing error: %s", e, exc_info=True)
+    finally:
         try:
-            payment = await SamPaymentRepository.get_by_invoice_id(invoice_id, session)
-            if payment is None:
-                logging.warning("SAM webhook for unknown invoice %s", invoice_id)
-                return {"status": "ok"}
-
-            if event == "invoice.paid" and payment.event != "invoice.paid":
-                user = await UserRepository.get_by_tgid(payment.telegram_id, session)
-                if user is not None:
-                    await ReferralService.apply_deposit_referral(payment.usd_amount, user, session)
-                    await session_commit(session)
-                    sym = config.CURRENCY.get_localized_symbol()
-                    caption = f"✅ Top-up via {payment.method}:\n{payment.usd_amount:.2f}{sym} added to your balance."
-                    try:
-                        await bot.send_message(payment.telegram_id, caption)
-                    except Exception as e:  # noqa: BLE001
-                        logging.error("Failed to notify SAM payer %s: %s", payment.telegram_id, e)
-                else:
-                    logging.error("SAM payer user not found: %s", payment.telegram_id)
-                await NotificationService.send_to_admins(
-                    f"💰 SAM invoice paid: {invoice_id} · tg:{payment.telegram_id} · "
-                    f"{payment.usd_amount:.2f}$ · {txn_ref}", None)
-            elif event == "invoice.expired":
-                await NotificationService.send_to_admins(
-                    f"⏰ SAM invoice expired: {invoice_id} · tg:{payment.telegram_id}", None)
-
-            await SamPaymentRepository.mark_event(invoice_id, event, txn_ref, session)
-            await session_commit(session)
-        except Exception as e:  # noqa: BLE001
-            logging.error("SAM webhook processing error: %s", e, exc_info=True)
+            await lock.release()
+        except Exception:
+            pass
 
     return {"status": "ok"}
 

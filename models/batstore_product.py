@@ -178,7 +178,8 @@ class BatStoreProduct(Base):
     sell_price_usd = Column(Float, nullable=False, default=0.0)
     hidden = Column(Boolean, nullable=False, default=False)
     reseller_key_override = Column(String, nullable=True)
-
+    supplier = Column(String, nullable=False, default="batstore")
+    server_badge = Column(String, nullable=True)
     def __repr__(self):
         return f"BatStoreProduct[{self.product_id}] {self.name}"
 
@@ -204,7 +205,8 @@ class BatStoreProductDTO(BaseModel):
     sell_price_usd: float = 0.0
     hidden: bool = False
     reseller_key_override: str | None = None
-
+    supplier: str = "batstore"
+    server_badge: str | None = None
 
 class BatStoreProductAdmin(ModelView, model=BatStoreProduct):
     name = "BatStore Product"
@@ -222,6 +224,7 @@ class BatStoreProductAdmin(ModelView, model=BatStoreProduct):
                    BatStoreProduct.sell_price_usd,
                    BatStoreProduct.margin_type,
                    BatStoreProduct.margin_value,
+                   BatStoreProduct.supplier,
                    BatStoreProduct.delivery_type,
                    BatStoreProduct.stock,
                    BatStoreProduct.hidden]

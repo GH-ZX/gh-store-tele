@@ -24,6 +24,7 @@ async def poll_pending_orders():
     while True:
         try:
             async with get_db_session() as session:
+                await drain_retry_order_queue(session)
                 pending = await BatStoreOrderRepository.get_pending(session)
                 for order in pending:
                     if not order.external_order_ref:
@@ -94,15 +95,19 @@ async def _notify_order_complete(order, goods: list[str]):
 async def _refund_and_notify(order, session):
     """Refund customer balance and notify about failed order."""
     from repositories.user import UserRepository
+    from services.sale_pricing import externally_paid
     user = await UserRepository.get_by_tgid(order.telegram_id, session)
     if user is None:
         logging.error("Cannot refund order %s: user %s not found", order.id, order.telegram_id)
         return
 
     refund_amount = order.total_sell or 0.0
-    user.consume_records = max(0, (user.consume_records or 0) - refund_amount)
-    await UserRepository.update(user, session)
-    await session_commit(session)
+    if externally_paid(order):
+        logging.info("Order %s was paid externally; marking failed without wallet credit", order.id)
+    else:
+        user.consume_records = max(0, (user.consume_records or 0) - refund_amount)
+        await UserRepository.update(user, session)
+        await session_commit(session)
 
     text = (
         f"❌ Your order #{order.id} could not be fulfilled.\n"
@@ -119,11 +124,13 @@ async def periodic_catalog_sync():
     """Periodically sync the BatStore catalog every hour to keep prices and stock fresh."""
     while True:
         await asyncio.sleep(3600)
-        if config.BATSTORE_SYNC_ENABLED:
+        if config.BATSTORE_SYNC_ENABLED or getattr(config, "PRODSELLER_SYNC_ENABLED", True):
             try:
                 async with get_db_session() as session:
-                    created, updated = await BatStoreService.sync_catalog(session)
-                logging.info("Periodic catalog sync completed: %s created, %s updated", created, updated)
+                    from services.multi_supplier import MultiSupplierService
+                    res = await MultiSupplierService.sync_all_suppliers(session)
+                    await check_warranty_expiries(session)
+                logging.info("Periodic multi-supplier sync completed: %s", res)
             except Exception as e:
                 logging.error("Periodic catalog sync failed: %s", e)
 
@@ -157,6 +164,87 @@ async def check_reseller_balance(session) -> float | None:
         return bal
     except (ValueError, TypeError):
         return None
+
+
+async def drain_retry_order_queue(session):
+    """Process any queued retry orders from Redis during upstream recovery."""
+    from repositories.batstore_product import BatStoreProductRepository
+    r = BatStoreProductRepository._redis
+    if r is None:
+        return
+    import json
+    for _ in range(5):
+        try:
+            raw = await r.lpop("ghstore:retry_order_queue")
+            if not raw:
+                break
+            item = json.loads(raw)
+            order_id = item["order_id"]
+            product_id = item["product_id"]
+            quantity = item["quantity"]
+            customer_ref = item["customer_reference"]
+            placed = await BatStoreService.place_order(
+                session, product_id, quantity,
+                customer_reference=customer_ref,
+                idempotency_key=customer_ref
+            )
+            ext_ref = placed.get("order", {}).get("id") or placed.get("order_id")
+            items = placed.get("order", {}).get("items") or []
+            goods_list = [it.get("value") or it.get("data") or str(it) for it in items] if items else []
+            order = await BatStoreOrderRepository.get_by_id(order_id, session)
+            if order:
+                order.external_order_ref = str(ext_ref) if ext_ref else None
+                order.status = "completed" if goods_list else "pending_fulfillment"
+                await BatStoreOrderRepository.update(order, session)
+                await session_commit(session)
+                if goods_list:
+                    await _notify_order_complete(order, goods_list)
+        except Exception as e:
+            logging.warning("Failed retry for queued order: %s", e)
+            break
+
+
+async def check_warranty_expiries(session):
+    """Check orders nearing warranty expiry (1-3 days remaining) and dispatch a friendly renewal nudge."""
+    import datetime
+    from repositories.batstore_product import BatStoreProductRepository
+    from models.batstore_order import BatStoreOrder
+    from sqlalchemy import select
+    r = BatStoreProductRepository._redis
+    now = datetime.datetime.now(datetime.timezone.utc)
+    try:
+        stmt = (
+            select(BatStoreOrder)
+            .where(BatStoreOrder.status == "completed", BatStoreOrder.warranty_days > 0)
+            .order_by(BatStoreOrder.id.desc())
+            .limit(100)
+        )
+        orders = (await session_execute(stmt, session)).scalars().all()
+        for o in orders:
+            if not o.created_at or not o.warranty_days:
+                continue
+            created_utc = o.created_at.replace(tzinfo=datetime.timezone.utc) if o.created_at.tzinfo is None else o.created_at
+            expiry = created_utc + datetime.timedelta(days=o.warranty_days)
+            remaining_secs = (expiry - now).total_seconds()
+            if 86400 <= remaining_secs <= 259200:
+                nudge_key = f"ghstore:warranty_nudge:{o.id}"
+                if r is not None and await r.get(nudge_key):
+                    continue
+                pname = (o.details[0].get("name") if o.details else "Product") or "المنتج"
+                msg = (
+                    f"🛡️ <b>تذكير فترة الضمان لطلبك #{o.id}:</b>\n\n"
+                    f"باقي <b>3 أيام</b> على انتهاء فترة ضمان منتجك: <b>{pname}</b>.\n"
+                    "هل كل شيء يعمل لديك بكفاءة ودون أي مشاكل؟\n"
+                    "إذا واجهت أي استفسار أو صعوبة، يرجى التواصل فوراً مع الدعم قبل انتهاء فترة الضمان! ✨"
+                )
+                try:
+                    await NotificationService.send_to_user(msg, o.telegram_id)
+                    if r is not None:
+                        await r.setex(nudge_key, 2592000, "1")
+                except Exception as ex:
+                    logging.debug("Failed to send warranty reminder to %s: %s", o.telegram_id, ex)
+    except Exception as e:
+        logging.warning("Warranty expiry check encountered error: %s", e)
 
 
 async def periodic_balance_monitor():

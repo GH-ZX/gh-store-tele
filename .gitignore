@@ -7,7 +7,8 @@ postgres_data/
 redis_data/
 caddy_data/
 caddy_config/
-static/
+static/no_image.jpeg
+!static/storefront/
 .venv/
 .pytest_cache/
 .uv/

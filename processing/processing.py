@@ -28,30 +28,44 @@ async def fetch_crypto_event(payment_dto: ProcessingPaymentDTO, request: Request
     if is_security_pass is False:
         raise HTTPException(status_code=403, detail="Invalid signature")
     else:
-        async with get_db_session() as session:
-            user = await PaymentRepository.get_user_by_payment_id(payment_dto.id, session)
-            table_payment_dto = await PaymentRepository.get_by_processing_payment_id(payment_dto.id, session)
-            if payment_dto.isPaid is True and table_payment_dto.is_paid is False:
-                table_payment_dto.is_paid = True
-                await PaymentRepository.update(table_payment_dto, session)
-                await DepositRepository.create(DepositDTO(
-                    user_id=user.id,
-                    network=payment_dto.cryptoCurrency,
-                    amount=int(payment_dto.cryptoAmount * pow(10, payment_dto.cryptoCurrency.get_decimals())),
-                    fiat_amount=payment_dto.fiatAmount,
-                    deposit_datetime=datetime.datetime.now()
-                ), session)
-                referral_bonus_dto = await ReferralService.apply_referral_logic(payment_dto, user, session)
-                await session_commit(session)
-                await NotificationService.new_deposit(payment_dto, user, table_payment_dto, referral_bonus_dto)
-                if config.CRYPTO_FORWARDING_MODE:
-                    withdraw_dto = await CryptoApiWrapper.withdrawal(
-                        payment_dto.cryptoCurrency,
-                        payment_dto.cryptoCurrency.get_forwarding_address(),
-                        False,
-                        payment_dto.id,
-                    )
-                    await NotificationService.withdrawal(withdraw_dto)
-            elif payment_dto.isPaid is False:
-                await NotificationService.payment_expired(user, payment_dto, table_payment_dto)
+        from repositories.batstore_product import BatStoreProductRepository
+        r = BatStoreProductRepository._redis
+        lock = r.lock(f"lock:webhook:crypto:{payment_dto.id}", timeout=30) if r is not None else None
+        if lock is not None:
+            acquired = await lock.acquire(blocking=False)
+            if not acquired:
+                return "200"
+        try:
+            async with get_db_session() as session:
+                user = await PaymentRepository.get_user_by_payment_id(payment_dto.id, session)
+                table_payment_dto = await PaymentRepository.get_by_processing_payment_id(payment_dto.id, session)
+                if payment_dto.isPaid is True and table_payment_dto.is_paid is False:
+                    table_payment_dto.is_paid = True
+                    await PaymentRepository.update(table_payment_dto, session)
+                    await DepositRepository.create(DepositDTO(
+                        user_id=user.id,
+                        network=payment_dto.cryptoCurrency,
+                        amount=int(payment_dto.cryptoAmount * pow(10, payment_dto.cryptoCurrency.get_decimals())),
+                        fiat_amount=payment_dto.fiatAmount,
+                        deposit_datetime=datetime.datetime.now()
+                    ), session)
+                    referral_bonus_dto = await ReferralService.apply_referral_logic(payment_dto, user, session)
+                    await session_commit(session)
+                    await NotificationService.new_deposit(payment_dto, user, table_payment_dto, referral_bonus_dto)
+                    if config.CRYPTO_FORWARDING_MODE:
+                        withdraw_dto = await CryptoApiWrapper.withdrawal(
+                            payment_dto.cryptoCurrency,
+                            payment_dto.cryptoCurrency.get_forwarding_address(),
+                            False,
+                            payment_dto.id,
+                        )
+                        await NotificationService.withdrawal(withdraw_dto)
+                elif payment_dto.isPaid is False:
+                    await NotificationService.payment_expired(user, payment_dto, table_payment_dto)
             return "200"
+        finally:
+            if lock is not None:
+                try:
+                    await lock.release()
+                except Exception:
+                    pass
