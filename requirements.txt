@@ -1,4 +1,4 @@
-aiogram==3.14.0
+aiogram==3.31.0
 aiohttp-socks==0.10.1
 alembic==1.14.0
 argon2-cffi==25.1.0
@@ -6,7 +6,7 @@ asyncpg==0.31.0
 fastapi==0.115.12
 httpx==0.28.1
 itsdangerous==2.2.0
-kryptoexpress-sdk==0.1.1
+kryptoexpress-sdk==0.1.2
 matplotlib==3.10.7
 passlib==1.7.4
 pillow==12.1.0
