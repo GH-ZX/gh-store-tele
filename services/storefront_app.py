@@ -1990,9 +1990,14 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
   </section>
 
 
-  <!-- TAB 2: ORDERS VIEW -->
+  <!-- TAB 2: PROCESSES & ACTIVITY VIEW (ORDERS & RECHARGES) -->
   <main id="view-orders" class="tab-view">
-    <div class="section-title" id="title-orders-history">سجل الطلبات والمشتريات</div>
+    <div class="section-title" id="title-orders-history">العمليات والسجل</div>
+    <div class="filter-chips-row" id="activity-filter-row" style="margin-bottom: 14px;">
+      <div class="filter-chip active" id="act-filter-all" onclick="filterActivityView('all')">الكل (All)</div>
+      <div class="filter-chip" id="act-filter-orders" onclick="filterActivityView('orders')">🛍️ مشتريات المنتجات</div>
+      <div class="filter-chip" id="act-filter-recharges" onclick="filterActivityView('recharges')">💳 شحن الرصيد</div>
+    </div>
     <div id="orders-container-box">
       <div class="skeleton-card"></div>
       <div class="skeleton-card"></div>
@@ -2071,6 +2076,19 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         <div class="method-radio-check">✓</div>
       </div>
     </div>
+    <!-- ShamCash Currency Toggle (USD vs SYP) -->
+    <div id="shamcash-currency-box" style="display: none; background: var(--input-bg); border: 1px solid var(--border); border-radius: 14px; padding: 12px; margin-bottom: 12px;">
+      <div style="font-size: 12px; font-weight: 700; color: var(--hint); margin-bottom: 8px;" id="label-sham-curr-title">عملة السداد في شام كاش (Payment Currency):</div>
+      <div style="display: flex; gap: 8px;">
+        <button class="filter-chip active" id="btn-sham-curr-usd" onclick="setShamCurrency('USD')" style="flex: 1; text-align: center; height: 38px;">
+          💵 بالدولار (USD)
+        </button>
+        <button class="filter-chip" id="btn-sham-curr-syp" onclick="setShamCurrency('SYP')" style="flex: 1; text-align: center; height: 38px;">
+          🇸🇾 بالليرة السورية (SYP)
+        </button>
+      </div>
+    </div>
+
 
     <!-- Step 2: Choose Amount with $1 Choice or Custom -->
     <div class="section-title" id="recharge-amount-title">2. اختر المبلغ أو حدد مخصصاً</div>
@@ -2287,7 +2305,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     </div>
     <div class="liquid-tab-item" id="tab-orders" onclick="switchTab('orders')">
       <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
-      <span class="liquid-tab-label" id="i18n-tab-orders">طلباتي</span>
+      <span class="liquid-tab-label" id="i18n-tab-orders">العمليات</span>
     </div>
     <div class="liquid-tab-item" id="tab-wallet" onclick="switchTab('wallet')">
       <svg viewBox="0 0 24 24"><path d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>
@@ -3147,7 +3165,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     const I18N = {
       ar: {
         store: "المتجر",
-        orders: "طلباتي",
+        orders: "العمليات",
         wallet: "المحفظة",
         settings: "الإعدادات",
         caption: "المتجر الرقمي المعتمد",
@@ -3191,8 +3209,8 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         copy_hint: "انقر على أي كود بالأعلى للنسخ الفوري!",
         view_orders: "عرض في طلباتي",
         continue_shopping: "متابعة التسوق",
-        orders_title: "سجل الطلبات والمشتريات",
-        orders_empty_title: "لا توجد طلبات بعد",
+        orders_title: "العمليات والسجل",
+        orders_empty_title: "لا توجد عمليات أو طلبات بعد",
         orders_empty_sub: "تصفح التصنيفات واطلب الحسابات والمفاتيح بضغطة واحدة!",
         browse_store: "تصفح المتجر",
         step_placed: "تم الطلب",
@@ -3238,7 +3256,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       },
       en: {
         store: "Store",
-        orders: "Orders",
+        orders: "Activity",
         wallet: "Wallet",
         settings: "Settings",
         caption: "Verified Digital Reseller",
@@ -3282,8 +3300,8 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         copy_hint: "Tap any code above to copy instantly!",
         view_orders: "View in Orders",
         continue_shopping: "Continue Shopping",
-        orders_title: "Order History & Purchases",
-        orders_empty_title: "No orders yet",
+        orders_title: "Processes & Activity",
+        orders_empty_title: "No activity or orders yet",
         orders_empty_sub: "Browse catalogs and order accounts & keys in 1 tap!",
         browse_store: "Browse Store",
         step_placed: "Placed",
@@ -4296,6 +4314,18 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     // ==========================================
     // HARDENED RECHARGE / TOP-UP FLOW LOGIC
     // ==========================================
+    let selectedShamCurrency = 'USD';
+
+    function setShamCurrency(curr) {
+      haptic('light');
+      selectedShamCurrency = curr;
+      const btnUsd = document.getElementById('btn-sham-curr-usd');
+      const btnSyp = document.getElementById('btn-sham-curr-syp');
+      if (btnUsd) btnUsd.classList.toggle('active', curr === 'USD');
+      if (btnSyp) btnSyp.classList.toggle('active', curr === 'SYP');
+      updateRechargeButtonText();
+    }
+
     function selectRechargeMethod(method) {
       haptic('pop');
       selectedRechargeMethod = method;
@@ -4303,6 +4333,10 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         const card = document.getElementById('method-card-' + m);
         if (card) card.classList.toggle('active', m === method);
       });
+      const shamBox = document.getElementById('shamcash-currency-box');
+      if (shamBox) {
+        shamBox.style.display = (method === 'shamcash') ? 'block' : 'none';
+      }
       updateRechargeButtonText();
     }
 
@@ -4347,13 +4381,29 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       }
 
       const amtStr = selectedRechargeAmount ? selectedRechargeAmount.toFixed(2) : "10.00";
+      const sypRate = (userData && userData.admin_stats && userData.admin_stats.syp_usd_rate) ? userData.admin_stats.syp_usd_rate : 392.0;
+
       if (selectedRechargeMethod === 'syriatelcash') {
-        const sypRate = (userData && userData.admin_stats && userData.admin_stats.syp_usd_rate) ? userData.admin_stats.syp_usd_rate : 392.0;
         const sypEst = Math.round(selectedRechargeAmount * sypRate);
         if (currentAppLanguage === 'ar') {
-          btn.innerHTML = `<span>شحن ${amtStr}$ (≈ ${sypEst.toLocaleString()} ل.س) عبر ${methodName}</span>`;
+          btn.innerHTML = `<span>شحن ${amtStr}$ (≈ ${sypEst.toLocaleString()} ل.س) عبر سيرياتيل كاش</span>`;
         } else {
-          btn.innerHTML = `<span>Recharge $${amtStr} (≈ ${sypEst.toLocaleString()} SYP) via ${methodName}</span>`;
+          btn.innerHTML = `<span>Recharge $${amtStr} (≈ ${sypEst.toLocaleString()} SYP) via Syriatel Cash</span>`;
+        }
+      } else if (selectedRechargeMethod === 'shamcash') {
+        if (selectedShamCurrency === 'SYP') {
+          const sypEst = Math.round(selectedRechargeAmount * sypRate);
+          if (currentAppLanguage === 'ar') {
+            btn.innerHTML = `<span>شحن ${amtStr}$ (≈ ${sypEst.toLocaleString()} ل.س) عبر شام كاش</span>`;
+          } else {
+            btn.innerHTML = `<span>Recharge $${amtStr} (≈ ${sypEst.toLocaleString()} SYP) via Sham Cash</span>`;
+          }
+        } else {
+          if (currentAppLanguage === 'ar') {
+            btn.innerHTML = `<span>شحن ${amtStr}$ عبر شام كاش (بالدولار)</span>`;
+          } else {
+            btn.innerHTML = `<span>Recharge $${amtStr} via Sham Cash (USD)</span>`;
+          }
         }
       } else {
         if (currentAppLanguage === 'ar') {
@@ -4391,7 +4441,8 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
           body: JSON.stringify({
             tg_id: userId,
             amount: selectedRechargeAmount,
-            method: selectedRechargeMethod
+            method: selectedRechargeMethod,
+            currency: (selectedRechargeMethod === 'shamcash') ? selectedShamCurrency : ((selectedRechargeMethod === 'syriatelcash') ? 'SYP' : 'USD')
           })
         });
         const d = await res.json();
@@ -5287,7 +5338,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
           applyLanguage(d.language);
         }
 
-        renderOrders(d.orders || []);
+        renderUnifiedActivity();
       } catch (e) {
         renderEmptyOrders();
       }
@@ -5355,56 +5406,155 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       `;
     }
 
-    function renderOrders(orders) {
+    let activeActivityFilter = 'all';
+
+    function filterActivityView(filterKey) {
+      haptic('pop');
+      activeActivityFilter = filterKey;
+      ['all', 'orders', 'recharges'].forEach(f => {
+        const btn = document.getElementById('act-filter-' + f);
+        if (btn) btn.classList.toggle('active', f === filterKey);
+      });
+      renderUnifiedActivity();
+    }
+
+    function openExternalPaymentUrl(url) {
+      haptic('light');
+      if (tg?.openLink) tg.openLink(url);
+      else window.open(url, '_blank');
+    }
+
+    function renderUnifiedActivity() {
       const container = document.getElementById('orders-container-box');
       if (!container) return;
-      if (!orders.length) {
+
+      const rawOrders = (userData?.orders || []).map(o => ({ ...o, type: 'order' }));
+      const rawRecharges = (userData?.recharges || []).map(r => ({ ...r, type: 'recharge' }));
+
+      let combined = [...rawOrders, ...rawRecharges];
+      combined.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+      if (activeActivityFilter === 'orders') {
+        combined = combined.filter(it => it.type === 'order');
+      } else if (activeActivityFilter === 'recharges') {
+        combined = combined.filter(it => it.type === 'recharge');
+      }
+
+      if (!combined.length) {
         renderEmptyOrders();
         return;
       }
+
       const d = I18N[currentAppLanguage] || I18N.ar;
-      container.innerHTML = orders.map(o => `
-        <div class="inset-card" style="margin-bottom: 12px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <strong style="font-size: 15px;">#${o.id} · ${o.created_at || ''}</strong>
-            <span class="pill-badge" style="background: ${o.status === 'completed' ? 'rgba(16,185,129,0.2); color:#10b981' : o.status === 'refunded' ? 'rgba(239,68,68,0.2); color:#ef4444' : 'rgba(245,158,11,0.2); color:#f59e0b'}; font-size:11px;">${o.status}</span>
-          </div>
-          <div style="font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 2px;">${o.products}</div>
-          <div style="font-size: 13px; color: var(--accent); font-weight: 700; margin-bottom: 8px;">${d.total}: ${o.total.toFixed(2)}${o.sym}</div>
 
-          <!-- Timeline Stepper -->
-          <div class="timeline-box">
-            <div class="timeline-track"></div>
-            <div class="timeline-node">
-              <div class="node-circle done">✓</div>
-              <div class="node-label">${d.step_placed}</div>
-            </div>
-            <div class="timeline-node">
-              <div class="node-circle ${o.status.includes('completed') ? 'done' : 'active'}">${o.status.includes('completed') ? '✓' : '●'}</div>
-              <div class="node-label">${d.step_processing}</div>
-            </div>
-            <div class="timeline-node">
-              <div class="node-circle ${o.status.includes('completed') ? 'done' : ''}">${o.status.includes('completed') ? '✓' : '○'}</div>
-              <div class="node-label">${d.step_delivered}</div>
-            </div>
-          </div>
+      container.innerHTML = combined.map(it => {
+        if (it.type === 'order') {
+          return `
+            <div class="inset-card" style="margin-bottom: 12px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <span style="font-size: 14px;">🛍️</span>
+                  <strong style="font-size: 14px;">طلب #${it.id} · ${it.created_at || ''}</strong>
+                </div>
+                <span class="pill-badge" style="background: ${it.status === 'completed' ? 'rgba(16,185,129,0.2); color:#10b981' : it.status === 'refunded' ? 'rgba(239,68,68,0.2); color:#ef4444' : 'rgba(245,158,11,0.2); color:#f59e0b'}; font-size:11px;">
+                  ${it.status === 'completed' ? 'مكتمل' : (it.status === 'refunded' ? 'مسترجع' : it.status)}
+                </span>
+              </div>
+              <div style="font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 2px;">${it.products}</div>
+              <div style="font-size: 13px; color: var(--accent); font-weight: 700; margin-bottom: 8px;">${d.total}: ${it.total.toFixed(2)}${it.sym}</div>
 
-          <!-- Structured Credential Splitter -->
-          ${renderStructuredCredentials(o.goods)}
+              <!-- Timeline Stepper -->
+              <div class="timeline-box">
+                <div class="timeline-track"></div>
+                <div class="timeline-node">
+                  <div class="node-circle done">✓</div>
+                  <div class="node-label">${d.step_placed}</div>
+                </div>
+                <div class="timeline-node">
+                  <div class="node-circle ${it.status.includes('completed') ? 'done' : 'active'}">${it.status.includes('completed') ? '✓' : '●'}</div>
+                  <div class="node-label">${d.step_processing}</div>
+                </div>
+                <div class="timeline-node">
+                  <div class="node-circle ${it.status.includes('completed') ? 'done' : ''}">${it.status.includes('completed') ? '✓' : '○'}</div>
+                  <div class="node-label">${d.step_delivered}</div>
+                </div>
+              </div>
 
-          <div style="display: flex; gap: 8px; align-items: center; margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px; flex-wrap: wrap;">
-            ${o.warranty_days ? `
-              <span class="pill-badge" style="background: rgba(56,189,248,0.15); color: var(--accent); font-size: 11px;">🛡️ ${currentAppLanguage === 'ar' ? `ضمان ${o.warranty_days} يوم` : `${o.warranty_days}d Warranty`}</span>
+              <!-- Structured Credentials -->
+              ${renderStructuredCredentials(it.goods)}
+
+              <div style="display: flex; gap: 8px; align-items: center; margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px; flex-wrap: wrap;">
+                ${it.warranty_days ? `
+                  <span class="pill-badge" style="background: rgba(56,189,248,0.15); color: var(--accent); font-size: 11px;">🛡️ ${currentAppLanguage === 'ar' ? `ضمان ${it.warranty_days} يوم` : `${it.warranty_days}d Warranty`}</span>
+                ` : ''}
+                ${it.warranty_days && !it.warranty_claimed && it.status === 'completed' ? `
+                  <button class="btn-action-secondary" onclick="claimOrderWarranty(${it.id})" style="height: 36px; font-size: 11px; padding: 0 12px;">${d.claim_warranty}</button>
+                ` : ''}
+                <button class="btn-action-secondary" onclick="openOrderSupport(${it.id})" style="flex: 1; height: 36px; font-size: 11px; min-width: 140px;">💬 ${currentAppLanguage === 'ar' ? 'تواصل مع الدعم' : 'Contact Support'}</button>
+              </div>
+            </div>
+          `;
+        }
+
+        // Render Recharge Transaction Card
+        const isPaid = (it.status === 'completed');
+        const isPending = (it.status === 'pending');
+
+        let methodLogo = '💳';
+        let methodTitle = 'شحن رصيد';
+        if (it.method === 'shamcash') {
+          methodLogo = '<img src="https://shamcash.sy/_next/static/media/logo.5be69def.svg" style="width:20px; height:20px; object-fit:contain;" alt="ShamCash">';
+          methodTitle = 'شام كاش (Sham Cash)';
+        } else if (it.method === 'syriatelcash') {
+          methodLogo = '<img src="https://www.syriatel.sy/assets/img/logo.png" style="width:20px; height:20px; object-fit:contain;" alt="Syriatel">';
+          methodTitle = 'سيرياتيل كاش (Syriatel Cash)';
+        } else if (it.method === 'stars') {
+          methodLogo = '⭐';
+          methodTitle = 'نجوم تيليجرام (Telegram Stars)';
+        } else if (it.method === 'crypto') {
+          methodLogo = '🪙';
+          methodTitle = 'العملات الرقمية (Crypto)';
+        }
+
+        const localPart = (it.currency === 'SYP' && it.invoice_amount)
+          ? ` <span style="font-size:11px; color:var(--hint);">(≈ ${Math.round(it.invoice_amount).toLocaleString()} ل.س)</span>`
+          : '';
+
+        return `
+          <div class="inset-card" style="margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="display: flex; align-items: center;">${methodLogo}</span>
+                <strong style="font-size: 13px;">${methodTitle}</strong>
+              </div>
+              <span class="pill-badge" style="background: ${isPaid ? 'rgba(16,185,129,0.2); color:#10b981' : isPending ? 'rgba(245,158,11,0.2); color:#f59e0b' : 'rgba(239,68,68,0.2); color:#ef4444'}; font-size:11px;">
+                ${isPaid ? '✅ تم الشحن بنجاح' : (isPending ? '⏳ بانتظار الدفع' : '❌ ملغية / منتهية')}
+              </span>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px; margin-bottom: 6px;">
+              <span>المبلغ: <strong style="color:var(--success); font-size:15px;">+$${it.amount_usd.toFixed(2)}</strong>${localPart}</span>
+              <span style="font-size: 11px; color: var(--hint); font-family: monospace;">${it.invoice_id ? '#' + it.invoice_id.substring(0, 12) : ''}</span>
+            </div>
+
+            <div style="font-size: 11px; color: var(--hint);">${it.created_at || ''}</div>
+
+            ${isPending ? `
+              <div style="display: flex; gap: 8px; margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px;">
+                ${it.payment_url ? `
+                  <button class="btn-action-primary" onclick="openExternalPaymentUrl('${it.payment_url}')" style="flex: 1; height: 36px; font-size: 11px;">
+                    🌐 إتمام الدفع
+                  </button>
+                ` : ''}
+                <button class="btn-action-secondary" onclick="openInvoicePage({ invoice_id: '${it.invoice_id}', url: '${it.payment_url || ''}', provider: '${it.method}', amount: ${it.amount_usd}, invoice_amount: ${it.invoice_amount || 0}, currency: '${it.currency}' })" style="flex: 1; height: 36px; font-size: 11px;">
+                  🔄 فحص الفاتورة
+                </button>
+              </div>
             ` : ''}
-            ${o.warranty_days && !o.warranty_claimed && o.status === 'completed' ? `
-              <button class="btn-action-secondary" onclick="claimOrderWarranty(${o.id})" style="height: 36px; font-size: 11px; padding: 0 12px;">${d.claim_warranty}</button>
-            ` : ''}
-            <button class="btn-action-secondary" onclick="openOrderSupport(${o.id})" style="flex: 1; height: 36px; font-size: 11px; min-width: 140px;">💬 ${currentAppLanguage === 'ar' ? 'تواصل مع الدعم' : 'Contact Support'}</button>
           </div>
-        </div>
-      `).join('');
+        `;
+      }).join('');
     }
-
     function copyCredText(text) {
       haptic('success');
       if (navigator?.clipboard?.writeText) {

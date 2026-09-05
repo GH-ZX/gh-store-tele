@@ -460,7 +460,78 @@ async def get_tma_user_data(tg_id: int):
                 "warranty_days": warranty_days,
                 "warranty_claimed": getattr(o, "warranty_claimed", False),
                 "created_at": o.created_at.strftime("%b %d, %H:%M") if o.created_at else "",
+                "timestamp": o.created_at.timestamp() if o.created_at else 0,
+                "type": "order",
             })
+
+        # Fetch Recharges History for Processes / Activity
+        recharges_data = []
+        try:
+            from models.sam_payment import SamPayment
+            from models.stars_payment import StarsPayment
+            from models.deposit import Deposit
+
+            # 1. SAM Payments (ShamCash & SyriatelCash)
+            stmt_sam = select(SamPayment).where(SamPayment.telegram_id == user.telegram_id).order_by(SamPayment.id.desc()).limit(20)
+            sam_rows = (await session_execute(stmt_sam, session)).scalars().all()
+            for sp in sam_rows:
+                st = "completed" if sp.event == "invoice.paid" else ("failed" if sp.event == "invoice.expired" else "pending")
+                recharges_data.append({
+                    "id": f"sam_{sp.id}",
+                    "raw_id": sp.id,
+                    "type": "recharge",
+                    "method": sp.method or "shamcash",
+                    "status": st,
+                    "amount_usd": float(sp.usd_amount or 0.0),
+                    "invoice_amount": float(sp.amount or 0.0),
+                    "currency": sp.currency or "USD",
+                    "invoice_id": sp.invoice_id or "",
+                    "payment_url": sp.payment_url or "",
+                    "created_at": sp.created_at.strftime("%b %d, %H:%M") if getattr(sp, "created_at", None) else "",
+                    "timestamp": sp.created_at.timestamp() if getattr(sp, "created_at", None) else 0,
+                })
+
+            # 2. Stars Payments
+            stmt_stars = select(StarsPayment).where(StarsPayment.telegram_id == user.telegram_id).order_by(StarsPayment.id.desc()).limit(20)
+            stars_rows = (await session_execute(stmt_stars, session)).scalars().all()
+            for stp in stars_rows:
+                recharges_data.append({
+                    "id": f"stars_{stp.id}",
+                    "raw_id": stp.id,
+                    "type": "recharge",
+                    "method": "stars",
+                    "status": "completed",
+                    "amount_usd": float(stp.usd_amount or 0.0),
+                    "invoice_amount": float(stp.stars_amount or 0.0),
+                    "currency": "XTR",
+                    "invoice_id": stp.telegram_payment_charge_id or "",
+                    "payment_url": "",
+                    "created_at": stp.created_at.strftime("%b %d, %H:%M") if getattr(stp, "created_at", None) else "",
+                    "timestamp": stp.created_at.timestamp() if getattr(stp, "created_at", None) else 0,
+                })
+
+            # 3. Crypto Deposits
+            stmt_dep = select(Deposit).where(Deposit.user_id == user.id).order_by(Deposit.id.desc()).limit(20)
+            dep_rows = (await session_execute(stmt_dep, session)).scalars().all()
+            for dp in dep_rows:
+                recharges_data.append({
+                    "id": f"dep_{dp.id}",
+                    "raw_id": dp.id,
+                    "type": "recharge",
+                    "method": "crypto",
+                    "status": "completed",
+                    "amount_usd": float(dp.fiat_amount or 0.0),
+                    "invoice_amount": float(dp.fiat_amount or 0.0),
+                    "currency": "USD",
+                    "invoice_id": f"DEP-{dp.id}",
+                    "payment_url": "",
+                    "created_at": dp.deposit_datetime.strftime("%b %d, %H:%M") if getattr(dp, "deposit_datetime", None) else "",
+                    "timestamp": dp.deposit_datetime.timestamp() if getattr(dp, "deposit_datetime", None) else 0,
+                })
+
+            recharges_data.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
+        except Exception as e:
+            logging.error("Failed to compile user recharges: %s", e)
 
         if not user.referral_code:
             import string, secrets
@@ -535,6 +606,7 @@ async def get_tma_user_data(tg_id: int):
             "is_admin": is_admin,
             "admin_stats": admin_stats,
             "orders": orders_data,
+            "recharges": recharges_data,
             "store_logo_url": await ConfigService.get(session, "STORE_LOGO_URL", env_fallback=os.environ.get("STORE_LOGO_URL", "")),
         }
 
@@ -1022,10 +1094,11 @@ async def create_tma_topup_invoice(request: Request):
             provider = "syriatelcash" if method in ("syriatelcash", "syriatel") or body.get("provider") in ("syriatel", "syriatelcash") else "shamcash"
             try:
                 from services.sam import SamService
-                # Syriatel Cash operates exclusively in Syrian Pounds (SYP)
-                if provider == "syriatelcash":
+                req_currency = (body.get("currency") or ("SYP" if provider == "syriatelcash" else "USD")).upper()
+                if provider == "syriatelcash" or req_currency == "SYP":
                     inv_currency = "SYP"
-                    syp_rate = float(os.environ.get("SAM_SYP_USD_RATE", "0.002551"))
+                    syp_cfg = await ConfigService.get(session, "SAM_SYP_USD_RATE", env_fallback=os.environ.get("SAM_SYP_USD_RATE", "0.002551"))
+                    syp_rate = float(syp_cfg or 0.002551)
                     syp_amount = int(round(amount / syp_rate)) if syp_rate < 1.0 else int(round(amount * syp_rate))
                     inv_amount = syp_amount
                 else:
