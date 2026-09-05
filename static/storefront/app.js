@@ -2675,6 +2675,7 @@ const tg = window.Telegram?.WebApp;
       if (!selectedProduct) return;
       selectedQty = 1;
       appliedCoupon = null;
+      const d = I18N[currentAppLanguage] || I18N.en || I18N.ar;
 
       try {
         const couponInput = document.getElementById('coupon-code-input');
@@ -2735,20 +2736,23 @@ const tg = window.Telegram?.WebApp;
         // Multi-Supplier Server Badge in Product Detail
         const serverBadgeEl = document.getElementById('prod-server-badge');
         if (serverBadgeEl) {
-          if (selectedProduct.server_badge) {
-            serverBadgeEl.innerText = selectedProduct.server_badge;
+          if (selectedProduct.supplier === 'prodseller') {
+            serverBadgeEl.innerText = (currentAppLanguage === 'ar') ? 'سيرفر 2 (ProdSeller)' : 'Server 2 (ProdSeller)';
             serverBadgeEl.style.display = 'inline-block';
-            if (selectedProduct.supplier === 'prodseller') {
-              serverBadgeEl.style.background = 'rgba(16, 185, 129, 0.15)';
-              serverBadgeEl.style.color = '#10b981';
-            } else {
-              serverBadgeEl.style.background = 'rgba(56, 189, 248, 0.15)';
-              serverBadgeEl.style.color = 'var(--accent)';
-            }
+            serverBadgeEl.style.background = 'rgba(16, 185, 129, 0.15)';
+            serverBadgeEl.style.color = '#10b981';
+          } else if (selectedProduct.supplier === 'batstore' || selectedProduct.server_badge) {
+            serverBadgeEl.innerText = (currentAppLanguage === 'ar') ? 'سيرفر 1 (BatStore)' : 'Server 1 (BatStore)';
+            serverBadgeEl.style.display = 'inline-block';
+            serverBadgeEl.style.background = 'rgba(56, 189, 248, 0.15)';
+            serverBadgeEl.style.color = 'var(--accent)';
           } else {
             serverBadgeEl.style.display = 'none';
           }
         }
+
+        const editBtn = document.getElementById('admin-detail-edit-btn');
+        if (editBtn) editBtn.innerText = (currentAppLanguage === 'ar') ? 'تعديل بيانات المنتج كمسؤول' : 'Edit Product as Admin';
 
         // Spec badges in product detail
         const durEl = document.getElementById('prod-dur-badge');
@@ -6079,7 +6083,7 @@ const tg = window.Telegram?.WebApp;
       if (mode === 'radar') {
         if (radarHeader) radarHeader.style.display = 'block';
         if (attentionChip) attentionChip.style.display = 'inline-block';
-        if (titleOrders) titleOrders.innerText = 'رادار العمليات المباشرة للعملاء';
+        if (titleOrders) titleOrders.innerText = (currentAppLanguage === 'ar') ? 'رادار العمليات المباشرة للعملاء' : 'Live Customer Operations Radar';
         loadAdminLiveRadar();
       } else {
         if (radarHeader) radarHeader.style.display = 'none';
