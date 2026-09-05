@@ -46,6 +46,8 @@ CONFIG_DEFINITIONS = {
                              "desc": "Our sam-api.pro receiving wallet address/phone/identifier for invoices."},
     "SAM_SYP_USD_RATE": {"secret": False,
                          "desc": "Optional SYP->USD rate used for SYP-denominated SAM top-ups."},
+    "STORE_TRENDING_TAGS": {"secret": False,
+                            "desc": "Comma-separated trending search tags shown under search bar (e.g. Netflix, ChatGPT, Windows)."},
 }
 
 

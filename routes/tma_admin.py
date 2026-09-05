@@ -524,6 +524,22 @@ async def admin_update_announcement(request: Request):
         await session_commit(session)
     return {"status": "ok", "announcement": announcement}
 
+@router.post("/api/admin/trending-tags/update")
+async def admin_update_trending_tags(request: Request):
+    """Update admin-configured trending search tags."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not verify_admin(admin_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    tags = (body.get("tags") or "").strip()
+    async with get_db_session() as session:
+        await ConfigService.set(session, "STORE_TRENDING_TAGS", tags)
+        await session_commit(session)
+    return {"status": "ok", "tags": tags}
+
 
 @router.post("/api/admin/catalog/sync")
 async def admin_sync_catalog(request: Request):

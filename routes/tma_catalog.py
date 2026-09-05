@@ -234,24 +234,45 @@ async def log_search_query(request: Request):
 
 @router.get("/api/search/trending")
 async def get_trending_searches():
-    """Return top 6 real-time trending searches from Redis with fallback."""
+    """Return trending search tags configured by admin or derived from real demand."""
     from bot import redis
-    fallback = ["ChatGPT", "Claude", "Gemini", "Peacock", "Windows", "Canva"]
+    from services.config import ConfigService
+    async with get_db_session() as session:
+        admin_tags_raw = await ConfigService.get(session, "STORE_TRENDING_TAGS", default="")
+        if admin_tags_raw and str(admin_tags_raw).strip():
+            tags = [t.strip() for t in str(admin_tags_raw).split(",") if t.strip()]
+            if tags:
+                return {"status": "ok", "trending": tags[:8]}
+
     try:
         if redis:
-            raw = await redis.zrevrange("ghstore:trending_searches", 0, 5)
+            raw = await redis.zrevrange("ghstore:trending_searches", 0, 7)
             if raw:
                 trending = [item.decode("utf-8").title() for item in raw if item]
                 if trending:
                     return {"status": "ok", "trending": trending}
     except Exception:
         pass
-    return {"status": "ok", "trending": fallback}
+
+    async with get_db_session() as session:
+        from repositories.batstore_product import BatStoreProductRepository
+        prods = await BatStoreProductRepository.get_all(session)
+        real_names = [p.clean_name or p.name for p in prods if not getattr(p, "hidden", False) and getattr(p, "clean_name", None)]
+        seen = set()
+        real_tags = []
+        for n in real_names:
+            short = n.split()[0] if n else ""
+            if short and short.lower() not in seen and len(short) > 2:
+                seen.add(short.lower())
+                real_tags.append(short)
+            if len(real_tags) >= 6:
+                break
+        return {"status": "ok", "trending": real_tags}
 
 
 @router.get("/api/reviews")
 async def get_tma_reviews():
-    """Return customer reviews and aggregate rating score for social proof in TMA."""
+    """Return real customer reviews and aggregate rating score from database."""
     async with get_db_session() as session:
         from models.review import Review
         stmt = select(Review).order_by(Review.id.desc()).limit(20)
@@ -259,18 +280,20 @@ async def get_tma_reviews():
         reviews = list(res.scalars().all())
 
         total_stars = sum(r.rating for r in reviews) if reviews else 0
-        avg_rating = round(total_stars / len(reviews), 1) if reviews else 4.9
+        avg_rating = round(total_stars / len(reviews), 1) if reviews else 0.0
 
         data = []
         for r in reviews:
+            if not r.text:
+                continue
             data.append({
                 "id": r.id,
                 "rating": r.rating,
-                "text": r.text or "Instant automated delivery, key activated smoothly!",
+                "text": r.text,
             })
         return {
             "average": avg_rating,
-            "count": max(len(reviews), 28),
+            "count": len(data),
             "reviews": data,
         }
 
@@ -583,6 +606,7 @@ async def get_tma_user_data(tg_id: int, request: Request):
             "orders": orders_data,
             "recharges": recharges_data,
             "store_announcement": await ConfigService.get(session, "STORE_ANNOUNCEMENT", env_fallback=""),
+            "store_trending_tags": await ConfigService.get(session, "STORE_TRENDING_TAGS", env_fallback=""),
         }
 
 

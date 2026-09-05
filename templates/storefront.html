@@ -460,14 +460,10 @@
       <div id="search-autocomplete-dropdown" class="search-autocomplete-box" style="display: none;"></div>
     </div>
 
-    <!-- Trending Searches Bar -->
-    <div class="trending-searches-bar" id="trending-searches-bar">
+    <!-- Trending Searches Bar (Dynamically rendered from Admin Config / Real Searches) -->
+    <div class="trending-searches-bar" id="trending-searches-bar" style="display: none;">
       <span class="trending-label" id="lbl-trending">الأكثر بحثاً:</span>
-      <span class="trending-chip" onclick="applySearchQuery('Claude')">Claude</span>
-      <span class="trending-chip" onclick="applySearchQuery('Gemini')">Gemini</span>
-      <span class="trending-chip" onclick="applySearchQuery('Peacock')">Peacock</span>
-      <span class="trending-chip" onclick="applySearchQuery('Windows')">Windows</span>
-      <span class="trending-chip" onclick="applySearchQuery('Canva')">Canva</span>
+      <div id="trending-chips-container" style="display: flex; gap: 6px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;"></div>
     </div>
     <!-- Quick Filters & Sorting -->
     <div class="filter-chips-row" id="quick-filters-row">
@@ -481,13 +477,12 @@
       <div class="filter-chip" id="filter-lowprice" onclick="applyCatalogFilter('lowprice')"><span id="lbl-filter-lowprice">الأقل سعراً</span></div>
     </div>
 
-    <!-- Promotional Hero Banner -->
-    <div class="hero-banner">
+    <!-- Promotional Hero Banner (Rendered ONLY when Admin configures a Store Announcement or Banner) -->
+    <div class="hero-banner" id="storefront-hero-banner" style="display: none;">
       <div class="banner-badge" id="banner-badge-text">تحديثات المتجر</div>
-      <div class="banner-title" id="banner-title-text">اشتراكات كلود وجيميني متوفرة فورياً</div>
-      <div class="banner-sub" id="banner-sub-text">تسليم تلقائي فوري للمفاتيح والحسابات على مدار الساعة</div>
+      <div class="banner-title" id="banner-title-text"></div>
+      <div class="banner-sub" id="banner-sub-text"></div>
     </div>
-
     <!-- Mode A: Catalogs Cards (Homepage Collections with Grid/List Toggle) -->
     <div id="catalogs-collection-mode">
       <div class="section-header-flex">
@@ -1181,6 +1176,14 @@
           <div style="display: flex; gap: 6px;">
             <input type="text" class="admin-text-input" id="admin-announcement-input" placeholder="خصم خاص بمناسبة العطلة..." style="flex: 1; font-size: 11px;">
             <button class="btn-action-primary" onclick="submitAdminUpdateAnnouncement()" style="height: 38px; padding: 0 14px; font-size: 11px; font-weight: 700;" id="btn-announcement-update">نشر الإعلان</button>
+          </div>
+        </div>
+        <div style="margin-top: 12px; border-top: 1px dashed var(--border); padding-top: 12px;">
+          <div style="font-size: 11px; font-weight: 700; margin-bottom: 4px;" id="admin-trending-tags-title">العلامات الأكثر بحثاً في المتجر (Trending Search Tags)</div>
+          <div style="font-size: 10px; color: var(--hint); margin-bottom: 6px;" id="admin-trending-tags-desc">افصل بين الكلمات بفاصلة (اتركه فارغاً للاعتماد على أكثر المنتجات طلباً تلقائياً)</div>
+          <div style="display: flex; gap: 6px;">
+            <input type="text" class="admin-text-input" id="admin-trending-tags-input" placeholder="Netflix, ChatGPT, Canva, Windows" style="flex: 1; font-size: 11px;">
+            <button class="btn-action-primary" onclick="submitAdminUpdateTrendingTags()" style="height: 38px; padding: 0 14px; font-size: 11px; font-weight: 700;" id="btn-trending-tags-update">حفظ العلامات</button>
           </div>
         </div>
       </div>

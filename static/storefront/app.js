@@ -1611,6 +1611,9 @@ const tg = window.Telegram?.WebApp;
       setText('btn-logo-update', d.save_logo);
       setText('admin-broadcast-banner-desc', d.admin_broadcast_banner_desc);
       setText('btn-announcement-update', d.publish_announcement);
+      setText('admin-trending-tags-title', isRtl ? 'العلامات الأكثر بحثاً في المتجر (Trending Search Tags)' : 'Trending Search Tags');
+      setText('admin-trending-tags-desc', isRtl ? 'افصل بين الكلمات بفاصلة (اتركه فارغاً للاعتماد على أكثر المنتجات طلباً تلقائياً)' : 'Comma-separated tags (leave empty to derive automatically from top products)');
+      setText('btn-trending-tags-update', isRtl ? 'حفظ العلامات' : 'Save Tags');
       setText('admin-autorefund-desc', d.admin_autorefund_desc);
       setText('btn-syp-rate-update', d.update);
       setText('btn-ref-rate-update', d.update);
@@ -4874,6 +4877,49 @@ const tg = window.Telegram?.WebApp;
       }
     }
 
+    async function submitAdminUpdateTrendingTags() {
+      const val = (document.getElementById('admin-trending-tags-input')?.value || '').trim();
+      haptic('light');
+      try {
+        const res = await fetch('/api/admin/trending-tags/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_tg_id: userId, tags: val })
+        });
+        const d = await res.json();
+        if (d.status === 'ok') {
+          haptic('success');
+          showToast(currentAppLanguage === 'ar' ? 'تم حفظ العلامات الأكثر بحثاً بنجاح!' : 'Trending search tags saved!');
+          loadTrendingSearches();
+        } else {
+          showToast(currentAppLanguage === 'ar' ? 'فشل حفظ العلامات' : 'Failed to save tags');
+        }
+      } catch (e) {
+        showToast(currentAppLanguage === 'ar' ? 'خطأ في الاتصال بالخادم' : 'Server connection error');
+      }
+    }
+
+    async function loadTrendingSearches() {
+      const bar = document.getElementById('trending-searches-bar');
+      const container = document.getElementById('trending-chips-container');
+      if (!bar || !container) return;
+      try {
+        const res = await fetch('/api/search/trending');
+        const d = await res.json();
+        const tags = d.trending || [];
+        if (tags.length > 0) {
+          container.innerHTML = tags.map(tag => `
+            <span class="trending-chip" onclick="applySearchQuery('${tag.replace(/'/g, "\\\\'")}')">⚡ ${tag}</span>
+          `).join('');
+          bar.style.display = 'flex';
+        } else {
+          bar.style.display = 'none';
+        }
+      } catch (e) {
+        bar.style.display = 'none';
+      }
+    }
+
     async function submitAdminCatalogSync() {
       const btn = document.getElementById('btn-force-sync-catalog');
       if (btn) {
@@ -5387,8 +5433,12 @@ const tg = window.Telegram?.WebApp;
               }
 
               const announceInput = document.getElementById('admin-announcement-input');
-              if (announceInput && !announceInput.value && d.admin_stats?.store_announcement) {
-                announceInput.value = d.admin_stats.store_announcement;
+              if (announceInput && !announceInput.value && (d.store_announcement || d.admin_stats?.store_announcement)) {
+                announceInput.value = d.store_announcement || d.admin_stats?.store_announcement;
+              }
+              const trendInput = document.getElementById('admin-trending-tags-input');
+              if (trendInput && !trendInput.value && (d.store_trending_tags || d.admin_stats?.store_trending_tags)) {
+                trendInput.value = d.store_trending_tags || d.admin_stats?.store_trending_tags;
               }
               if (d.admin_stats?.supplier_wallets) {
                 const sw = d.admin_stats.supplier_wallets;
@@ -5443,6 +5493,20 @@ const tg = window.Telegram?.WebApp;
         const adminGiftBtn = document.getElementById('admin-detail-gift-container');
         if (adminGiftBtn) adminGiftBtn.style.display = d.is_admin ? 'block' : 'none';
 
+        // Dynamic Store Announcement Hero Banner (Only shown when configured by admin!)
+        const heroBanner = document.getElementById('storefront-hero-banner');
+        if (heroBanner) {
+          const annText = (d.store_announcement || '').trim();
+          if (annText) {
+            const titleEl = document.getElementById('banner-title-text');
+            const subEl = document.getElementById('banner-sub-text');
+            if (titleEl) titleEl.innerText = annText;
+            if (subEl) subEl.style.display = 'none';
+            heroBanner.style.display = 'block';
+          } else {
+            heroBanner.style.display = 'none';
+          }
+        }
         // Profile Picture
         const topAvatarBox = document.getElementById('top-avatar-box');
         const setAvatarBox = document.getElementById('settings-avatar-box');
@@ -6856,6 +6920,7 @@ const tg = window.Telegram?.WebApp;
     initCart();
     loadFromCache();
     fetchCatalogData();
+    loadTrendingSearches();
     loadUserData();
     initSSE();
     checkHomeScreenCapability();
