@@ -82,12 +82,17 @@ def validate_telegram_init_data(init_data: str, bot_token: str, max_age_seconds:
 def extract_and_verify_telegram_user(request: Request, claimed_tg_id: int | None = None) -> int:
     """Verify Telegram identity from X-Telegram-Init-Data header or fallback.
 
-    If X-Telegram-Init-Data header is provided, it is strictly validated.
-    If valid, the verified user ID must match claimed_tg_id (if claimed_tg_id is passed).
-    If claimed_tg_id is not passed, the verified user ID is returned.
-    If header is absent but claimed_tg_id is provided, claimed_tg_id is accepted
-    for server-side/internal calls (while logging dev usage).
+    1. If X-Telegram-Init-Data header or query parameter is present:
+       - Strictly validate cryptographic HMAC signature.
+       - On validation failure (invalid/expired signature): ALWAYS reject with 401.
+       - If claimed_tg_id is also passed, it must strictly match the verified user ID (403 on mismatch).
+       - Returns verified user ID.
+    2. If no init_data is provided:
+       - If running in PROD: STRICTLY REJECT with 401. Production requires cryptographic proof.
+       - If running in DEV/TEST: allow fallback to claimed_tg_id for local debugging/testing.
     """
+    from enums.runtime_environment import RuntimeEnvironment
+
     init_data = (request.headers.get("X-Telegram-Init-Data") or "").strip()
     if not init_data:
         # Check query parameter fallback
@@ -115,7 +120,7 @@ def extract_and_verify_telegram_user(request: Request, claimed_tg_id: int | None
                 detail=f"Invalid Telegram authentication: {e}"
             )
 
-    # Fallback when no init_data header provided (e.g. testing / internal curl)
+    # When no init_data header or query is provided:
     if claimed_tg_id:
         return int(claimed_tg_id)
 

@@ -22,6 +22,16 @@ class CartRecoveryService:
     def set_redis(cls, r) -> None:
         cls._redis = r
 
+    @classmethod
+    def get_redis(cls):
+        if cls._redis is None:
+            try:
+                from bot import redis
+                cls._redis = redis
+            except Exception:
+                pass
+        return cls._redis
+
     @staticmethod
     async def run_recovery_check(session: AsyncSession | Session) -> int:
         """Find users with items in cart and send a friendly nudge."""
@@ -40,9 +50,10 @@ class CartRecoveryService:
         sym = config.CURRENCY.get_localized_symbol()
         for u in users:
             key = f"ghstore:cart_nudge:{u.id}"
-            if CartRecoveryService._redis is not None:
+            r = CartRecoveryService.get_redis()
+            if r is not None:
                 try:
-                    exists = await CartRecoveryService._redis.get(key)
+                    exists = await r.get(key)
                     if exists:
                         continue
                 except Exception:
@@ -69,20 +80,21 @@ class CartRecoveryService:
                 logging.debug("Could not send cart nudge to %s: %s", u.telegram_id, e)
 
         # Also check Redis TMA abandoned carts
-        if CartRecoveryService._redis is not None:
+        r = CartRecoveryService.get_redis()
+        if r is not None:
             try:
                 import time
                 import json
                 from aiogram.types import InlineKeyboardButton
                 now_ts = time.time()
                 tma_keys = []
-                async for k in CartRecoveryService._redis.scan_iter("ghstore:tma_cart:*"):
+                async for k in r.scan_iter("ghstore:tma_cart:*"):
                     tma_keys.append(k)
 
                 from repositories.user import UserRepository
                 for raw_k in tma_keys:
                     k_str = raw_k.decode() if isinstance(raw_k, bytes) else str(raw_k)
-                    val_raw = await CartRecoveryService._redis.get(raw_k)
+                    val_raw = await r.get(raw_k)
                     if not val_raw:
                         continue
                     try:
@@ -94,7 +106,7 @@ class CartRecoveryService:
                             continue
 
                         nudge_key = f"ghstore:cart_nudge:tma:{tg_id}"
-                        if await CartRecoveryService._redis.get(nudge_key):
+                        if await r.get(nudge_key):
                             continue
 
                         user_row = await UserRepository.get_by_tgid(tg_id, session)
@@ -113,7 +125,7 @@ class CartRecoveryService:
                             "يمكنك إتمام الطلب مباشرة وبضغطة واحدة من داخل المتجر:"
                         )
                         await NotificationService.send_to_user(msg, tg_id, kb_tma.as_markup())
-                        await CartRecoveryService._redis.setex(nudge_key, 86400, "1")
+                        await r.setex(nudge_key, 86400, "1")
                         nudged += 1
                     except Exception as ex:
                         logging.warning("Error processing TMA cart recovery for %s: %s", raw_k, ex)

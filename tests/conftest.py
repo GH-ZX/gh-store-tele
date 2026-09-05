@@ -82,6 +82,7 @@ def _build_config_module() -> ModuleType:
     config.TOPUP_ENABLE_USDC = True
     config.TOPUP_ENABLE_SHAMCASH = False
     config.TOPUP_ENABLE_SYRIATEL = False
+    config.RUNTIME_ENVIRONMENT = "DEV"
     return config
 
 

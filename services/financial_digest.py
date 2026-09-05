@@ -105,7 +105,12 @@ class FinancialDigestService:
 
 
 async def daily_digest_cron():
-    """Background task dispatching a 24-hour financial report once daily."""
+    """Background task dispatching a 24-hour financial report at 23:59 UTC every day."""
     while True:
-        await asyncio.sleep(86400)  # every 24 hours
+        now = datetime.datetime.now(datetime.timezone.utc)
+        target = now.replace(hour=23, minute=59, second=0, microsecond=0)
+        if now >= target:
+            target += datetime.timedelta(days=1)
+        sleep_seconds = max(1.0, (target - now).total_seconds())
+        await asyncio.sleep(sleep_seconds)
         await FinancialDigestService.send_daily_digest()

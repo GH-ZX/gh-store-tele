@@ -53,6 +53,12 @@ class MultiSupplierService:
         from db import session_commit
         await session_commit(session)
 
+        try:
+            from services.margin_watcher import MarginWatcherService
+            await MarginWatcherService.check_and_alert_admin(session)
+        except Exception as e:
+            logging.warning("Margin watcher check error: %s", e)
+
         return {
             "batstore": {"created": bat_created, "updated": bat_updated},
             "prodseller": {"created": prod_created, "updated": prod_updated},

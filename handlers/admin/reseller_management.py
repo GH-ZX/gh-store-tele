@@ -304,3 +304,40 @@ async def inspect_admin_custom_emoji(message: Message, state: FSMContext, langua
         f"<i>To link this icon to a product name keyword, tap below or type <code>/set_emoji &lt;keyword&gt;</code>!</i>",
         reply_markup=kb.as_markup()
     )
+
+
+@reseller_management_router.callback_query(AdminIdFilter(), F.data.startswith("fulfill_recharge:"))
+async def handle_fulfill_recharge_cb(callback: CallbackQuery, session: AsyncSession):
+    """Admin fulfilled supplier balance; place order upstream and deliver goods automatically."""
+    order_id = int(callback.data.split(":")[1])
+    await callback.answer("⏳ جاري تنفيذ الطلب مع المورد...", show_alert=False)
+    from services.supplier_recharge import SupplierRechargeService
+    success, msg, goods = await SupplierRechargeService.check_and_fulfill_order(order_id, session)
+    if success:
+        await callback.message.edit_text(
+            f"{callback.message.html_text}\n\n✅ <b>تم شحن رصيد المورد وتنفيذ وتسليم الطلب #{order_id} للعميل بنجاح! 🎉</b>"
+        )
+    else:
+        await callback.answer(f"⚠️ {msg}", show_alert=True)
+
+
+@reseller_management_router.callback_query(AdminIdFilter(), F.data.startswith("refund_recharge:"))
+async def handle_refund_recharge_cb(callback: CallbackQuery, session: AsyncSession):
+    """Admin refunds customer if supplier balance cannot be replenished."""
+    order_id = int(callback.data.split(":")[1])
+    from repositories.batstore_order import BatStoreOrderRepository
+    from repositories.user import UserRepository
+    order = await BatStoreOrderRepository.get_by_id(order_id, session)
+    if not order or order.status == "refunded":
+        await callback.answer("الطلب مسترد مسبقاً أو غير موجود.", show_alert=True)
+        return
+    user = await UserRepository.get_by_tgid(order.telegram_id, session)
+    if user:
+        user.top_up_amount = (user.top_up_amount or 0.0) + (order.total_sell or 0.0)
+        await UserRepository.update(user, session)
+    order.status = "refunded"
+    await BatStoreOrderRepository.update(order, session)
+    await session_commit(session)
+    await callback.message.edit_text(
+        f"{callback.message.html_text}\n\n↩️ <b>تم استرداد مبلغ ${order.total_sell:.2f} إلى رصيد العميل بنجاح.</b>"
+    )

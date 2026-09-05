@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from sqlalchemy import Column, Integer, String, Float, Boolean, Text
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, Index
 from sqladmin import ModelView
 
 from models.base import Base
@@ -153,6 +153,9 @@ class BatStoreProduct(Base):
     hidden=True removes the product from the storefront without losing data.
     """
     __tablename__ = 'batstore_products'
+    __table_args__ = (
+        Index("idx_batstore_products_hidden_cat", "hidden", "category"),
+    )
 
     id = Column(Integer, primary_key=True)
     product_id = Column(Integer, unique=True, nullable=False, index=True)
@@ -176,7 +179,7 @@ class BatStoreProduct(Base):
     category = Column(String, nullable=True, default=None, index=True)
     # Computed selling price (persisted for fast display; recomputed on sync).
     sell_price_usd = Column(Float, nullable=False, default=0.0)
-    hidden = Column(Boolean, nullable=False, default=False)
+    hidden = Column(Boolean, nullable=False, default=False, index=True)
     reseller_key_override = Column(String, nullable=True)
     supplier = Column(String, nullable=False, default="batstore")
     server_badge = Column(String, nullable=True)

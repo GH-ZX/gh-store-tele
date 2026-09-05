@@ -22,8 +22,7 @@ WEBAPP_HOST = os.environ.get("WEBAPP_HOST", "0.0.0.0")
 WEBAPP_PORT = int(os.environ.get("WEBAPP_PORT", "5000"))
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 TOKEN = os.environ.get("TOKEN")
-ADMIN_ID_LIST = os.environ.get("ADMIN_ID_LIST").split(',')
-ADMIN_ID_LIST = [int(admin_id) for admin_id in ADMIN_ID_LIST]
+ADMIN_ID_LIST = [int(admin_id.strip()) for admin_id in (os.environ.get("ADMIN_ID_LIST") or "").split(',') if admin_id.strip().isdigit()]
 SUPPORT_LINK = os.environ.get("SUPPORT_LINK")
 ANNOUNCEMENT_CHANNEL_ID = os.environ.get("ANNOUNCEMENT_CHANNEL_ID")
 # POSTGRESQL

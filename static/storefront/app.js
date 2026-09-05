@@ -28,6 +28,9 @@ const tg = window.Telegram?.WebApp;
       if (tg.isVersionAtLeast && tg.isVersionAtLeast('7.7')) {
         try { tg.disableVerticalSwipes?.(); } catch (e) {}
       }
+      if (tg.isVersionAtLeast && tg.isVersionAtLeast('8.0')) {
+        try { tg.requestFullscreen?.(); } catch (e) {}
+      }
       if (tg.enableClosingConfirmation) tg.enableClosingConfirmation();
       if (tg.SettingsButton) {
         try {
@@ -35,6 +38,28 @@ const tg = window.Telegram?.WebApp;
           tg.SettingsButton.onClick(() => switchTab('settings'));
         } catch (e) {}
       }
+    }
+
+    function cloudStorageSet(key, value) {
+      try {
+        if (tg?.CloudStorage?.setItem) {
+          tg.CloudStorage.setItem(key, String(value), (err) => {
+            if (err) console.debug('CloudStorage set error:', err);
+          });
+        }
+      } catch (e) {}
+    }
+
+    function cloudStorageGet(key, callback) {
+      try {
+        if (tg?.CloudStorage?.getItem) {
+          tg.CloudStorage.getItem(key, (err, val) => {
+            if (!err && val !== undefined && val !== null && val !== '') {
+              callback(val);
+            }
+          });
+        }
+      } catch (e) {}
     }
 
     function updateSafeAreaInsets() {
@@ -74,7 +99,30 @@ const tg = window.Telegram?.WebApp;
         tg.onEvent('safeAreaChanged', updateSafeAreaInsets);
         tg.onEvent('contentSafeAreaChanged', updateSafeAreaInsets);
         tg.onEvent('fullscreenChanged', updateSafeAreaInsets);
+        tg.onEvent('fullscreenFailed', ({ error }) => {
+          console.debug('Fullscreen failed:', error);
+        });
         tg.onEvent('viewportChanged', updateSafeAreaInsets);
+
+        // Bot API 8.0 Lifecycle Events: activated / deactivated
+        tg.onEvent('deactivated', () => {
+          // App minimized: close SSE stream and pause background intervals
+          if (window._sseSource) {
+            try { window._sseSource.close(); } catch (e) {}
+          }
+          clearInterval(flashSaleTimerInterval);
+        });
+        tg.onEvent('activated', () => {
+          // App restored: reconnect real-time stock/price stream and refresh
+          initSSE();
+          if (typeof loadUserData === 'function') loadUserData();
+          if (typeof fetchCatalogData === 'function') fetchCatalogData();
+        });
+      }
+
+      // Bot API 8.0: Lock portrait orientation for consistent mobile commerce layout
+      if (tg.isVersionAtLeast && tg.isVersionAtLeast('8.0')) {
+        try { tg.lockOrientation?.(); } catch (e) {}
       }
     }
 
@@ -186,8 +234,12 @@ const tg = window.Telegram?.WebApp;
         if (tg?.HapticFeedback) {
           if (type === 'success' || type === 'error' || type === 'warning') {
             tg.HapticFeedback.notificationOccurred(type);
+          } else if (type === 'selection') {
+            tg.HapticFeedback.selectionChanged?.();
+          } else if (['light', 'medium', 'heavy', 'rigid', 'soft'].includes(type)) {
+            tg.HapticFeedback.impactOccurred(type);
           } else {
-            tg.HapticFeedback.impactOccurred(type === 'pop' ? 'light' : 'medium');
+            tg.HapticFeedback.impactOccurred('light');
           }
         }
       } catch (e) {}
@@ -331,8 +383,12 @@ const tg = window.Telegram?.WebApp;
           tg.CloudStorage.getItem('ghstore_cart', (err, val) => {
             if (!err && val) {
               try {
-                cartMap = JSON.parse(val) || {};
-                updateFloatingCartUI();
+                const cloudCart = JSON.parse(val) || {};
+                if (Object.keys(cartMap).length === 0 && Object.keys(cloudCart).length > 0) {
+                  cartMap = cloudCart;
+                  updateFloatingCartUI();
+                  renderCartDrawerItems();
+                }
               } catch (e) {}
             }
           });
@@ -425,6 +481,14 @@ const tg = window.Telegram?.WebApp;
       const sheet = document.getElementById('cart-drawer-sheet');
       if (sheet) sheet.style.display = 'none';
       if (tg?.enableVerticalSwipes) tg.enableVerticalSwipes();
+      if (tg?.MainButton) {
+        tg.MainButton.offClick(executeCartCheckout);
+        tg.MainButton.hide();
+      }
+      if (tg?.SecondaryButton) {
+        tg.SecondaryButton.offClick(clearEntireCart);
+        tg.SecondaryButton.hide();
+      }
       if (navStack.length > 0 && navStack[navStack.length - 1].name === 'cart_drawer') {
         navStack.pop();
         if (navStack.length === 0 && tg?.BackButton) tg.BackButton.hide();
@@ -494,7 +558,7 @@ const tg = window.Telegram?.WebApp;
                   <span>${it.quantity}</span>
                   <button onclick="changeCartQty(${it.id}, 1)">+</button>
                 </div>
-                <button class="cart-del-btn" onclick="removeCartItem(${it.id})" title="حذف">✕</button>
+                <button class="cart-del-btn" onclick="removeCartItem(${it.id})" title="${currentAppLanguage === 'ar' ? 'حذف' : 'Remove'}">✕</button>
               </div>
             </div>
           `;
@@ -570,6 +634,30 @@ const tg = window.Telegram?.WebApp;
           checkBtn.onclick = executeCartCheckout;
         }
       }
+      if (tg?.MainButton && items.length > 0) {
+        tg.MainButton.offClick(executeCartCheckout);
+        if (userBal < finalTotal) {
+          tg.MainButton.setText(currentAppLanguage === 'ar' ? `شحن الرصيد للمتابعة ($${userBal.toFixed(2)})` : `Top up balance ($${userBal.toFixed(2)})`)
+            .show()
+            .enable();
+          tg.MainButton.onClick(() => { closeCartDrawer(); switchTab('wallet'); });
+        } else {
+          tg.MainButton.setText(currentAppLanguage === 'ar' ? `شراء السلة (${items.length}) • ${formatPrice(finalTotal)}` : `Checkout (${items.length}) • ${formatPrice(finalTotal)}`)
+            .show()
+            .enable();
+          tg.MainButton.onClick(executeCartCheckout);
+        }
+      }
+      if (tg?.SecondaryButton && items.length > 0) {
+        tg.SecondaryButton.offClick(clearEntireCart);
+        tg.SecondaryButton.setParams({
+          text: currentAppLanguage === 'ar' ? 'إفراغ السلة' : 'Clear Cart',
+          position: 'left',
+          is_visible: true,
+          is_active: true
+        });
+        tg.SecondaryButton.onClick(clearEntireCart);
+      }
     }
 
     async function executeCartCheckout() {
@@ -580,7 +668,7 @@ const tg = window.Telegram?.WebApp;
       const btn = document.getElementById('btn-cart-checkout');
       if (btn) {
         btn.disabled = true;
-        btn.innerHTML = `<span>جاري معالجة السلة...</span>`;
+        btn.innerHTML = `<span>${currentAppLanguage === 'ar' ? 'جاري معالجة السلة...' : 'Processing cart...'}</span>`;
       }
       if (tg?.MainButton) tg.MainButton.showProgress(false);
 
@@ -618,13 +706,13 @@ const tg = window.Telegram?.WebApp;
           if (successView) successView.classList.add('active');
         } else {
           haptic('error');
-          showToast(d.error || 'فشل إتمام شراء السلة');
+          showToast(d.error || (currentAppLanguage === 'ar' ? 'فشل إتمام شراء السلة' : 'Failed to complete cart purchase'));
           renderCartDrawerItems();
         }
       } catch (e) {
         if (btn) btn.disabled = false;
         if (tg?.MainButton) tg.MainButton.hideProgress();
-        showToast('خطأ في الاتصال أثناء شراء السلة');
+        showToast(currentAppLanguage === 'ar' ? 'خطأ في الاتصال أثناء شراء السلة' : 'Network error during cart checkout');
       }
     }
     // Recharge Flow State
@@ -642,25 +730,42 @@ const tg = window.Telegram?.WebApp;
       try {
         const initial = (tgUser.first_name || 'U')[0].toUpperCase();
         const topInit = document.getElementById('top-avatar-initial');
-        if (topInit) topInit.innerText = initial;
         const setInit = document.getElementById('settings-avatar-initial');
-        if (setInit) setInit.innerText = initial;
+        if (tgUser.photo_url) {
+          const imgTag = `<img src="${tgUser.photo_url}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block;" alt="Avatar">`;
+          if (topInit) topInit.innerHTML = imgTag;
+          if (setInit) setInit.innerHTML = imgTag;
+        } else {
+          if (topInit) topInit.innerText = initial;
+          if (setInit) setInit.innerText = initial;
+        }
         const nameEl = document.getElementById('user-name-title');
-        if (nameEl) nameEl.innerText = `${tgUser.first_name || ''} ${tgUser.last_name || ''}`.trim() || (tgUser.username ? '@' + tgUser.username : 'Customer');
         const handleEl = document.getElementById('user-handle-title');
-        if (handleEl && tgUser.username) {
-          handleEl.innerText = `@${tgUser.username}`;
-          handleEl.style.display = 'block';
+        const idEl = document.getElementById('user-tg-num');
+        const fullName = `${tgUser.first_name || ''} ${tgUser.last_name || ''}`.trim();
+        const defaultTitle = (currentAppLanguage === 'ar') ? 'العميل' : 'Customer';
+        const dispName = fullName || (tgUser.username ? '@' + tgUser.username : (userId ? `ID: ${userId}` : defaultTitle));
+        if (nameEl) nameEl.innerText = dispName;
+        if (handleEl) {
+          if (tgUser.username) {
+            handleEl.innerText = `@${tgUser.username.replace(/^@/, '')}`;
+            handleEl.style.display = 'block';
+          } else {
+            handleEl.style.display = 'none';
+          }
         }
-        if (userId) {
-          const idEl = document.getElementById('user-tg-num');
-          if (idEl) idEl.innerText = 'ID: ' + userId;
+        if (idEl && userId) {
+          idEl.innerText = 'ID: ' + userId;
         }
-      } catch (e) {}
+      } catch (e) {
+        console.error('Error in startup tgUser resolution:', e);
+      }
     } else if (userId) {
       try {
         const idEl = document.getElementById('user-tg-num');
         if (idEl) idEl.innerText = 'ID: ' + userId;
+        const nameEl = document.getElementById('user-name-title');
+        if (nameEl) nameEl.innerText = `User ${userId}`;
       } catch (e) {}
     }
 
@@ -669,6 +774,7 @@ const tg = window.Telegram?.WebApp;
       haptic('pop');
       document.documentElement.setAttribute('data-theme', theme);
       try { localStorage.setItem('ghstore_theme', theme); } catch (e) {}
+      cloudStorageSet('ghstore_theme', theme);
 
       document.querySelectorAll('.theme-segment-btn').forEach(b => b.classList.remove('active'));
       const activeBtn = document.getElementById('theme-btn-' + theme);
@@ -679,12 +785,26 @@ const tg = window.Telegram?.WebApp;
       try {
         if (tg?.setHeaderColor) tg.setHeaderColor(bgCol);
         if (tg?.setBackgroundColor) tg.setBackgroundColor(bgCol);
+        if (tg?.setBottomBarColor) tg.setBottomBarColor(bgCol);
       } catch (e) {}
     }
 
     function initAppTheme() {
-      const savedTheme = localStorage.getItem('ghstore_theme') || 'dark';
+      const savedTheme = localStorage.getItem('ghstore_theme') || (tg?.colorScheme === 'light' ? 'light' : 'dark');
       setAppTheme(savedTheme);
+      cloudStorageGet('ghstore_theme', (theme) => {
+        if (theme && ['dark', 'light'].includes(theme) && theme !== savedTheme) {
+          setAppTheme(theme);
+        }
+      });
+      if (tg?.onEvent) {
+        tg.onEvent('themeChanged', () => {
+          if (!localStorage.getItem('ghstore_theme')) {
+            const autoTheme = tg.colorScheme === 'light' ? 'light' : 'dark';
+            setAppTheme(autoTheme);
+          }
+        });
+      }
     }
 
     // Wishlist Sync (CloudStorage + localStorage)
@@ -858,7 +978,7 @@ const tg = window.Telegram?.WebApp;
 
     // Robust Markdown & HTML Formatter
     function formatRichDescription(raw) {
-      if (!raw) return '<span style="color: var(--hint)">لا يوجد وصف إضافي.</span>';
+      if (!raw) return `<span style="color: var(--hint)">${currentAppLanguage === 'ar' ? 'لا يوجد وصف إضافي.' : 'No additional description.'}</span>`;
       let text = String(raw).trim();
 
       const entityMap = { '&lt;': '<', '&gt;': '>', '&quot;': '"', '&apos;': "'", '&amp;': '&' };
@@ -922,7 +1042,7 @@ const tg = window.Telegram?.WebApp;
     // Structured Credential Splitter
     function renderStructuredCredentials(goods) {
       if (!goods || !goods.length) {
-        return '<div style="padding: 12px; color: var(--warning); text-align: center;">جاري التفعيل، سيتم التسليم قريباً.</div>';
+        return `<div style="padding: 12px; color: var(--warning); text-align: center;">${currentAppLanguage === 'ar' ? 'جاري التفعيل، سيتم التسليم قريباً.' : 'Activation in progress, delivery shortly.'}</div>`;
       }
 
       return goods.map(raw => {
@@ -1044,7 +1164,7 @@ const tg = window.Telegram?.WebApp;
         syriatelcash_sub: "دفع مباشر بالليرة السورية",
         amount_section_title: "2. اختر المبلغ أو حدد مخصصاً",
         custom_amount_placeholder: "أدخل المبلغ ($)... e.g. 15",
-        voucher_section_title: "شحن عبر كرت هدية (Voucher)",
+        voucher_section_title: "شحن عبر كرت هدية",
         voucher_btn: "شحن الكرت",
         theme_section_title: "المظهر",
         theme_dark: "الوضع الداكن",
@@ -1054,6 +1174,17 @@ const tg = window.Telegram?.WebApp;
         install_btn: "إضافة إلى الشاشة الرئيسية",
         currency_title: "عملة العرض المفضلة",
         lang_title: "اللغة",
+        settings_balance: "الرصيد المتاح",
+        settings_spent: "إجمالي المشتريات",
+        copy_id: "نسخ ID",
+        support_section_title: "الدعم وقنوات المتجر",
+        support_chat_btn: "التواصل مع خدمة العملاء والدعم",
+        official_channel_btn: "قناة العروض والتحديثات الرسمية",
+        curr_usd_opt: "الدولار (USD)",
+        curr_syp_opt: "الليرة السورية (SYP)",
+        admin_sup_s1: "سيرفر 1 (بات ستور)",
+        admin_sup_s2: "سيرفر 2 (برود سيلر)",
+        admin_sup_sam: "محفظة SAM",
         referral_title: "برنامج الإحالة والأرباح",
         referral_desc: "شارك رابط الإحالة الخاص بك واحصل على <strong>0.2% عمولة أرباح</strong> مباشرة من هامش كل عملية شراء يقوم بها أصدقاؤك!",
         ref_stat_count: "المدعوون",
@@ -1212,8 +1343,8 @@ const tg = window.Telegram?.WebApp;
         syriatelcash_sub: "Direct payment in Syrian Pounds (SYP only)",
         amount_section_title: "2. Choose Amount or Enter Custom",
         custom_amount_placeholder: "Enter amount ($)... e.g. 15",
-        voucher_section_title: "Redeem Gift Card (Voucher)",
-        voucher_btn: "Redeem Card",
+        voucher_section_title: "Redeem Gift Voucher",
+        voucher_btn: "Redeem Voucher",
         theme_section_title: "Appearance",
         theme_dark: "Dark Mode",
         theme_light: "Light Mode",
@@ -1222,6 +1353,17 @@ const tg = window.Telegram?.WebApp;
         install_btn: "Add to Home Screen",
         currency_title: "Preferred Display Currency",
         lang_title: "Language",
+        settings_balance: "Available Balance",
+        settings_spent: "Total Purchases",
+        copy_id: "Copy ID",
+        support_section_title: "Support & Official Channels",
+        support_chat_btn: "Contact Customer Support",
+        official_channel_btn: "Official Announcements Channel",
+        curr_usd_opt: "US Dollar (USD)",
+        curr_syp_opt: "Syrian Pound (SYP)",
+        admin_sup_s1: "Server 1 (BatStore)",
+        admin_sup_s2: "Server 2 (ProdSeller)",
+        admin_sup_sam: "SAM Wallet",
         referral_title: "Referral Program & Earnings",
         referral_desc: "Share your referral link and earn <strong>0.2% profit margin commission</strong> on every purchase made by friends!",
         ref_stat_count: "Invited",
@@ -1317,7 +1459,7 @@ const tg = window.Telegram?.WebApp;
     function applyLanguage(lang) {
       currentAppLanguage = lang;
       try { localStorage.setItem('ghstore_lang', lang); } catch (e) {}
-
+      cloudStorageSet('ghstore_lang', lang);
       const d = I18N[lang] || I18N.en || I18N.ar;
       const isRtl = (lang === 'ar');
       document.documentElement.dir = isRtl ? 'rtl' : 'ltr';
@@ -1426,9 +1568,22 @@ const tg = window.Telegram?.WebApp;
       setText('admin-syp-rate-title', d.syp_rate_title);
       setText('admin-ref-rate-title', d.referral_rate_title);
       setText('admin-logo-url-title', d.logo_url_title);
-      setText('admin-margin-rate-title', d.margin_rate_title);
-      setText('admin-stars-rate-title', d.stars_rate_title);
-      setText('admin-broadcast-banner-title', d.broadcast_banner_title);
+      setText('label-install-title', d.install_section_title);
+      setText('label-install-desc', d.install_desc);
+      setText('btn-install-app', d.install_btn);
+      setText('settings-label-balance', d.settings_balance);
+      setText('settings-label-spent', d.settings_spent);
+      setText('btn-copy-user-id', d.copy_id);
+      setText('label-support-section-title', d.support_section_title);
+      setText('label-support-chat-btn', d.support_chat_btn);
+      setText('label-official-channel-btn', d.official_channel_btn);
+      setText('lbl-curr-usd-opt', d.curr_usd_opt);
+      setText('lbl-curr-syp-opt', d.curr_syp_opt);
+      setText('admin-sup-s1-title', d.admin_sup_s1);
+      setText('admin-sup-s2-title', d.admin_sup_s2);
+      setText('admin-sup-sam-title', d.admin_sup_sam);
+      setText('label-currency-title', d.currency_title);
+      setText('label-lang-title', d.lang_title);
       setText('btn-force-sync-label', d.force_sync_btn);
       setText('admin-autorefund-title', d.autorefund_title);
       setText('btn-stuck-orders-label', d.stuck_orders_btn);
@@ -1478,10 +1633,101 @@ const tg = window.Telegram?.WebApp;
       updateManualSaleTotal();
       if (userData?.is_admin) renderAdminStatsLabels();
 
-      document.querySelectorAll('#language-picker-chips .filter-chip').forEach(el => {
-        el.classList.toggle('active', el.id === 'lang-chip-' + lang);
-      });
+      const langSelect = document.getElementById('language-select-dropdown');
+      if (langSelect) langSelect.value = lang;
 
+      // Activity / Orders Filter Chips
+      setText('act-filter-all', d.tab_all || (isRtl ? 'الكل' : 'All'));
+      setText('act-filter-vault', isRtl ? '🔐 خزنة المفاتيح' : '🔐 Key Vault');
+      setText('act-filter-orders', isRtl ? 'مشتريات المنتجات' : 'Orders');
+      setText('act-filter-recharges', isRtl ? 'عمليات الشحن' : 'Top-ups');
+      setText('act-filter-attention', isRtl ? 'المعلقة والفاشلة' : 'Pending & Failed');
+
+      // Quick Filters on Storefront
+      setText('lbl-filter-all', d.filter_all || (isRtl ? 'الكل' : 'All'));
+      setText('label-filter-wishlist', d.filter_wishlist || (isRtl ? 'المفضلة' : 'Favorites'));
+      setText('lbl-filter-stock', d.filter_stock || (isRtl ? 'متوفر فقط' : 'In Stock'));
+      setText('lbl-filter-instant', d.filter_instant || (isRtl ? 'تسليم فوري' : 'Instant'));
+      setText('lbl-filter-lowprice', d.filter_lowprice || (isRtl ? 'الأقل سعراً' : 'Lowest Price'));
+
+      // View Toggle Labels
+      setText('label-view-grid', d.view_grid || (isRtl ? 'شبكة' : 'Grid'));
+      setText('label-view-list', d.view_list || (isRtl ? 'قائمة' : 'List'));
+
+      // Dedicated Order Detail View
+      setText('btn-back-order-detail-label', isRtl ? 'العودة للعمليات' : 'Back to Activity');
+      setText('order-detail-top-title', isRtl ? 'تفاصيل الطلب' : 'Order Details');
+      setText('order-detail-total-label', isRtl ? 'إجمالي القيمة:' : 'Total Amount:');
+      setText('order-detail-keys-label', isRtl ? 'بيانات التفعيل والحساب:' : 'Delivered Account & License Keys:');
+      setText('order-detail-btn-preview-label', isRtl ? 'معاينة الإيصال المعتمد' : 'View Official Receipt');
+      setText('order-detail-btn-pdf-label', isRtl ? 'تنزيل ملف PDF' : 'Download PDF');
+      setText('order-detail-btn-rate-label', isRtl ? '⭐ تقييم' : '⭐ Rate');
+      setText('order-detail-btn-support-label', isRtl ? '💬 فتح تذكرة دعم' : '💬 Support Ticket');
+
+      // Dedicated Invoice View
+      setText('btn-back-invoice', isRtl ? 'العودة للمحفظة' : 'Back to Wallet');
+      setText('invoice-header-title', isRtl ? 'فاتورة شحن الرصيد' : 'Top-Up Invoice');
+      setText('invoice-amount-due-label', isRtl ? 'المبلغ المطلوب سداده' : 'Amount Due');
+      setText('invoice-crypto-title', isRtl ? 'عنوان الإيداع المباشر (USDT BEP-20)' : 'Direct Deposit Address (USDT BEP-20)');
+      setText('invoice-crypto-copy-btn-label', isRtl ? '📋 نسخ عنوان المحفظة' : '📋 Copy Wallet Address');
+      setText('invoice-crypto-warning', isRtl ? '⚠️ أرسل USDT حصراً عبر شبكة BNB Smart Chain (BEP20) لتفادي فقدان الأموال.' : '⚠️ Send USDT strictly via BNB Smart Chain (BEP20) network to avoid loss of funds.');
+      setText('invoice-btn-gateway-label', isRtl ? '🌐 فتح بوابة الدفع المباشرة' : '🌐 Open Payment Gateway');
+      setText('label-check-invoice', isRtl ? '🔄 التحقق من وصول الدفع وتحديث الرصيد' : '🔄 Check Payment & Update Balance');
+      setText('invoice-copy-link-label', isRtl ? '📋 نسخ الرابط' : '📋 Copy Link');
+      setText('invoice-return-wallet-label', isRtl ? '✕ العودة للمحفظة' : '✕ Back to Wallet');
+
+      // Admin Live Radar Mode Switchers & Header
+      const btnLiveRadar = document.getElementById('btn-mode-live-radar');
+      if (btnLiveRadar) btnLiveRadar.innerHTML = `<span>${isRtl ? 'رادار العمليات المباشر' : 'Live Operations Radar'}</span>`;
+      const btnMyOrders = document.getElementById('btn-mode-my-orders');
+      if (btnMyOrders) btnMyOrders.innerHTML = `<span>${isRtl ? 'طلباتي الشخصية' : 'My Personal Orders'}</span>`;
+      setText('admin-radar-title', isRtl ? 'بث مباشر لعمليات المتجر' : 'Live Store Operations Radar');
+      setText('admin-radar-refresh-btn-label', isRtl ? 'تحديث حي' : 'Live Refresh');
+      setText('admin-radar-desc', isRtl ? 'متابعة حية وفورية لكافة طلبات الشراء وعمليات الشحن في البوت، مع إمكانية اعتماد الشحن المعلق أو الفاشل فورياً.' : 'Real-time live monitoring of all customer purchases and top-ups, with instant manual approval tools.');
+
+      // Admin Users Management Subview
+      setText('admin-users-back-label', isRtl ? 'العودة للإعدادات' : 'Back to Settings');
+      setText('admin-users-page-title', isRtl ? 'إدارة المستخدمين والأرصدة' : 'Manage Users & Balances');
+      setText('admin-ufilter-all', isRtl ? 'الكل' : 'All');
+      setText('admin-ufilter-balance', isRtl ? 'لديهم رصيد' : 'Has Balance');
+      setText('admin-ufilter-vip', isRtl ? 'VIP فقط' : 'VIP Only');
+      setText('admin-ufilter-banned', isRtl ? 'المحظورون فقط' : 'Banned');
+      const uSearchInput = document.getElementById('admin-user-search-input');
+      if (uSearchInput) uSearchInput.placeholder = isRtl ? 'ابحث برقم ID أو اسم المستخدم @username...' : 'Search by Telegram ID or @username...';
+
+      // Admin Stuck Orders Subview
+      setText('admin-stuck-back-label', isRtl ? 'العودة للإعدادات' : 'Back to Settings');
+      setText('admin-stuck-page-title', isRtl ? 'الطلبات والعمليات المعلقة' : 'Pending & Stuck Operations');
+      setText('admin-stuck-box-title', isRtl ? 'مركز متابعة العمليات العالقة والمبالغ المعلقة' : 'Pending Operations & Stuck Balances Center');
+      setText('admin-stuck-box-desc', isRtl ? 'تظهر هنا الطلبات قيد التفعيل والمبالغ المعلقة التي تحتاج لمتابعة أو استرداد يدوي للعملاء.' : 'Shows unfulfilled orders and pending deposits requiring manual review or refund.');
+
+      // Admin One-Time Config Subview
+      setText('admin-config-back-label', isRtl ? 'العودة للإعدادات' : 'Back to Settings');
+      setText('admin-config-page-title', isRtl ? 'إعدادات التهيئة لمرة واحدة' : 'One-Time System Configuration');
+      setText('admin-config-banner-title', isRtl ? '⚙️ إعدادات ومفاتيح الربط الأساسية (One-Time Config)' : '⚙️ Core System & API Keys (One-Time Config)');
+      setText('admin-config-banner-desc', isRtl ? 'الحقول مقفلة ومحمية تلقائياً لمنع أي تعديل بالخطأ. اضغط على أيقونة القلم ✏️ بجانب أي إعداد لفتح التعديل عليه وحفظه.' : 'Fields are locked to prevent accidental changes. Tap the pencil ✏️ to unlock and update.');
+
+      // Admin Store Reserves & Liquidity in Wallet
+      setText('admin-reserves-title', isRtl ? 'الخزينة واحتياطي الموردين' : 'Store Reserves & Supplier Liquidity');
+      setText('admin-reserves-sub', isRtl ? 'لوحة السيولة والتحكم المالي للمتجر' : 'Financial Liquidity & Operations Dashboard');
+      setText('admin-reserves-sec-title', isRtl ? 'أرصدة محافظ الموردين والسيولة' : 'Supplier Wallets & Reserves');
+      setText('admin-reserves-s1-title', isRtl ? 'رصيد BatStore' : 'BatStore Balance');
+      setText('admin-reserves-s1-sub', isRtl ? 'تجهيز الحسابات' : 'Fulfillment Service');
+      setText('admin-reserves-sam-title', isRtl ? 'محفظة SAM (USD)' : 'SAM Wallet (USD)');
+      setText('admin-reserves-users-label', isRtl ? 'إجمالي أرصدة العملاء الحالية' : 'Total Customer Balances');
+      setText('admin-reserves-refresh-label', isRtl ? '🔄 تحديث الأرصدة' : '🔄 Refresh Reserves');
+      setText('admin-reserves-actions-title', isRtl ? 'إجراءات الإدارة السريعة' : 'Quick Admin Actions');
+      setText('admin-reserves-btn-user', isRtl ? 'تعديل أو إيداع رصيد لأي عميل' : 'Adjust or Deposit Balance for User');
+      setText('admin-reserves-btn-config', isRtl ? 'إعدادات المتجر وأسعار الصرف' : 'Store Settings & Exchange Rates');
+      setText('admin-reserves-btn-sqladmin', isRtl ? 'الانتقال إلى لوحة SQLAdmin الكاملة' : 'Open Full SQLAdmin Panel');
+      setText('admin-demands-title', isRtl ? '🔍 طلبات المنتجات غير المتوفرة (Search Demands)' : '🔍 Top Customer Search Demands (Unstocked)');
+
+      // Currency Picker Labels
+      setText('curr-chip-usd', isRtl ? 'الدولار (USD)' : 'US Dollar (USD)');
+
+      // Admin Modal Labels
+      setText('admin-bal-lbl-add', isRtl ? 'إضافة رصيد' : 'Add Balance');
+      setText('admin-bal-lbl-deduct', isRtl ? 'خصم رصيد' : 'Deduct Balance');
       renderCatalogsGrid();
       if (activeCatalog) {
         let catObj = categoriesList.find(c => (typeof c === 'object' ? c.name : c) === activeCatalog);
@@ -1504,9 +1750,7 @@ const tg = window.Telegram?.WebApp;
         if (pDescBox) pDescBox.innerHTML = formatRichDescription(rawDesc);
         updateDetailPagePrice();
       }
-      if (userData?.orders) {
-        renderUnifiedActivity();
-      }
+      renderUnifiedActivity();
       if (userData) {
         renderReferralsBreakdown(userData.referrals_breakdown || [], userData.referrals_total_earned || 0.0, userData.referrals_count || 0);
       }
@@ -1553,6 +1797,65 @@ const tg = window.Telegram?.WebApp;
       }
     }
 
+    // Deep Link & Launch Parameter Router (startapp / start_param)
+    let _startParamProcessed = false;
+    function handleStartParam() {
+      if (_startParamProcessed) return;
+      const rawParam = (
+        tg?.initDataUnsafe?.start_param ||
+        urlParams.get('startapp') ||
+        urlParams.get('start_param') ||
+        urlParams.get('tgWebAppStartParam') ||
+        ''
+      ).trim();
+      if (!rawParam) return;
+
+      if (rawParam.startsWith('prod_') || rawParam.startsWith('p_') || rawParam.startsWith('item_')) {
+        if (!allProducts || !allProducts.length) return;
+        _startParamProcessed = true;
+        const pid = Number(rawParam.replace(/^(prod_|p_|item_)/, ''));
+        if (pid && allProducts.some(p => Number(p.id) === pid)) {
+          setTimeout(() => openProductDetail(pid), 180);
+          return;
+        }
+      } else if (rawParam.startsWith('cat_') || rawParam.startsWith('c_')) {
+        _startParamProcessed = true;
+        const catName = decodeURIComponent(rawParam.replace(/^(cat_|c_)/, ''));
+        if (catName) {
+          setTimeout(() => openCollection(catName), 180);
+          return;
+        }
+      } else if (rawParam === 'wallet' || rawParam === 'recharge' || rawParam === 'topup') {
+        _startParamProcessed = true;
+        switchTab('wallet');
+        return;
+      } else if (rawParam === 'cart') {
+        _startParamProcessed = true;
+        setTimeout(() => openCartDrawer(), 180);
+        return;
+      } else if (rawParam.startsWith('voucher_') || rawParam.startsWith('v_')) {
+        _startParamProcessed = true;
+        const code = rawParam.replace(/^(voucher_|v_)/, '').toUpperCase();
+        switchTab('wallet');
+        setTimeout(() => {
+          const inp = document.getElementById('voucher-code-input');
+          if (inp) {
+            inp.value = code;
+            inp.scrollIntoView({ behavior: 'smooth' });
+          }
+        }, 200);
+        return;
+      } else if (rawParam.startsWith('ref_') || rawParam.startsWith('r_')) {
+        _startParamProcessed = true;
+        const refCode = rawParam.replace(/^(ref_|r_)/, '');
+        try {
+          localStorage.setItem('ghstore_referrer_code', refCode);
+          cloudStorageSet('ghstore_referrer_code', refCode);
+        } catch (e) {}
+        return;
+      }
+    }
+
     // SWR Cache Storage & Fetching
     function loadFromCache() {
       try {
@@ -1562,6 +1865,7 @@ const tg = window.Telegram?.WebApp;
           allProducts = parsed.products || [];
           categoriesList = parsed.categories || [];
           renderCatalogsGrid();
+          handleStartParam();
         }
         const userCache = localStorage.getItem('ghstore_user_cache');
         if (userCache) {
@@ -1569,6 +1873,32 @@ const tg = window.Telegram?.WebApp;
           updateBalancePills();
         }
       } catch (e) {}
+    }
+    function renderDynamicBanners(banners) {
+      if (!banners || !banners.length) return;
+      const b = banners[0];
+      const title = (currentAppLanguage === 'ar' && b.title_ar) ? b.title_ar : (b.title_en || b.title_ar);
+      const sub = (currentAppLanguage === 'ar' && b.subtitle_ar) ? b.subtitle_ar : (b.subtitle_en || b.subtitle_ar);
+      const badge = (currentAppLanguage === 'ar' && b.badge_ar) ? b.badge_ar : (b.badge_en || b.badge_ar);
+
+      const titleEl = document.getElementById('banner-title-text');
+      const subEl = document.getElementById('banner-sub-text');
+      const badgeEl = document.getElementById('banner-badge-text');
+
+      if (titleEl && title) titleEl.innerText = title;
+      if (subEl && sub) subEl.innerText = sub;
+      if (badgeEl && badge) badgeEl.innerText = badge;
+
+      const container = document.getElementById('hero-banner-container');
+      if (container) {
+        if (b.product_id) {
+          container.style.cursor = 'pointer';
+          container.onclick = () => openProductDetail(b.product_id);
+        } else if (b.target_category) {
+          container.style.cursor = 'pointer';
+          container.onclick = () => openCollection(b.target_category);
+        }
+      }
     }
 
     async function fetchCatalogData() {
@@ -1594,13 +1924,15 @@ const tg = window.Telegram?.WebApp;
         if (d.store_logo_url) applyStoreLogo(d.store_logo_url);
         renderCatalogsGrid();
         if (d.flash_sale) initFlashSaleTimer(d.flash_sale);
+        if (d.banners && d.banners.length) renderDynamicBanners(d.banners);
         initTrendingSearches();
         if (activeCatalog) {
           openCollection(activeCatalog);
         }
+        handleStartParam();
       } catch (e) {
         if (!allProducts.length) {
-          document.getElementById('catalogs-grid').innerHTML = '<div style="color: var(--hint); text-align: center; padding: 30px;">فشل تحميل التصنيفات.</div>';
+        document.getElementById('catalogs-grid').innerHTML = `<div style="color: var(--hint); text-align: center; padding: 30px;">${currentAppLanguage === 'ar' ? 'فشل تحميل التصنيفات.' : 'Failed to load categories.'}</div>`;
         }
       }
     }
@@ -1658,7 +1990,7 @@ const tg = window.Telegram?.WebApp;
         const sym = items[0]?.sym || '$';
 
         const adminEditBtn = (isAdmin && catId)
-          ? `<button class="admin-edit-badge-btn" onclick="openAdminCategoryEditor(${catId}, event)">تعديل</button>`
+          ? `<button class="admin-edit-badge-btn" onclick="openAdminCategoryEditor(${catId}, event)">${currentAppLanguage === 'ar' ? 'تعديل' : 'Edit'}</button>`
           : '';
 
         if (isGrid) {
@@ -1920,7 +2252,7 @@ const tg = window.Telegram?.WebApp;
       const num = Number(amountUsd);
       if (pref === 'SYP') {
         const syp = Math.round(num * getSypRate());
-        return `${syp.toLocaleString()} ل.س`;
+        return `${syp.toLocaleString()} ${currentAppLanguage === 'ar' ? 'ل.س' : 'SYP'}`;
       }
       return `$${num.toFixed(2)}`;
     }
@@ -1931,7 +2263,7 @@ const tg = window.Telegram?.WebApp;
       const num = Number(amountUsd);
       if (pref === 'SYP') {
         const syp = Math.round(num * getSypRate());
-        return `${syp.toLocaleString()} ل.س`;
+        return `${syp.toLocaleString()} ${currentAppLanguage === 'ar' ? 'ل.س' : 'SYP'}`;
       }
       return `$${num.toFixed(2)}`;
     }
@@ -2184,11 +2516,11 @@ const tg = window.Telegram?.WebApp;
           : (primary.custom_name || primary.name || primary.clean_name);
 
         const adminEditBtn = isAdmin
-          ? `<button class="admin-edit-badge-btn" onclick="openAdminProductEditor(${primary.id}, event)">تعديل</button>`
+          ? `<button class="admin-edit-badge-btn" onclick="openAdminProductEditor(${primary.id}, event)">${currentAppLanguage === 'ar' ? 'تعديل' : 'Edit'}</button>`
           : '';
 
         const priceDisplay = isMulti
-          ? `<span style="font-size: 10px; color: var(--hint); font-weight: 600;">${d.starts_from || 'يبدأ من'}</span> ${formatPrice(primary.price)}`
+          ? `<span style="font-size: 10px; color: var(--hint); font-weight: 600;">${d.starts_from || (currentAppLanguage === 'ar' ? 'يبدأ من' : 'From')}</span> ${formatPrice(primary.price)}`
           : formatPrice(primary.price);
 
         const clickAction = isMulti
@@ -2280,7 +2612,7 @@ const tg = window.Telegram?.WebApp;
 
           const displayTitle = p.custom_name || p.name;
           const adminEditBtn = isAdmin
-            ? `<button class="admin-edit-badge-btn" onclick="openAdminProductEditor(${p.id}, event)">تعديل</button>`
+            ? `<button class="admin-edit-badge-btn" onclick="openAdminProductEditor(${p.id}, event)">${currentAppLanguage === 'ar' ? 'تعديل' : 'Edit'}</button>`
             : '';
 
           return `
@@ -2497,6 +2829,10 @@ const tg = window.Telegram?.WebApp;
         tg.MainButton.offClick(triggerInAppRestockSubscribe);
         tg.MainButton.hide();
       }
+      if (tg?.SecondaryButton) {
+        tg.SecondaryButton.offClick(addToCartCurrentProduct);
+        tg.SecondaryButton.hide();
+      }
 
       if (tg?.enableVerticalSwipes) tg.enableVerticalSwipes();
       if (tg?.disableClosingConfirmation) tg.disableClosingConfirmation();
@@ -2685,6 +3021,20 @@ const tg = window.Telegram?.WebApp;
           tg.MainButton.onClick(executeProductBuy);
         }
       }
+      if (tg?.SecondaryButton) {
+        tg.SecondaryButton.offClick(addToCartCurrentProduct);
+        if (!isOutOfStock) {
+          tg.SecondaryButton.setParams({
+            text: currentAppLanguage === 'ar' ? 'إضافة إلى السلة 🛒' : 'Add to Cart 🛒',
+            position: 'left',
+            is_visible: true,
+            is_active: true
+          });
+          tg.SecondaryButton.onClick(addToCartCurrentProduct);
+        } else {
+          tg.SecondaryButton.hide();
+        }
+      }
     }
 
     function goToWalletFromMainBtn() {
@@ -2730,91 +3080,212 @@ const tg = window.Telegram?.WebApp;
       switchTab('wallet');
     }
 
-    // Branded Order Receipt Generator on HTML-Canvas
+    // ==============================================
+    // 🧾 OFFICIAL IN-APP RECEIPT MODAL & PDF ENGINE
+    // ==============================================
+    let currentReceiptModalType = 'order';
+    let currentReceiptModalId = null;
+
+    function closeReceiptPreviewModal() {
+      haptic('light');
+      const modal = document.getElementById('modal-receipt-preview');
+      if (modal) modal.style.display = 'none';
+      if (navStack.length > 0 && navStack[navStack.length - 1].name === 'receipt_modal') {
+        navStack.pop();
+        if (navStack.length === 0 && tg?.BackButton) tg.BackButton.hide();
+      }
+    }
+
+    function downloadCurrentModalPdf() {
+      if (currentReceiptModalType === 'recharge' && currentReceiptModalId) {
+        downloadRechargeReceipt(currentReceiptModalId);
+      } else if (currentReceiptModalId) {
+        downloadOrderReceipt(currentReceiptModalId);
+      }
+    }
+
+    function showOrderReceiptModal(orderId) {
+      haptic('pop');
+      currentReceiptModalType = 'order';
+      currentReceiptModalId = Number(orderId);
+      const order = (userData?.orders || []).find(o => Number(o.id) === currentReceiptModalId);
+      if (!order) return;
+
+      const isAr = (currentAppLanguage === 'ar');
+      const titleEl = document.getElementById('receipt-modal-title');
+      if (titleEl) titleEl.innerText = isAr ? 'إيصال الشراء الرسمي' : 'Official Purchase Receipt';
+      const btnDl = document.getElementById('btn-download-pdf-label');
+      if (btnDl) btnDl.innerText = isAr ? '⬇️ تنزيل ملف PDF' : '⬇️ Download PDF Receipt';
+      const btnCl = document.getElementById('btn-close-receipt-modal-label');
+      if (btnCl) btnCl.innerText = isAr ? 'إغلاق' : 'Close';
+
+      const body = document.getElementById('receipt-modal-body');
+      if (body) {
+        body.innerHTML = `
+          <div class="receipt-paper-box">
+            <div class="receipt-paper-header">
+              <div class="receipt-paper-brand">GH STORE</div>
+              <div class="receipt-paper-sub">${isAr ? 'إيصال شراء وضمان معتمد' : 'OFFICIAL PURCHASE INVOICE & RECEIPT'}</div>
+            </div>
+            <div class="receipt-row">
+              <span class="receipt-row-label">${isAr ? 'رقم الإيصال:' : 'Invoice #:'}</span>
+              <span class="receipt-row-val">GH-${order.id}</span>
+            </div>
+            <div class="receipt-row">
+              <span class="receipt-row-label">${isAr ? 'تاريخ الشراء:' : 'Issue Date:'}</span>
+              <span class="receipt-row-val">${order.created_at || 'Confirmed'}</span>
+            </div>
+            <div class="receipt-row">
+              <span class="receipt-row-label">${isAr ? 'الخدمة / المنتج:' : 'Product:'}</span>
+              <span class="receipt-row-val" style="font-family:inherit; font-size:12px;">${order.products || 'Digital License'}</span>
+            </div>
+            <div class="receipt-row">
+              <span class="receipt-row-label">${isAr ? 'حالة الطلب:' : 'Status:'}</span>
+              <span class="receipt-row-val" style="color:var(--success); font-family:inherit;">${order.status === 'completed' ? (isAr ? 'مكتمل ومفعل' : 'Completed') : order.status}</span>
+            </div>
+
+            <div class="receipt-amount-banner">
+              <div style="font-size:11px; color:var(--hint); margin-bottom:2px;">${isAr ? 'المبلغ الإجمالي المدفوع' : 'Total Amount Paid'}</div>
+              <div class="receipt-amount-num">$${Number(order.total || 0).toFixed(2)} USD</div>
+            </div>
+
+            <div style="margin: 10px 0;">
+              <div style="font-size:11px; color:var(--hint); font-weight:700; margin-bottom:6px;">${isAr ? 'البيانات والمفاتيح المسلمة:' : 'Delivered Credentials & Keys:'}</div>
+              ${renderStructuredCredentials(order.goods)}
+            </div>
+
+            <div class="receipt-audit-badge">
+              <span>🛡️</span>
+              <span>${isAr ? `ضمان كامل واستبدال فوري لمدة ${order.warranty_days || 30} يوم.` : `Full ${order.warranty_days || 30}-day replacement warranty included.`}</span>
+            </div>
+          </div>
+        `;
+      }
+
+      const modal = document.getElementById('modal-receipt-preview');
+      if (modal) modal.style.display = 'flex';
+      pushNav('receipt_modal', closeReceiptPreviewModal);
+    }
+
+    function showRechargeReceiptModal(recharge) {
+      haptic('pop');
+      currentReceiptModalType = 'recharge';
+      currentReceiptModalId = recharge.id || recharge.invoice_id;
+
+      const isAr = (currentAppLanguage === 'ar');
+      const titleEl = document.getElementById('receipt-modal-title');
+      if (titleEl) titleEl.innerText = isAr ? 'إيصال شحن الرصيد المعتمد' : 'Official Top-Up Receipt';
+      const btnDl = document.getElementById('btn-download-pdf-label');
+      if (btnDl) btnDl.innerText = isAr ? '⬇️ تنزيل إيصال PDF' : '⬇️ Download PDF Receipt';
+      const btnCl = document.getElementById('btn-close-receipt-modal-label');
+      if (btnCl) btnCl.innerText = isAr ? 'إغلاق' : 'Close';
+
+      const localPart = (recharge.currency === 'SYP' && recharge.invoice_amount)
+        ? `<div style="font-size:12px; color:var(--text); font-weight:700; margin-top:2px;">≈ ${Number(recharge.invoice_amount).toLocaleString()} ل.س</div>`
+        : '';
+
+      const isManual = Boolean(recharge.approved_by_admin);
+      const auditText = isManual
+        ? (isAr ? 'تمت مراجعة العملية والاعتماد والإيداع اليدوي من قبل إدارة المتجر.' : 'Transaction reviewed & manually approved by Store Administration.')
+        : (isAr ? 'تم التحقق والإيداع التلقائي الفوري عبر بوابة الدفع الإلكترونية.' : 'Verified & credited automatically via Payment Gateway confirmation.');
+
+      const body = document.getElementById('receipt-modal-body');
+      if (body) {
+        body.innerHTML = `
+          <div class="receipt-paper-box">
+            <div class="receipt-paper-header">
+              <div class="receipt-paper-brand">GH STORE</div>
+              <div class="receipt-paper-sub" style="color:var(--success);">${isAr ? 'إشعار شحن محفظة معتمد' : 'OFFICIAL WALLET DEPOSIT CONFIRMATION'}</div>
+            </div>
+            <div class="receipt-row">
+              <span class="receipt-row-label">${isAr ? 'رقم الإيصال:' : 'Receipt #:'}</span>
+              <span class="receipt-row-val">GH-TOPUP-${String(recharge.id || recharge.invoice_id).replace(/^SAM-|^STR-|^CRY-/, '')}</span>
+            </div>
+            <div class="receipt-row">
+              <span class="receipt-row-label">${isAr ? 'تاريخ العملية:' : 'Deposit Date:'}</span>
+              <span class="receipt-row-val">${recharge.created_at || 'Confirmed'}</span>
+            </div>
+            <div class="receipt-row">
+              <span class="receipt-row-label">${isAr ? 'وسيلة الشحن:' : 'Payment Method:'}</span>
+              <span class="receipt-row-val" style="font-family:inherit;">${recharge.methodTitle || recharge.provider || 'Wallet Top-up'}</span>
+            </div>
+            <div class="receipt-row">
+              <span class="receipt-row-label">${isAr ? 'مرجع الفاتورة:' : 'Reference ID:'}</span>
+              <span class="receipt-row-val" style="font-size:11px;">${recharge.invoice_id || 'Direct'}</span>
+            </div>
+
+            <div class="receipt-amount-banner" style="background:rgba(16,185,129,0.08); border-color:rgba(16,185,129,0.3);">
+              <div style="font-size:11px; color:var(--hint); margin-bottom:2px;">${isAr ? 'المبلغ المودع في الرصيد' : 'Amount Credited to Wallet'}</div>
+              <div class="receipt-amount-num recharge-green">+$${Number(recharge.amount || 0).toFixed(2)} USD</div>
+              ${localPart}
+            </div>
+
+            <div class="receipt-audit-badge">
+              <span>${isManual ? '🛡️' : '⚡'}</span>
+              <span>${auditText}</span>
+            </div>
+
+            <div style="margin-top:12px; font-size:11px; color:var(--hint); text-align:center;">
+              ${isAr ? 'الرصيد متاح حالياً وجاهز للاستخدام الفوري في جميع مشتريات المتجر.' : 'Funds are secured and ready for immediate use across all store services.'}
+            </div>
+          </div>
+        `;
+      }
+
+      const modal = document.getElementById('modal-receipt-preview');
+      if (modal) modal.style.display = 'flex';
+      pushNav('receipt_modal', closeReceiptPreviewModal);
+    }
+
     function downloadOrderReceipt(orderId) {
       haptic('medium');
-      const order = (userData?.orders || []).find(o => Number(o.id) === Number(orderId));
-      const canvas = document.createElement('canvas');
-      canvas.width = 720;
-      canvas.height = 960;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = "#090e1a";
-      ctx.fillRect(0, 0, 720, 960);
+      const isAr = (currentAppLanguage === 'ar');
+      const pdfUrl = `${window.location.origin}/api/orders/${orderId}/receipt.pdf?tg_id=${userId}`;
+      const fileName = `GHStore_Order_${orderId}.pdf`;
 
-      const grad = ctx.createLinearGradient(0, 0, 720, 200);
-      grad.addColorStop(0, "#0284c7");
-      grad.addColorStop(1, "#6366f1");
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, 720, 160);
-
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "bold 34px -apple-system, BlinkMacSystemFont, sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText("GH STORE", 360, 75);
-      ctx.font = "16px -apple-system, BlinkMacSystemFont, sans-serif";
-      ctx.fillText("OFFICIAL PURCHASE RECEIPT · إيصال شراء رسمي", 360, 115);
-
-      ctx.fillStyle = "#151d30";
-      ctx.strokeStyle = "rgba(255,255,255,0.12)";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.roundRect(40, 200, 640, 680, 20);
-      ctx.fill();
-      ctx.stroke();
-
-      ctx.textAlign = "left";
-      ctx.font = "bold 20px -apple-system, BlinkMacSystemFont, sans-serif";
-      ctx.fillStyle = "#38bdf8";
-      ctx.fillText(`ORDER #${orderId}`, 80, 260);
-      ctx.fillStyle = "#94a3b8";
-      ctx.font = "15px -apple-system, BlinkMacSystemFont, sans-serif";
-      const dateText = order?.created_at || new Date().toISOString().replace('T', ' ').substring(0, 19);
-      ctx.fillText(`Date: ${dateText} UTC`, 80, 295);
-      ctx.fillText(`Customer ID: ${userId || 'Verified'}`, 80, 325);
-
-      ctx.strokeStyle = "rgba(255,255,255,0.08)";
-      ctx.beginPath();
-      ctx.moveTo(80, 355);
-      ctx.lineTo(640, 355);
-      ctx.stroke();
-
-      const pName = order?.products || (selectedProduct?.clean_name || selectedProduct?.name || "Digital Product");
-      ctx.font = "bold 22px -apple-system, BlinkMacSystemFont, sans-serif";
-      ctx.fillStyle = "#f8fafc";
-      ctx.fillText(pName.substring(0, 40), 80, 410);
-      ctx.font = "16px -apple-system, BlinkMacSystemFont, sans-serif";
-      ctx.fillStyle = "#10b981";
-      ctx.fillText("✓ Instant Delivery / Key Activated", 80, 445);
-
-      ctx.fillStyle = "rgba(56, 189, 248, 0.08)";
-      ctx.fillRect(80, 490, 560, 100);
-      ctx.fillStyle = "#94a3b8";
-      ctx.font = "14px -apple-system, BlinkMacSystemFont, sans-serif";
-      ctx.fillText("TOTAL AMOUNT PAID", 105, 525);
-      ctx.fillStyle = "#38bdf8";
-      ctx.font = "bold 36px -apple-system, BlinkMacSystemFont, sans-serif";
-      const totalStr = order?.total ? `$${order.total.toFixed(2)}` : (document.getElementById('prod-total-price')?.innerText || "$0.00");
-      ctx.fillText(totalStr, 105, 565);
-
-      ctx.fillStyle = "rgba(16, 185, 129, 0.15)";
-      ctx.fillRect(80, 630, 560, 70);
-      ctx.fillStyle = "#10b981";
-      ctx.font = "bold 16px -apple-system, BlinkMacSystemFont, sans-serif";
-      ctx.fillText("🛡️ 30-DAY REPLACEMENT GUARANTEE INCLUDED", 105, 672);
-
-      ctx.textAlign = "center";
-      ctx.fillStyle = "#64748b";
-      ctx.font = "13px -apple-system, BlinkMacSystemFont, sans-serif";
-      ctx.fillText("Thank you for shopping with GH Store! bot.gh-store.me", 360, 840);
-
-      canvas.toBlob((blob) => {
-        if (!blob) return;
+      if (tg?.downloadFile) {
+        tg.downloadFile({ url: pdfUrl, file_name: fileName }, (accepted) => {
+          if (accepted) {
+            haptic('success');
+            showToast(isAr ? 'جاري تنزيل ملف PDF... 🧾' : 'Downloading PDF receipt... 🧾');
+          }
+        });
+      } else {
         const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `GHStore_Receipt_#${orderId}.png`;
+        a.href = pdfUrl;
+        a.download = fileName;
+        a.target = '_blank';
+        document.body.appendChild(a);
         a.click();
-        showToast(currentAppLanguage === 'ar' ? 'تم تنزيل إيصال الشراء بنجاح! 🧾' : 'Receipt downloaded successfully! 🧾');
-      });
+        document.body.removeChild(a);
+        showToast(isAr ? 'تم بدء تنزيل ملف PDF! 🧾' : 'PDF download started! 🧾');
+      }
+    }
+
+    function downloadRechargeReceipt(rechargeId) {
+      haptic('medium');
+      const isAr = (currentAppLanguage === 'ar');
+      const cleanId = String(rechargeId).replace(/^rec_/, '').replace(/#/g, '');
+      const pdfUrl = `${window.location.origin}/api/recharges/${cleanId}/receipt.pdf?tg_id=${userId}`;
+      const fileName = `GHStore_Recharge_${cleanId}.pdf`;
+
+      if (tg?.downloadFile) {
+        tg.downloadFile({ url: pdfUrl, file_name: fileName }, (accepted) => {
+          if (accepted) {
+            haptic('success');
+            showToast(isAr ? 'جاري تنزيل ملف PDF... 🧾' : 'Downloading PDF receipt... 🧾');
+          }
+        });
+      } else {
+        const a = document.createElement('a');
+        a.href = pdfUrl;
+        a.download = fileName;
+        a.target = '_blank';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        showToast(isAr ? 'تم بدء تنزيل ملف PDF! 🧾' : 'PDF download started! 🧾');
+      }
     }
 
     // In-App Support Ticket Modal Handlers
@@ -2952,19 +3423,49 @@ const tg = window.Telegram?.WebApp;
     function shareCurrentProduct() {
       if (!selectedProduct) return;
       haptic('light');
-      const botUser = userData?.bot_username || 'demo_aiogramshopbot';
-      const shareUrl = `https://t.me/${botUser}?start=prod_${selectedProduct.id}_ref_${userId}`;
+      const botUser = userData?.bot_username || 'GHStoreBot';
+      const shareUrl = `https://t.me/${botUser}/app?startapp=prod_${selectedProduct.id}_ref_${userId}`;
       const shareText = (currentAppLanguage === 'ar')
-        ? `تسوق ${selectedProduct.clean_name || selectedProduct.name} الآن بأفضل سعر على GH Store!`
-        : `Shop ${selectedProduct.clean_name || selectedProduct.name} now at best prices on GH Store!`;
+        ? `🔥 تسوق ${selectedProduct.clean_name || selectedProduct.name} الآن بأفضل سعر على GH Store!`
+        : `🔥 Shop ${selectedProduct.clean_name || selectedProduct.name} now at best prices on GH Store!`;
 
-      if (tg?.shareToStory) {
-        tg.shareToStory({
-          media_url: selectedProduct.image_url || 'https://bot.gh-store.me/static/banner.png',
-          text: shareText,
-          widget_link: { url: shareUrl, name: "GH Store" }
-        });
+      // Bot API 8.0 Native Prepared Inline Message Share (direct chat picker)
+      if (tg?.shareMessage && tg.isVersionAtLeast && tg.isVersionAtLeast('8.0') && userId) {
+        fetch('/api/share/prepare', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ product_id: selectedProduct.id, tg_id: userId })
+        })
+        .then(r => r.json())
+        .then(d => {
+          if (d.status === 'ok' && d.prepared_message_id) {
+            tg.shareMessage(d.prepared_message_id, (sent) => {
+              if (sent) {
+                haptic('success');
+                showToast(currentAppLanguage === 'ar' ? 'تمت المشاركة بنجاح! 🚀' : 'Shared successfully! 🚀');
+              }
+            });
+          } else {
+            fallbackStoryOrLinkShare(shareUrl, shareText);
+          }
+        })
+        .catch(() => fallbackStoryOrLinkShare(shareUrl, shareText));
         return;
+      }
+
+      fallbackStoryOrLinkShare(shareUrl, shareText);
+    }
+
+    function fallbackStoryOrLinkShare(shareUrl, shareText) {
+      if (tg?.shareToStory) {
+        try {
+          tg.shareToStory({
+            media_url: selectedProduct.image_url || 'https://bot.gh-store.me/static/banner.png',
+            text: shareText,
+            widget_link: { url: shareUrl, name: "GH Store" }
+          });
+          return;
+        } catch (e) {}
       }
 
       const tgShareLink = `https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(shareText)}`;
@@ -3251,16 +3752,20 @@ const tg = window.Telegram?.WebApp;
         updateRechargeButtonText();
 
         if (d.type === 'stars' && d.invoice_link) {
-          tg.openInvoice(d.invoice_link, (status) => {
-            if (status === 'paid') {
-              fireConfetti();
-              haptic('success');
-              showToast(currentAppLanguage === 'ar' ? `تم شحن +$${selectedRechargeAmount.toFixed(2)} بنجاح!` : `+$${selectedRechargeAmount.toFixed(2)} Credited!`);
-              loadUserData();
-            } else if (status === 'failed') {
-              showToast(currentAppLanguage === 'ar' ? 'فشلت عملية الدفع' : 'Payment failed');
-            }
-          });
+          if (tg?.openInvoice) {
+            tg.openInvoice(d.invoice_link, (status) => {
+              if (status === 'paid') {
+                fireConfetti();
+                haptic('success');
+                showToast(currentAppLanguage === 'ar' ? `تم شحن +$${selectedRechargeAmount.toFixed(2)} بنجاح!` : `+$${selectedRechargeAmount.toFixed(2)} Credited!`);
+                loadUserData();
+              } else if (status === 'failed') {
+                showToast(currentAppLanguage === 'ar' ? 'فشلت عملية الدفع' : 'Payment failed');
+              }
+            });
+          } else {
+            window.open(d.invoice_link, '_blank');
+          }
         } else if ((d.type === 'url' || d.type === 'crypto' || d.status === 'ok') && (d.url || d.address)) {
           openInvoicePage(d);
         } else {
@@ -3302,16 +3807,16 @@ const tg = window.Telegram?.WebApp;
 
       if (prov === 'shamcash') {
         if (iconBox) iconBox.innerHTML = '<img src="https://shamcash.sy/_next/static/media/logo.5be69def.svg" class="method-brand-img" alt="Sham Cash">';
-        if (nameEl) nameEl.innerText = (currentAppLanguage === 'ar') ? 'شام كاش (Sham Cash)' : 'Sham Cash';
+        if (nameEl) nameEl.innerText = (currentAppLanguage === 'ar') ? 'شام كاش' : 'Sham Cash';
         if (subEl) subEl.innerText = (currentAppLanguage === 'ar') ? 'دفع مباشر وفوري عبر بنك شام كاش' : 'Direct payment via Sham Cash';
       } else if (prov === 'syriatelcash') {
         if (iconBox) iconBox.innerHTML = '<img src="https://www.syriatel.sy/assets/img/logo.png" class="method-brand-img" alt="Syriatel Cash">';
-        if (nameEl) nameEl.innerText = (currentAppLanguage === 'ar') ? 'سيرياتيل كاش (Syriatel Cash)' : 'Syriatel Cash';
+        if (nameEl) nameEl.innerText = (currentAppLanguage === 'ar') ? 'سيرياتيل كاش' : 'Syriatel Cash';
         if (subEl) subEl.innerText = (currentAppLanguage === 'ar') ? 'دفع بالليرة السورية (SYP)' : 'Direct payment in SYP';
       } else {
         if (iconBox) iconBox.innerHTML = '<div style="width:34px; height:34px; border-radius:50%; background:#26a17b; display:flex; align-items:center; justify-content:center; color:white; font-weight:800; font-size:16px; flex-shrink:0;">₮</div>';
-        if (nameEl) nameEl.innerText = 'USDT (BEP-20 / BNB Chain)';
-        if (subEl) subEl.innerText = (currentAppLanguage === 'ar') ? 'شبكة Binance Smart Chain (BEP20)' : 'Binance Smart Chain (BEP-20)';
+        if (nameEl) nameEl.innerText = 'USDT (BEP-20)';
+        if (subEl) subEl.innerText = (currentAppLanguage === 'ar') ? 'شبكة بينانس سمارت تشين (BEP-20)' : 'Binance Smart Chain (BEP-20)';
       }
 
       // 4. Populate Amounts
@@ -3322,7 +3827,7 @@ const tg = window.Telegram?.WebApp;
 
       if (invoiceData.invoice_amount && invoiceData.currency === 'SYP') {
         if (localEl) {
-          localEl.innerText = `≈ ${Number(invoiceData.invoice_amount).toLocaleString()} ل.س`;
+          localEl.innerText = `≈ ${Number(invoiceData.invoice_amount).toLocaleString()} ${currentAppLanguage === 'ar' ? 'ل.س' : 'SYP'}`;
           localEl.style.display = 'block';
         }
       } else {
@@ -3468,6 +3973,23 @@ const tg = window.Telegram?.WebApp;
       }
     }
 
+    function scanVoucherQr() {
+      haptic('light');
+      if (tg?.showScanQrPopup) {
+        tg.showScanQrPopup({ text: currentAppLanguage === 'ar' ? 'امسح رمز الاستجابة السريعة (QR) لكوبون الهدية' : 'Scan digital voucher QR code' }, (qrText) => {
+          if (!qrText) return false;
+          const cleaned = qrText.trim().toUpperCase();
+          const inp = document.getElementById('voucher-code-input');
+          if (inp) inp.value = cleaned;
+          haptic('success');
+          showToast(currentAppLanguage === 'ar' ? 'تم مسح الكود بنجاح!' : 'QR Code scanned!');
+          return true;
+        });
+      } else {
+        showToast(currentAppLanguage === 'ar' ? 'مسح QR غير مدعوم في هذا الإصدار من تيليجرام' : 'QR Scanner not supported on this Telegram client');
+      }
+    }
+
     // ==============================================
     // 👑 ADMIN CONTROL CENTER MODALS & API FUNCTIONS
     // ==============================================
@@ -3572,8 +4094,9 @@ const tg = window.Telegram?.WebApp;
     async function executeAdminUserSearch() {
       const q = (document.getElementById('admin-user-search-input')?.value || '').trim();
       const container = document.getElementById('admin-users-results-list');
+      const isAr = (currentAppLanguage === 'ar');
       if (container && !cachedAdminUsersList.length) {
-        container.innerHTML = '<div style="text-align:center; padding:30px; color:var(--hint);">جاري البحث في قاعدة البيانات...</div>';
+        container.innerHTML = `<div style="text-align:center; padding:30px; color:var(--hint);">${isAr ? 'جاري البحث في قاعدة البيانات...' : 'Searching database...'}</div>`;
       }
       try {
         const res = await fetch(`/api/admin/users?tg_id=${userId}&query=${encodeURIComponent(q)}`);
@@ -3581,13 +4104,14 @@ const tg = window.Telegram?.WebApp;
         cachedAdminUsersList = d.users || [];
         renderAdminUsersCards();
       } catch (e) {
-        if (container) container.innerHTML = '<div style="text-align:center; padding:20px; color:var(--danger);">خطأ في جلب المستخدمين.</div>';
+        if (container) container.innerHTML = `<div style="text-align:center; padding:20px; color:var(--danger);">${isAr ? 'خطأ في جلب المستخدمين.' : 'Error fetching users.'}</div>`;
       }
     }
 
     function renderAdminUsersCards() {
       const container = document.getElementById('admin-users-results-list');
       if (!container) return;
+      const isAr = (currentAppLanguage === 'ar');
 
       let filtered = [...cachedAdminUsersList];
       if (activeAdminUserFilter === 'balance') {
@@ -3599,14 +4123,14 @@ const tg = window.Telegram?.WebApp;
       }
 
       if (!filtered.length) {
-        container.innerHTML = '<div style="text-align:center; padding:30px; color:var(--hint);">لا يوجد مستخدمين مطابقين لهذا الفلتر.</div>';
+        container.innerHTML = `<div style="text-align:center; padding:30px; color:var(--hint);">${isAr ? 'لا يوجد مستخدمين مطابقين لهذا الفلتر.' : 'No users match this filter.'}</div>`;
         return;
       }
 
       container.innerHTML = filtered.map(u => {
         const initial = (u.username || 'U')[0].toUpperCase();
         const vipLabel = (u.custom_discount_pct !== null && u.custom_discount_pct !== undefined)
-          ? `${u.custom_discount_pct}% مخصص`
+          ? `${u.custom_discount_pct}% ${isAr ? 'مخصص' : 'Custom'}`
           : (u.vip_discount > 0 ? `${u.vip_tier} (${u.vip_discount}%)` : 'Standard');
 
         return `
@@ -3623,7 +4147,7 @@ const tg = window.Telegram?.WebApp;
                   </div>
                   <div style="display: flex; align-items: center; gap: 6px; margin-top: 1px; flex-wrap: wrap;">
                     <span style="font-size: 11px; color: var(--hint); font-family: monospace;">ID: ${u.telegram_id}</span>
-                    <button class="btn-copy-mini" style="font-size: 9px; padding: 1px 6px;" onclick="copyCredText('${u.telegram_id}')">نسخ ID</button>
+                    <button class="btn-copy-mini" style="font-size: 9px; padding: 1px 6px;" onclick="copyCredText('${u.telegram_id}')">${isAr ? 'نسخ ID' : 'Copy ID'}</button>
                     ${u.registered_at ? `<span style="font-size: 10px; color: var(--hint);">· ${u.registered_at}</span>` : ''}
                   </div>
                 </div>
@@ -3632,7 +4156,7 @@ const tg = window.Telegram?.WebApp;
               <!-- ONLY SHOW BADGE IF BANNED (NO ACTIVE BADGE SPAM) -->
               ${u.is_banned ? `
                 <span class="pill-badge" style="background: rgba(239, 68, 68, 0.2); color: #ef4444; font-size: 11px; flex-shrink: 0;">
-                  🚫 محظور
+                  🚫 ${isAr ? 'محظور' : 'Banned'}
                 </span>
               ` : ''}
             </div>
@@ -3640,19 +4164,19 @@ const tg = window.Telegram?.WebApp;
             <!-- Metrics Row (Balance, Spent, VIP Tier) -->
             <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px; margin-bottom: 12px; text-align: center;">
               <div>
-                <div style="font-size: 10px; color: var(--hint);">الرصيد المتاح</div>
+                <div style="font-size: 10px; color: var(--hint);">${isAr ? 'الرصيد المتاح' : 'Available Balance'}</div>
                 <div style="font-size: 14px; font-weight: 800; color: ${u.balance > 0 ? 'var(--accent)' : 'var(--text)'};">
                   $${u.balance.toFixed(2)}
                 </div>
               </div>
               <div>
-                <div style="font-size: 10px; color: var(--hint);">المشتريات</div>
+                <div style="font-size: 10px; color: var(--hint);">${isAr ? 'المشتريات' : 'Total Purchases'}</div>
                 <div style="font-size: 14px; font-weight: 800; color: var(--text);">
                   $${u.total_spent.toFixed(2)}
                 </div>
               </div>
               <div>
-                <div style="font-size: 10px; color: var(--hint);">الرتبة / الخصم</div>
+                <div style="font-size: 10px; color: var(--hint);">${isAr ? 'الرتبة / الخصم' : 'VIP Tier / Discount'}</div>
                 <div style="font-size: 12px; font-weight: 700; color: ${u.vip_discount > 0 ? 'var(--warning)' : 'var(--hint)'}; margin-top: 2px;">
                   ${vipLabel}
                 </div>
@@ -3662,19 +4186,19 @@ const tg = window.Telegram?.WebApp;
             <!-- Quick Options & Settings UX Grid (High Usability) -->
             <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-bottom: 6px;">
               <button class="btn-action-primary" onclick="openAdminBalanceModal(${u.telegram_id}, '${u.username || ''}', ${u.balance})" style="height: 38px; font-size: 12px;">
-                💰 تعديل الرصيد
+                💰 ${isAr ? 'تعديل الرصيد' : 'Adjust Balance'}
               </button>
               <button class="btn-action-secondary" onclick="openAdminDiscountModal(${u.telegram_id}, '${u.username || ''}', ${u.custom_discount_pct !== null && u.custom_discount_pct !== undefined ? u.custom_discount_pct : u.vip_discount})" style="height: 38px; font-size: 12px;">
-                🏷️ تخصيص خصم %
+                🏷️ ${isAr ? 'تخصيص خصم %' : 'Set Discount %'}
               </button>
             </div>
 
             <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;">
               <button class="btn-action-secondary" onclick="openAdminMessageModal(${u.telegram_id}, '${u.username || ''}')" style="height: 36px; font-size: 11px;">
-                💬 مراسلة المستخدم
+                💬 ${isAr ? 'مراسلة المستخدم' : 'Message User'}
               </button>
               <button class="btn-action-secondary" style="height: 36px; font-size: 11px; color: ${u.is_banned ? '#10b981' : '#ef4444'};" onclick="submitToggleBan(${u.telegram_id})">
-                ${u.is_banned ? '✅ فك الحظر' : '🚫 حظر الحساب'}
+                ${u.is_banned ? (isAr ? '✅ فك الحظر' : '✅ Unban') : (isAr ? '🚫 حظر الحساب' : '🚫 Ban Account')}
               </button>
             </div>
           </div>
@@ -3765,7 +4289,7 @@ const tg = window.Telegram?.WebApp;
       document.getElementById('admin-bal-btn-deduct').classList.toggle('active', act === 'deduct');
       const submitBtn = document.getElementById('btn-submit-adjust-balance');
       if (submitBtn) {
-        submitBtn.innerText = act === 'add' ? 'تأكيد إضافة الرصيد (+)' : 'تأكيد خصم الرصيد (-)';
+        submitBtn.innerText = act === 'add' ? (currentAppLanguage === 'ar' ? 'تأكيد إضافة الرصيد (+)' : 'Confirm Add Balance (+)') : (currentAppLanguage === 'ar' ? 'تأكيد خصم الرصيد (-)' : 'Confirm Deduct Balance (-)');
       }
     }
 
@@ -3801,16 +4325,46 @@ const tg = window.Telegram?.WebApp;
 
         if (d.status === 'ok') {
           haptic('success');
-          showToast(`تم تعديل الرصيد بنجاح! الرصيد الجديد: $${d.new_balance.toFixed(2)}`);
+          lastBalanceAuditId = d.audit_id;
+          const msg = (currentAppLanguage === 'ar')
+            ? `تم تعديل الرصيد بنجاح! الرصيد الجديد: $${d.new_balance.toFixed(2)}`
+            : `Balance updated successfully! New balance: $${d.new_balance.toFixed(2)}`;
+          showToast(msg);
           closeAdminBalanceModal();
           executeAdminUserSearch();
           loadUserData();
         } else {
-          showToast(d.error || 'فشل تعديل الرصيد');
+          showToast(d.error || (currentAppLanguage === 'ar' ? 'فشل تعديل الرصيد' : 'Failed to update balance'));
         }
       } catch (e) {
         if (btn) btn.disabled = false;
-        showToast('خطأ في الاتصال بالخادم');
+        showToast(currentAppLanguage === 'ar' ? 'خطأ في الاتصال بالخادم' : 'Server connection error');
+      }
+    }
+
+    let lastBalanceAuditId = null;
+    async function adminRollbackLastBalanceAction() {
+      if (!lastBalanceAuditId || !userId) return;
+      haptic('medium');
+      showToast(currentAppLanguage === 'ar' ? 'جاري التراجع عن العملية...' : 'Rolling back adjustment...');
+      try {
+        const res = await fetch('/api/admin/audit/rollback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_tg_id: userId, audit_id: lastBalanceAuditId })
+        });
+        const d = await res.json();
+        if (d.status === 'ok') {
+          haptic('success');
+          showToast(currentAppLanguage === 'ar' ? `✅ تم التراجع عن العملية! الرصيد: $${d.new_balance.toFixed(2)}` : `✅ Rolled back! Balance: $${d.new_balance.toFixed(2)}`);
+          lastBalanceAuditId = null;
+          executeAdminUserSearch();
+          loadUserData();
+        } else {
+          showToast(d.error || (currentAppLanguage === 'ar' ? 'فشل التراجع' : 'Rollback failed'));
+        }
+      } catch (e) {
+        showToast(currentAppLanguage === 'ar' ? 'خطأ في الاتصال' : 'Connection error');
       }
     }
 
@@ -4030,13 +4584,13 @@ const tg = window.Telegram?.WebApp;
     }
 
     async function loadAdminCoupons() {
-      const container = document.getElementById('admin-coupons-list');
-      container.innerHTML = '<div style="text-align:center; padding:10px; color:var(--hint);">تحميل الكوبونات...</div>';
+      const isAr = (currentAppLanguage === 'ar');
+      container.innerHTML = `<div style="text-align:center; padding:10px; color:var(--hint);">${isAr ? 'تحميل الكوبونات...' : 'Loading coupons...'}</div>`;
       try {
         const res = await fetch(`/api/admin/coupons?tg_id=${userId}`);
         const d = await res.json();
         if (!d.coupons || !d.coupons.length) {
-          container.innerHTML = '<div style="text-align:center; padding:10px; color:var(--hint);">لا توجد كوبونات مسجلة.</div>';
+          container.innerHTML = `<div style="text-align:center; padding:10px; color:var(--hint);">${isAr ? 'لا توجد كوبونات مسجلة.' : 'No registered coupons.'}</div>`;
           return;
         }
         container.innerHTML = d.coupons.map(c => `
@@ -4044,16 +4598,16 @@ const tg = window.Telegram?.WebApp;
             <div>
               <strong style="font-family:monospace; font-size:13px; color:var(--accent);">${c.code}</strong>
               <div style="font-size:11px; color:var(--hint);">
-                ${c.type === 'percent' ? c.value + '%' : '$' + c.value} · الاستخدام: ${c.usage_count}/${c.usage_limit || '∞'}
+                ${c.type === 'percent' ? c.value + '%' : '$' + c.value} · ${isAr ? 'الاستخدام:' : 'Usage:'} ${c.usage_count}/${c.usage_limit || '∞'}
               </div>
             </div>
             <button class="admin-edit-badge-btn" style="color:${c.is_active ? '#ef4444' : '#10b981'};" onclick="submitToggleCoupon(${c.id})">
-              ${c.is_active ? 'تعطيل' : 'تفعيل'}
+              ${c.is_active ? (isAr ? 'تعطيل' : 'Disable') : (isAr ? 'تفعيل' : 'Enable')}
             </button>
           </div>
         `).join('');
       } catch (e) {
-        container.innerHTML = '<div style="text-align:center; color:var(--danger);">خطأ في جلب الكوبونات.</div>';
+        container.innerHTML = `<div style="text-align:center; color:var(--danger);">${isAr ? 'خطأ في جلب الكوبونات.' : 'Error fetching coupons.'}</div>`;
       }
     }
 
@@ -4516,7 +5070,8 @@ const tg = window.Telegram?.WebApp;
 
     async function loadAdminStuckOrders() {
       const container = document.getElementById('admin-stuck-orders-list');
-      if (container) container.innerHTML = '<div style="text-align:center; padding:30px; color:var(--hint);">جاري فحص العمليات والطلبات العالقة...</div>';
+      const isAr = (currentAppLanguage === 'ar');
+      if (container) container.innerHTML = `<div style="text-align:center; padding:30px; color:var(--hint);">${isAr ? 'جاري فحص العمليات والطلبات العالقة...' : 'Checking pending & stuck operations...'}</div>`;
       try {
         const res = await fetch(`/api/admin/stuck-orders?tg_id=${userId}`);
         const d = await res.json();
@@ -4528,7 +5083,7 @@ const tg = window.Telegram?.WebApp;
         }
 
         if (!orders.length) {
-          if (container) container.innerHTML = '<div style="text-align:center; padding:40px 16px; color:var(--success); font-weight:700;">✅ ممتاز! لا توجد أي طلبات أو مبالغ معلقة حالياً.</div>';
+          if (container) container.innerHTML = `<div style="text-align:center; padding:40px 16px; color:var(--success); font-weight:700;">${isAr ? '✅ ممتاز! لا توجد أي طلبات أو مبالغ معلقة حالياً.' : '✅ Great! No stuck orders or pending funds.'}</div>`;
           return;
         }
 
@@ -4537,36 +5092,37 @@ const tg = window.Telegram?.WebApp;
             <div class="inset-card" style="margin-bottom: 12px; padding: 14px; border-color: rgba(245,158,11,0.4);">
               <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
                 <div>
-                  <strong style="font-size: 14px; color: var(--text);">طلب #${o.id} · ${o.username ? '@' + o.username : 'User ' + o.telegram_id}</strong>
+                  <strong style="font-size: 14px; color: var(--text);">${isAr ? 'طلب' : 'Order'} #${o.id} · ${o.username ? '@' + o.username : 'User ' + o.telegram_id}</strong>
                   <div style="font-size: 11px; color: var(--hint); font-family: monospace; margin-top: 2px;">ID: ${o.telegram_id} · ${o.created_at}</div>
                 </div>
                 <span class="pill-badge" style="background: rgba(245,158,11,0.2); color: #f59e0b; font-size: 10px;">
-                  ⏳ معلق / قيد التفعيل
+                  ${isAr ? '⏳ معلق / قيد التفعيل' : '⏳ Pending / Processing'}
                 </span>
               </div>
 
               <div style="font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 6px;">${o.products}</div>
-              <div style="font-size: 14px; color: var(--accent); font-weight: 800; margin-bottom: 12px;">المبلغ المعلق: $${o.total_sell.toFixed(2)} USD</div>
+              <div style="font-size: 14px; color: var(--accent); font-weight: 800; margin-bottom: 12px;">${isAr ? 'المبلغ المعلق:' : 'Pending Amount:'} $${o.total_sell.toFixed(2)} USD</div>
 
               <div style="display: flex; gap: 8px;">
                 <button class="btn-action-primary" onclick="executeAdminRefundStuck(${o.id}, ${o.total_sell})" style="flex: 2; height: 38px; font-size: 12px; background: linear-gradient(135deg, #ef4444, #dc2626);">
-                  💸 استرداد الرصيد للعميل ($${o.total_sell.toFixed(2)})
+                  ${isAr ? `💸 استرداد الرصيد للعميل ($${o.total_sell.toFixed(2)})` : `💸 Refund Customer ($${o.total_sell.toFixed(2)})`}
                 </button>
                 <button class="btn-action-secondary" onclick="openAdminMessageModal(${o.telegram_id}, '${o.username || ''}')" style="flex: 1; height: 38px; font-size: 12px;">
-                  💬 مراسلة
+                  ${isAr ? '💬 مراسلة' : '💬 Message'}
                 </button>
               </div>
             </div>
           `).join('');
         }
       } catch (e) {
-        if (container) container.innerHTML = '<div style="text-align:center; padding:20px; color:var(--danger);">خطأ في جلب العمليات المعلقة.</div>';
+        if (container) container.innerHTML = `<div style="text-align:center; padding:20px; color:var(--danger);">${isAr ? 'خطأ في جلب العمليات المعلقة.' : 'Error fetching pending operations.'}</div>`;
       }
     }
 
     async function executeAdminRefundStuck(orderId, amount) {
       haptic('medium');
-      const msg = `هل أنت متأكد من رغبتك في استرداد مبلغ $${amount.toFixed(2)} لحساب العميل فورياً؟`;
+      const isAr = (currentAppLanguage === 'ar');
+      const msg = isAr ? `هل أنت متأكد من رغبتك في استرداد مبلغ $${amount.toFixed(2)} لحساب العميل فورياً؟` : `Are you sure you want to refund $${amount.toFixed(2)} to customer immediately?`;
       const run = async () => {
         try {
           const res = await fetch('/api/admin/stuck-orders/refund', {
@@ -4802,6 +5358,7 @@ const tg = window.Telegram?.WebApp;
             if (d.admin_stats) {
               renderAdminStatsLabels();
             }
+            loadAdminSearchDemands();
               const sypInput = document.getElementById('admin-syp-rate-input');
               if (sypInput && !sypInput.value && d.admin_stats?.syp_usd_rate) sypInput.value = d.admin_stats.syp_usd_rate;
 
@@ -4892,18 +5449,26 @@ const tg = window.Telegram?.WebApp;
         }
 
         // Profile Display Name & Prominent @username
-        const displayName = tgUser?.first_name ? `${tgUser.first_name} ${tgUser.last_name || ''}`.trim() : (d.username ? '@' + d.username : (currentAppLanguage === 'ar' ? 'العميل' : 'Customer'));
-        document.getElementById('user-name-title').innerText = displayName;
+        const defaultRoleTitle = d.is_admin ? ((currentAppLanguage === 'ar') ? 'المسؤول' : 'Admin') : ((currentAppLanguage === 'ar') ? 'العميل' : 'Customer');
+        const tgFullName = tgUser?.first_name ? `${tgUser.first_name} ${tgUser.last_name || ''}`.trim() : '';
+        const effectiveName = tgFullName || (d.first_name ? `${d.first_name} ${d.last_name || ''}`.trim() : '');
+        const displayName = effectiveName || (d.username ? '@' + d.username.replace(/^@/, '') : (d.telegram_id ? `ID: ${d.telegram_id}` : defaultRoleTitle));
+        const nameEl = document.getElementById('user-name-title');
+        if (nameEl) nameEl.innerText = displayName;
 
         const handleBox = document.getElementById('user-handle-title');
-        if (d.username) {
-          handleBox.innerText = `@${d.username}`;
-          handleBox.style.display = 'block';
-        } else {
-          handleBox.style.display = 'none';
+        const effectiveHandle = tgUser?.username || d.username;
+        if (handleBox) {
+          if (effectiveHandle) {
+            handleBox.innerText = `@${effectiveHandle.replace(/^@/, '')}`;
+            handleBox.style.display = 'block';
+          } else {
+            handleBox.style.display = 'none';
+          }
         }
 
-        document.getElementById('user-tg-num').innerText = 'ID: ' + d.telegram_id;
+        const idNumEl = document.getElementById('user-tg-num');
+        if (idNumEl) idNumEl.innerText = 'ID: ' + (d.telegram_id || userId);
 
         // Profile VIP Badge: ONLY display if a real discount is applied (>0% and not Standard)
         const vipBox = document.getElementById('user-vip-pill-box');
@@ -5484,7 +6049,7 @@ const tg = window.Telegram?.WebApp;
     function filterActivityView(filterKey) {
       haptic('pop');
       activeActivityFilter = filterKey;
-      ['all', 'attention', 'orders', 'recharges'].forEach(f => {
+      ['all', 'attention', 'orders', 'recharges', 'vault'].forEach(f => {
         const btn = document.getElementById('act-filter-' + f);
         if (btn) btn.classList.toggle('active', f === filterKey);
       });
@@ -5545,6 +6110,28 @@ const tg = window.Telegram?.WebApp;
         console.error("Live radar error:", e);
       }
     }
+    async function loadAdminSearchDemands() {
+      if (!userData?.is_admin) return;
+      const box = document.getElementById('admin-demands-list');
+      if (!box) return;
+      try {
+        const res = await fetch(`/api/admin/search/demands?tg_id=${userId}`);
+        const d = await res.json();
+        const demands = d.demands || [];
+        if (!demands.length) {
+          box.innerHTML = `<span style="font-size: 11px; color: var(--hint);">${currentAppLanguage === 'ar' ? 'لا توجد طلبات بحث مسجلة حالياً.' : 'No zero-result searches recorded yet.'}</span>`;
+          return;
+        }
+        box.innerHTML = demands.map(it => `
+          <span class="pill-badge" style="background: var(--card); border: 1px solid var(--border); font-size: 11px; padding: 4px 8px;">
+            ${it.query} <strong style="color: var(--accent); margin-inline-start: 4px;">(${it.searches})</strong>
+          </span>
+        `).join('');
+      } catch (e) {
+        box.innerHTML = `<span style="font-size: 11px; color: var(--danger);">${currentAppLanguage === 'ar' ? 'فشل تحميل الطلبات' : 'Failed to load demands'}</span>`;
+      }
+    }
+
 
     function renderAdminLiveRadar() {
       const container = document.getElementById('orders-container-box');
@@ -5559,12 +6146,13 @@ const tg = window.Telegram?.WebApp;
         list = list.filter(a => a.type === 'order');
       }
 
+      const isAr = (currentAppLanguage === 'ar');
       if (!list.length) {
         container.innerHTML = `
           <div style="text-align: center; padding: 36px 16px; color: var(--hint); background: var(--input-bg); border-radius: 14px; border: 1px solid var(--border);">
             <div style="font-size: 28px; margin-bottom: 8px;">📡</div>
-            <div style="font-size: 14px; font-weight: 700; color: var(--text);">لا توجد عمليات في هذا التصنيف حالياً</div>
-            <div style="font-size: 12px; margin-top: 4px;">ستظهر أي عمليات شراء أو شحن جديدة فور إجرائها في المتجر.</div>
+            <div style="font-size: 14px; font-weight: 700; color: var(--text);">${isAr ? 'لا توجد عمليات في هذا التصنيف حالياً' : 'No operations in this category yet'}</div>
+            <div style="font-size: 12px; margin-top: 4px;">${isAr ? 'ستظهر أي عمليات شراء أو شحن جديدة فور إجرائها في المتجر.' : 'New customer orders or top-ups will appear here in real time.'}</div>
           </div>
         `;
         return;
@@ -5577,9 +6165,9 @@ const tg = window.Telegram?.WebApp;
 
         const statusColor = isCompleted ? '#10b981' : (isPending ? '#f59e0b' : '#ef4444');
         const statusBg = isCompleted ? 'rgba(16,185,129,0.18)' : (isPending ? 'rgba(245,158,11,0.18)' : 'rgba(239,68,68,0.18)');
-        const statusText = isCompleted ? 'مكتمل ✅' : (isPending ? 'بانتظار التحويل / التفعيل ⏳' : 'فشل / منتهي ❌');
+        const statusText = isCompleted ? (isAr ? 'مكتمل ✅' : 'Completed ✅') : (isPending ? (isAr ? 'بانتظار التحويل / التفعيل ⏳' : 'Pending Activation ⏳') : (isAr ? 'فشل / منتهي ❌' : 'Failed / Expired ❌'));
 
-        const userTag = item.username ? `@${item.username}` : `مستخدم`;
+        const userTag = item.username ? `@${item.username}` : (isAr ? `مستخدم` : `User`);
         const tgIdStr = item.telegram_id || '';
 
         return `
@@ -5603,11 +6191,11 @@ const tg = window.Telegram?.WebApp;
             </div>
 
             <div style="display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; font-size: 13px;">
-              <span style="color: var(--hint); font-size: 11px;">${isOrder ? 'قيمة الطلب' : 'المبلغ المدفوع'}</span>
+              <span style="color: var(--hint); font-size: 11px;">${isOrder ? (isAr ? 'قيمة الطلب' : 'Order Total') : (isAr ? 'المبلغ المدفوع' : 'Amount Paid')}</span>
               <div style="text-align: right;">
                 <strong style="font-size: 15px; color: var(--text);">$${(item.amount_usd || item.total_usd || 0.0).toFixed(2)} USD</strong>
                 ${item.local_amount && item.currency !== 'USD' ? `
-                  <div style="font-size: 11px; color: var(--warning); font-weight: 700;">≈ ${Math.round(item.local_amount).toLocaleString()} ${item.currency === 'XTR' ? '⭐' : 'ل.س'}</div>
+                  <div style="font-size: 11px; color: var(--warning); font-weight: 700;">≈ ${Math.round(item.local_amount).toLocaleString()} ${item.currency === 'XTR' ? '⭐' : (isAr ? 'ل.س' : 'SYP')}</div>
                 ` : ''}
               </div>
             </div>
@@ -5615,7 +6203,7 @@ const tg = window.Telegram?.WebApp;
             ${!isOrder && item.needs_attention ? `
               <div style="margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 10px;">
                 <button class="btn-action-primary" onclick="adminApproveRechargeAction('${item.id}', ${item.telegram_id}, ${item.amount_usd})" style="width: 100%; height: 42px; background: linear-gradient(135deg, #10b981, #059669); font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center; gap: 6px;">
-                  <span>✅ اعتماد وإيداع الرصيد للعميل (+$${(item.amount_usd || 0).toFixed(2)})</span>
+                  <span>${isAr ? `✅ اعتماد وإيداع الرصيد للعميل (+$${(item.amount_usd || 0).toFixed(2)})` : `✅ Approve & Credit Balance (+$${(item.amount_usd || 0).toFixed(2)})`}</span>
                 </button>
               </div>
             ` : ''}
@@ -5623,10 +6211,10 @@ const tg = window.Telegram?.WebApp;
             ${isOrder && item.needs_attention ? `
               <div style="margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 10px; display: flex; gap: 8px;">
                 <button class="btn-action-warning" onclick="executeAdminRefundStuck(${item.raw_id}, ${item.total_usd})" style="flex: 1; height: 38px; font-size: 12px;">
-                  <span>↩️ استرداد الرصيد</span>
+                  <span>${isAr ? '↩️ استرداد الرصيد' : '↩️ Refund Balance'}</span>
                 </button>
                 <button class="btn-action-secondary" onclick="openAdminOrdersModal()" style="flex: 1; height: 38px; font-size: 12px;">
-                  <span>🔍 فحص في المورد</span>
+                  <span>${isAr ? '🔍 فحص في المورد' : '🔍 Inspect Supplier'}</span>
                 </button>
               </div>
             ` : ''}
@@ -5637,9 +6225,10 @@ const tg = window.Telegram?.WebApp;
 
     async function adminApproveRechargeAction(rechargeId, targetTgId, amountUsd) {
       haptic('medium');
-      const msg = `هل أنت متأكد من اعتماد وإيداع الرصيد (+$${Number(amountUsd || 0).toFixed(2)} USD) للعميل (${targetTgId})؟`;
+      const isAr = (currentAppLanguage === 'ar');
+      const msg = isAr ? `هل أنت متأكد من اعتماد وإيداع الرصيد (+$${Number(amountUsd || 0).toFixed(2)} USD) للعميل (${targetTgId})؟` : `Are you sure you want to approve and credit (+$${Number(amountUsd || 0).toFixed(2)} USD) to customer (${targetTgId})?`;
       const run = async () => {
-        showToast('جاري اعتماد الشحن وإيداع الرصيد...');
+        showToast(isAr ? 'جاري اعتماد الشحن وإيداع الرصيد...' : 'Approving and crediting deposit...');
         try {
           const res = await fetch('/api/admin/recharge/approve', {
             method: 'POST',
@@ -5679,6 +6268,133 @@ const tg = window.Telegram?.WebApp;
       if (tg?.openLink) tg.openLink(url);
       else window.open(url, '_blank');
     }
+    let currentOrderDetailId = null;
+    let expandedActivityItems = new Set();
+
+    function toggleActivityItem(itemId) {
+      haptic('selection');
+      const el = document.getElementById('activity-item-' + itemId);
+      if (!el) return;
+      if (expandedActivityItems.has(itemId)) {
+        expandedActivityItems.delete(itemId);
+        el.classList.remove('expanded');
+      } else {
+        expandedActivityItems.add(itemId);
+        el.classList.add('expanded');
+      }
+    }
+
+    function openOrderDetailView(orderId) {
+      haptic('pop');
+      currentOrderDetailId = Number(orderId);
+      const order = (userData?.orders || []).find(o => Number(o.id) === currentOrderDetailId);
+      if (!order) return;
+
+      const idEl = document.getElementById('order-detail-id-title');
+      if (idEl) idEl.innerText = `طلب #${order.id}`;
+
+      const dateEl = document.getElementById('order-detail-date');
+      if (dateEl) dateEl.innerText = order.created_at || '';
+
+      const prodEl = document.getElementById('order-detail-products-title');
+      if (prodEl) prodEl.innerText = order.products || 'Digital Product';
+
+      const totalEl = document.getElementById('order-detail-total-amount');
+      if (totalEl) totalEl.innerText = `$${Number(order.total || 0).toFixed(2)} USD`;
+
+      const badgeEl = document.getElementById('order-detail-status-badge');
+      if (badgeEl) {
+        if (order.status === 'completed') {
+          badgeEl.className = 'pill-badge status-completed';
+          badgeEl.style.background = 'rgba(16, 185, 129, 0.2)';
+          badgeEl.style.color = '#10b981';
+          badgeEl.innerText = (currentAppLanguage === 'ar') ? 'مكتمل ومفعل' : 'Completed';
+        } else if (order.status === 'refunded') {
+          badgeEl.className = 'pill-badge status-refunded';
+          badgeEl.style.background = 'rgba(239, 68, 68, 0.2)';
+          badgeEl.style.color = '#ef4444';
+          badgeEl.innerText = (currentAppLanguage === 'ar') ? 'مسترجع' : 'Refunded';
+        } else {
+          badgeEl.className = 'pill-badge status-pending';
+          badgeEl.style.background = 'rgba(245, 158, 11, 0.2)';
+          badgeEl.style.color = '#f59e0b';
+          badgeEl.innerText = (currentAppLanguage === 'ar') ? 'قيد التنفيذ' : 'Processing';
+        }
+      }
+
+      const fillEl = document.getElementById('order-detail-stepper-fill');
+      const circle2 = document.getElementById('order-step-circle-2');
+      const circle3 = document.getElementById('order-step-circle-3');
+      const node2 = document.getElementById('order-step-node-2');
+      const node3 = document.getElementById('order-step-node-3');
+
+      if (order.status === 'completed') {
+        if (fillEl) { fillEl.style.width = '100%'; fillEl.style.background = 'var(--accent)'; }
+        if (node2) node2.className = 'order-step-node completed';
+        if (circle2) circle2.innerText = '✓';
+        if (node3) node3.className = 'order-step-node completed';
+        if (circle3) circle3.innerText = '✓';
+      } else if (order.status === 'refunded') {
+        if (fillEl) { fillEl.style.width = '50%'; fillEl.style.background = '#ef4444'; }
+        if (node2) node2.className = 'order-step-node active';
+        if (circle2) circle2.innerText = '↩️';
+        if (node3) node3.className = 'order-step-node';
+        if (circle3) circle3.innerText = '3';
+      } else {
+        if (fillEl) { fillEl.style.width = '50%'; fillEl.style.background = 'var(--accent)'; }
+        if (node2) node2.className = 'order-step-node active';
+        if (circle2) circle2.innerText = '⏳';
+        if (node3) node3.className = 'order-step-node';
+        if (circle3) circle3.innerText = '3';
+      }
+
+      const credBox = document.getElementById('order-detail-credentials-box');
+      if (credBox) {
+        credBox.innerHTML = renderStructuredCredentials(order.goods);
+      }
+
+      const warBadge = document.getElementById('order-detail-warranty-badge');
+      if (warBadge) {
+        if (order.warranty_days) {
+          warBadge.innerText = (currentAppLanguage === 'ar') ? `🛡️ ضمان ${order.warranty_days} يوم` : `🛡️ ${order.warranty_days}d Warranty`;
+          warBadge.style.display = 'inline-block';
+        } else {
+          warBadge.style.display = 'none';
+        }
+      }
+
+      document.querySelectorAll('.tab-view').forEach(el => el.classList.remove('active'));
+      const detailSection = document.getElementById('view-order-detail');
+      if (detailSection) detailSection.classList.add('active');
+
+      pushNav('order_detail', closeOrderDetailView);
+    }
+
+    function closeOrderDetailView() {
+      haptic('light');
+      currentOrderDetailId = null;
+      const detailSection = document.getElementById('view-order-detail');
+      if (detailSection) detailSection.classList.remove('active');
+      const ordersView = document.getElementById('view-orders');
+      if (ordersView) ordersView.classList.add('active');
+
+      if (navStack.length > 0 && navStack[navStack.length - 1].name === 'order_detail') {
+        navStack.pop();
+        if (navStack.length === 0 && tg?.BackButton) tg.BackButton.hide();
+      }
+    }
+
+    function downloadCurrentOrderDetailPdf() {
+      if (currentOrderDetailId) downloadOrderReceipt(currentOrderDetailId);
+    }
+
+    function rateCurrentOrderDetail() {
+      if (currentOrderDetailId) openReviewModal(currentOrderDetailId);
+    }
+
+    function supportCurrentOrderDetail() {
+      if (currentOrderDetailId) openSupportTicketModal(currentOrderDetailId);
+    }
 
     function renderUnifiedActivity() {
       const container = document.getElementById('orders-container-box');
@@ -5694,8 +6410,9 @@ const tg = window.Telegram?.WebApp;
         combined = combined.filter(it => it.type === 'order');
       } else if (activeActivityFilter === 'recharges') {
         combined = combined.filter(it => it.type === 'recharge');
+      } else if (activeActivityFilter === 'vault') {
+        combined = combined.filter(it => it.type === 'order' && it.status === 'completed' && it.goods && it.goods.length > 0);
       }
-
       if (!combined.length) {
         renderEmptyOrders();
         return;
@@ -5703,111 +6420,197 @@ const tg = window.Telegram?.WebApp;
 
       const d = I18N[currentAppLanguage] || I18N.ar;
 
-      container.innerHTML = combined.map(it => {
+      container.innerHTML = combined.map((it, idx) => {
+        const itemDomId = it.type === 'order' ? 'ord_' + it.id : 'rec_' + it.id;
+        const isExpanded = expandedActivityItems.has(itemDomId);
+
         if (it.type === 'order') {
+          let statusClass = 'status-completed';
+          let statusLabel = (currentAppLanguage === 'ar') ? 'مكتمل' : 'Completed';
+
+          if (it.status === 'completed') {
+            statusClass = 'status-completed';
+            statusLabel = (currentAppLanguage === 'ar') ? 'مكتمل' : 'Completed';
+          } else if (it.status === 'refunded') {
+            statusClass = 'status-refunded';
+            statusLabel = (currentAppLanguage === 'ar') ? 'مسترجع' : 'Refunded';
+          } else if (it.status === 'pending_supplier_recharge') {
+            statusClass = 'status-pending';
+            statusLabel = (currentAppLanguage === 'ar') ? 'قيد التجهيز' : 'Processing';
+          } else {
+            statusClass = 'status-pending';
+            statusLabel = (currentAppLanguage === 'ar') ? 'قيد التنفيذ' : 'In Progress';
+          }
+
+          const stepperFillWidth = it.status === 'completed' ? '100%' : (it.status.includes('pending') ? '50%' : '100%');
+          const stepperFillColor = it.status === 'refunded' ? '#ef4444' : 'var(--accent)';
+          const node2Class = it.status === 'completed' ? 'completed' : (it.status.includes('pending') ? 'active' : (it.status === 'refunded' ? 'active' : ''));
+          const node2Icon = it.status === 'completed' ? '✓' : (it.status === 'refunded' ? '↩️' : '⏳');
+
           return `
-            <div class="inset-card" style="margin-bottom: 12px;">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                <div style="display: flex; align-items: center; gap: 6px;">
-                  <span style="font-size: 14px;">🛍️</span>
-                  <strong style="font-size: 14px;">طلب #${it.id} · ${it.created_at || ''}</strong>
+            <div class="activity-notif-item ${isExpanded ? 'expanded' : ''}" id="activity-item-${itemDomId}">
+              <!-- Compact Notification Header -->
+              <div class="activity-notif-header" onclick="toggleActivityItem('${itemDomId}')">
+                <div class="activity-notif-badge ${statusClass}">
+                  <span>🛍️</span>
+                  <span class="status-dot ${statusClass}"></span>
                 </div>
-                <span class="pill-badge" style="background: ${it.status === 'completed' ? 'rgba(16,185,129,0.2); color:#10b981' : it.status === 'refunded' ? 'rgba(239,68,68,0.2); color:#ef4444' : 'rgba(245,158,11,0.2); color:#f59e0b'}; font-size:11px;">
-                  ${it.status === 'completed' ? 'مكتمل' : (it.status === 'refunded' ? 'مسترجع' : it.status)}
-                </span>
-              </div>
-              <div style="font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 2px;">${it.products}</div>
-              <div style="font-size: 13px; color: var(--accent); font-weight: 700; margin-bottom: 8px;">${d.total}: ${it.total.toFixed(2)}${it.sym}</div>
-
-              <!-- 3-Step Order Timeline Stepper -->
-              <div class="order-stepper-track">
-                <div class="order-stepper-line">
-                  <div class="order-stepper-line-fill" style="width: ${it.status === 'completed' ? '100%' : (it.status.includes('pending') ? '50%' : '100%')}; background: ${it.status === 'refunded' ? '#ef4444' : 'var(--accent)'};"></div>
+                <div class="activity-notif-info">
+                  <div class="activity-notif-title-row">
+                    <span class="activity-notif-title">${(currentAppLanguage === 'ar' ? 'طلب' : 'Order')} #${it.id} · ${it.products || (currentAppLanguage === 'ar' ? 'منتج رقمي' : 'Digital Service')}</span>
+                    <span class="activity-notif-amount amount-blue">${it.total.toFixed(2)}${it.sym}</span>
+                  </div>
+                  <div class="activity-notif-meta-row">
+                    <span class="activity-notif-time">${it.created_at || ''}</span>
+                    <span class="activity-status-pill ${statusClass}">${statusLabel}</span>
+                  </div>
                 </div>
-                <div class="order-step-node completed">
-                  <div class="order-step-circle">✓</div>
-                  <div class="order-step-label">${d.step_placed}</div>
-                </div>
-                <div class="order-step-node ${it.status === 'completed' ? 'completed' : (it.status.includes('pending') ? 'active' : (it.status === 'refunded' ? 'active' : ''))}">
-                  <div class="order-step-circle">${it.status === 'completed' ? '✓' : (it.status === 'refunded' ? '↩️' : '⏳')}</div>
-                  <div class="order-step-label">${it.status === 'refunded' ? (currentAppLanguage === 'ar' ? 'مسترجع' : 'Refunded') : d.step_processing}</div>
-                </div>
-                <div class="order-step-node ${it.status === 'completed' ? 'completed' : ''}">
-                  <div class="order-step-circle">${it.status === 'completed' ? '✓' : '3'}</div>
-                  <div class="order-step-label">${d.step_delivered}</div>
+                <div class="activity-notif-arrow">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                    <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
+                  </svg>
                 </div>
               </div>
-              <!-- Structured Credentials -->
-              ${renderStructuredCredentials(it.goods)}
 
-              <div style="display: flex; gap: 8px; align-items: center; margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px; flex-wrap: wrap;">
-                ${it.warranty_days ? `
-                  <span class="pill-badge" style="background: rgba(56,189,248,0.15); color: var(--accent); font-size: 11px;">🛡️ ${currentAppLanguage === 'ar' ? `ضمان ${it.warranty_days} يوم` : `${it.warranty_days}d Warranty`}</span>
-                ` : ''}
-                ${it.status === 'completed' ? `
-                  <button id="btn-rate-order-${it.id}" class="btn-action-secondary" onclick="openReviewModal(${it.id})" style="height: 36px; font-size: 11px; padding: 0 10px;">⭐ ${currentAppLanguage === 'ar' ? 'تقييم' : 'Rate'}</button>
-                  <button class="btn-action-secondary" onclick="downloadOrderReceipt(${it.id})" style="height: 36px; font-size: 11px; padding: 0 10px;">🧾 ${currentAppLanguage === 'ar' ? 'إيصال' : 'Receipt'}</button>
-                ` : ''}
-                <button class="btn-action-secondary" onclick="openSupportTicketModal(${it.id})" style="flex: 1; height: 36px; font-size: 11px; min-width: 130px;">💬 ${currentAppLanguage === 'ar' ? 'تذكرة دعم' : 'Support Ticket'}</button>
+              <!-- Smooth Expandable Body -->
+              <div class="activity-notif-body">
+                <!-- 3-Step Timeline Stepper -->
+                <div class="order-stepper-track" style="margin: 10px 0 14px 0;">
+                  <div class="order-stepper-line">
+                    <div class="order-stepper-line-fill" style="width: ${stepperFillWidth}; background: ${stepperFillColor};"></div>
+                  </div>
+                  <div class="order-step-node completed">
+                    <div class="order-step-circle">✓</div>
+                    <div class="order-step-label">${d.step_placed}</div>
+                  </div>
+                  <div class="order-step-node ${node2Class}">
+                    <div class="order-step-circle">${node2Icon}</div>
+                    <div class="order-step-label">${it.status === 'refunded' ? (currentAppLanguage === 'ar' ? 'مسترجع' : 'Refunded') : d.step_processing}</div>
+                  </div>
+                  <div class="order-step-node ${it.status === 'completed' ? 'completed' : ''}">
+                    <div class="order-step-circle">${it.status === 'completed' ? '✓' : '3'}</div>
+                    <div class="order-step-label">${d.step_delivered}</div>
+                  </div>
+                </div>
+
+                <!-- Structured Delivered Credentials -->
+                ${renderStructuredCredentials(it.goods)}
+
+                <!-- Action Pills -->
+                <div style="display: flex; gap: 6px; align-items: center; margin-top: 10px; flex-wrap: wrap;">
+                  ${it.warranty_days ? `
+                    <span class="pill-badge" style="background: rgba(56,189,248,0.15); color: var(--accent); font-size: 11px;">🛡️ ${currentAppLanguage === 'ar' ? `ضمان ${it.warranty_days} يوم` : `${it.warranty_days}d Warranty`}</span>
+                  ` : ''}
+                  ${it.status === 'completed' ? `
+                    <button class="btn-action-secondary" onclick="showOrderReceiptModal(${it.id})" style="height: 34px; font-size: 11px; padding: 0 10px;">🧾 ${currentAppLanguage === 'ar' ? 'عرض الإيصال' : 'View Receipt'}</button>
+                    <button id="btn-rate-order-${it.id}" class="btn-action-secondary" onclick="openReviewModal(${it.id})" style="height: 34px; font-size: 11px; padding: 0 10px;">⭐ ${currentAppLanguage === 'ar' ? 'تقييم' : 'Rate'}</button>
+                    <button class="btn-action-secondary" onclick="downloadOrderReceipt(${it.id})" style="height: 34px; font-size: 11px; padding: 0 10px;">⬇️ PDF</button>
+                  ` : ''}
+                </div>
+
+                <!-- Prominent Enter Order Page Action -->
+                <button class="btn-enter-page" onclick="openOrderDetailView(${it.id})">
+                  <span>${currentAppLanguage === 'ar' ? '🔍 عرض تفاصيل الطلب كاملة' : '🔍 View Full Order Details'}</span>
+                  <span style="font-size: 14px;">${currentAppLanguage === 'ar' ? '‹' : '›'}</span>
+                </button>
+              </div>
             </div>
           `;
         }
 
-        // Render Recharge Transaction Card
+        // Recharge Notification Item
         const isPaid = (it.status === 'completed');
         const isPending = (it.status === 'pending');
+        let statusClass = isPaid ? 'status-completed' : (isPending ? 'status-pending' : 'status-failed');
+        let statusLabel = isPaid ? (currentAppLanguage === 'ar' ? 'تم الشحن' : 'Completed') : (isPending ? (currentAppLanguage === 'ar' ? 'بانتظار الدفع' : 'Pending') : (currentAppLanguage === 'ar' ? 'ملغية' : 'Cancelled'));
 
         let methodLogo = '💳';
-        let methodTitle = 'شحن رصيد';
+        let methodTitle = (currentAppLanguage === 'ar') ? 'شحن رصيد' : 'Wallet Top-up';
         if (it.method === 'shamcash') {
           methodLogo = '<img src="https://shamcash.sy/_next/static/media/logo.5be69def.svg" style="width:20px; height:20px; object-fit:contain;" alt="ShamCash">';
-          methodTitle = 'شام كاش (Sham Cash)';
+          methodTitle = (currentAppLanguage === 'ar') ? 'شام كاش' : 'Sham Cash';
         } else if (it.method === 'syriatelcash') {
           methodLogo = '<img src="https://www.syriatel.sy/assets/img/logo.png" style="width:20px; height:20px; object-fit:contain;" alt="Syriatel">';
-          methodTitle = 'سيرياتيل كاش (Syriatel Cash)';
+          methodTitle = (currentAppLanguage === 'ar') ? 'سيرياتيل كاش' : 'Syriatel Cash';
         } else if (it.method === 'stars') {
           methodLogo = '⭐';
-          methodTitle = 'نجوم تيليجرام (Telegram Stars)';
+          methodTitle = (currentAppLanguage === 'ar') ? 'نجوم تيليجرام' : 'Telegram Stars';
         } else if (it.method === 'crypto') {
           methodLogo = '🪙';
-          methodTitle = 'العملات الرقمية (Crypto)';
+          methodTitle = (currentAppLanguage === 'ar') ? 'العملات الرقمية' : 'Crypto (USDT)';
         }
 
         const localPart = (it.currency === 'SYP' && it.invoice_amount)
           ? ` <span style="font-size:11px; color:var(--hint);">(≈ ${Math.round(it.invoice_amount).toLocaleString()} ل.س)</span>`
           : '';
 
+        const invoiceParamStr = JSON.stringify({
+          invoice_id: it.invoice_id || '',
+          url: it.payment_url || '',
+          provider: it.method || 'shamcash',
+          amount: it.amount_usd || 0.0,
+          invoice_amount: it.invoice_amount || 0,
+          currency: it.currency || 'USD'
+        }).replace(/"/g, '&quot;');
+
         return `
-          <div class="inset-card" style="margin-bottom: 12px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="display: flex; align-items: center;">${methodLogo}</span>
-                <strong style="font-size: 13px;">${methodTitle}</strong>
+          <div class="activity-notif-item ${isExpanded ? 'expanded' : ''}" id="activity-item-${itemDomId}">
+            <!-- Compact Notification Header -->
+            <div class="activity-notif-header" onclick="toggleActivityItem('${itemDomId}')">
+              <div class="activity-notif-badge ${statusClass}">
+                <span>${methodLogo}</span>
+                <span class="status-dot ${statusClass}"></span>
               </div>
-              <span class="pill-badge" style="background: ${isPaid ? 'rgba(16,185,129,0.2); color:#10b981' : isPending ? 'rgba(245,158,11,0.2); color:#f59e0b' : 'rgba(239,68,68,0.2); color:#ef4444'}; font-size:11px;">
-                ${isPaid ? '✅ تم الشحن بنجاح' : (isPending ? '⏳ بانتظار الدفع' : '❌ ملغية / منتهية')}
-              </span>
+              <div class="activity-notif-info">
+                <div class="activity-notif-title-row">
+                  <span class="activity-notif-title">${methodTitle}</span>
+                  <span class="activity-notif-amount amount-green">+$${it.amount_usd.toFixed(2)}</span>
+                </div>
+                <div class="activity-notif-meta-row">
+                  <span class="activity-notif-time">${it.created_at || ''}</span>
+                  <span class="activity-status-pill ${statusClass}">${statusLabel}</span>
+                </div>
+              </div>
+              <div class="activity-notif-arrow">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
+                </svg>
+              </div>
             </div>
 
-            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px; margin-bottom: 6px;">
-              <span>المبلغ: <strong style="color:var(--success); font-size:15px;">+$${it.amount_usd.toFixed(2)}</strong>${localPart}</span>
-              <span style="font-size: 11px; color: var(--hint); font-family: monospace;">${it.invoice_id ? '#' + it.invoice_id.substring(0, 12) : ''}</span>
-            </div>
+            <!-- Expandable Body -->
+            <div class="activity-notif-body">
+              <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px; margin: 6px 0;">
+                <span>${(currentAppLanguage === 'ar') ? 'المبلغ المستلم:' : 'Amount Received:'} <strong style="color:var(--success); font-size:15px;">+$${it.amount_usd.toFixed(2)} USD</strong>${localPart}</span>
+                <span style="font-size: 11px; color: var(--hint); font-family: monospace;">${it.invoice_id ? '#' + it.invoice_id.substring(0, 12) : ''}</span>
+              </div>
 
-            <div style="font-size: 11px; color: var(--hint);">${it.created_at || ''}</div>
-
-            ${isPending ? `
-              <div style="display: flex; gap: 8px; margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px;">
-                ${it.payment_url ? `
-                  <button class="btn-action-primary" onclick="openExternalPaymentUrl('${it.payment_url}')" style="flex: 1; height: 36px; font-size: 11px;">
-                    🌐 إتمام الدفع
+              ${isPending ? `
+                <div style="display: flex; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border);">
+                  ${it.payment_url ? `
+                    <button class="btn-action-primary" onclick="openExternalPaymentUrl('${it.payment_url}')" style="flex: 1; height: 36px; font-size: 11px;">
+                      ${(currentAppLanguage === 'ar') ? '🌐 إتمام الدفع' : '🌐 Pay Online'}
+                    </button>
+                  ` : ''}
+                  <button class="btn-action-secondary" onclick="openInvoicePage(${invoiceParamStr})" style="flex: 1; height: 36px; font-size: 11px;">
+                    ${(currentAppLanguage === 'ar') ? '🔄 فحص الفاتورة' : '🔄 Check Status'}
                   </button>
-                ` : ''}
-                <button class="btn-action-secondary" onclick="openInvoicePage({ invoice_id: '${it.invoice_id}', url: '${it.payment_url || ''}', provider: '${it.method}', amount: ${it.amount_usd}, invoice_amount: ${it.invoice_amount || 0}, currency: '${it.currency}' })" style="flex: 1; height: 36px; font-size: 11px;">
-                  🔄 فحص الفاتورة
+                </div>
+              ` : ''}
+
+              <!-- Succeeded Recharges show Official Deposit Voucher, Pending show Invoice & Pay -->
+              ${isPaid ? `
+                <button class="btn-enter-page" onclick="showRechargeReceiptModal(${invoiceParamStr})">
+                  <span>${currentAppLanguage === 'ar' ? '🧾 عرض إيصال الشحن الرسمي المعتمد' : '🧾 View Official Top-Up Receipt'}</span>
+                  <span style="font-size: 14px;">${currentAppLanguage === 'ar' ? '‹' : '›'}</span>
                 </button>
-              </div>
-            ` : ''}
+              ` : `
+                <button class="btn-enter-page" onclick="openInvoicePage(${invoiceParamStr})">
+                  <span>${currentAppLanguage === 'ar' ? '🔄 متابعة الدفع وفحص الفاتورة' : '🔄 Complete Payment / Check Status'}</span>
+                  <span style="font-size: 14px;">${currentAppLanguage === 'ar' ? '‹' : '›'}</span>
+                </button>
+              `}
+            </div>
           </div>
         `;
       }).join('');
@@ -5982,14 +6785,16 @@ const tg = window.Telegram?.WebApp;
       applyLanguage(code);
       const sel = document.getElementById('language-select-dropdown');
       if (sel) sel.value = code;
+      const isAr = (code === 'ar');
+      const langNames = { ar: 'العربية', en: 'English', de: 'Deutsch', es: 'Español', fr: 'Français', it: 'Italiano', zh: '中文' };
+      const msg = isAr ? `تم تعيين لغة التطبيق إلى ${langNames[code] || code}!` : `App language set to ${langNames[code] || code}!`;
+      showToast(msg);
       if (userId) {
         await fetch('/api/user/settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tg_id: userId, language: code })
         });
-        const langNames = { ar: 'العربية', en: 'English', de: 'Deutsch', es: 'Español', fr: 'Français', it: 'Italiano', zh: '中文' };
-        showToast(`تم تعيين لغة التطبيق إلى ${langNames[code] || code}!`);
         loadUserData();
       }
     }
@@ -6030,8 +6835,15 @@ const tg = window.Telegram?.WebApp;
     // Initial Startup Sequence: Theme -> i18n -> SWR Cache -> Network
     initAppTheme();
     initCurrency();
-    const initialLang = localStorage.getItem('ghstore_lang') || 'ar';
+    const tgLang = tg?.initDataUnsafe?.user?.language_code;
+    const detectedLang = tgLang && I18N[tgLang] ? tgLang : (tgLang === 'ar' ? 'ar' : 'en');
+    const initialLang = localStorage.getItem('ghstore_lang') || detectedLang;
     applyLanguage(initialLang);
+    cloudStorageGet('ghstore_lang', (storedLang) => {
+      if (storedLang && storedLang !== currentAppLanguage && I18N[storedLang]) {
+        applyLanguage(storedLang);
+      }
+    });
     initWishlist();
     initCart();
     loadFromCache();
@@ -6039,3 +6851,4 @@ const tg = window.Telegram?.WebApp;
     loadUserData();
     initSSE();
     checkHomeScreenCapability();
+    handleStartParam();

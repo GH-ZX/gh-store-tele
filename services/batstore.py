@@ -267,14 +267,16 @@ class BatStoreService:
                            global_percent: float,
                            global_fixed: float,
                            margin_type: str | None = None,
-                           margin_value: float | None = None) -> float:
+                           margin_value: float | None = None,
+                           global_type: str | None = None) -> float:
         """Compute the selling price for a product.
 
         Per-product margin_type wins over the global defaults:
           percent     : cost * (1 + margin_value/100) + global_fixed
           fixed       : cost + margin_value
           fixed_price : margin_value (exact price)
-        Falls back to global percent/fixed when no per-product type is set.
+          tiered      : tiered percentage markup depending on cost bands
+        Falls back to global percent/fixed/tiered when no per-product type is set.
         """
         mtype = (margin_type or "").lower() if margin_type else ""
         mval = margin_value if margin_value is not None else 0.0
@@ -290,7 +292,7 @@ class BatStoreService:
             # per-product percent when set, else global percent
             pct = mval if has_value else global_percent
             return round(cost * (1 + pct / 100.0) + global_fixed, 2)
-        if mtype == "tiered":
+        if mtype == "tiered" or (not mtype and (global_type or "").lower() == "tiered"):
             tier_pct = BatStoreService.compute_tiered_margin(cost, global_percent)
             return round(cost * (1 + tier_pct / 100.0) + global_fixed, 2)
         # no per-product type -> global defaults
@@ -299,14 +301,15 @@ class BatStoreService:
     @staticmethod
     def compute_tiered_margin(cost: float, fallback_percent: float = 20.0) -> float:
         """Dynamic margin curve: higher margin for cheaper items, lower for high-ticket items."""
-        if cost <= 10.0:
+        if cost <= 2.0:
+            return 50.0
+        elif cost <= 10.0:
             return 40.0
         elif cost <= 50.0:
             return 25.0
         elif cost > 50.0:
             return 15.0
         return fallback_percent
-
     @staticmethod
     def get_volume_discount(quantity: int) -> float:
         """Wholesale bulk discount matrix: 1-4: 0%, 5-9: 7%, 10+: 15%."""
@@ -380,7 +383,7 @@ class BatStoreService:
                     margin_value=None,
                     category=auto_categorize(product_name),
                     sell_price_usd=BatStoreService.compute_sell_price(
-                        cost, global_percent, global_fixed, None, None),
+                        cost, global_percent, global_fixed, None, None, global_type),
                     hidden=False,
                 )
                 await BatStoreProductRepository.create(dto, session)
@@ -415,7 +418,7 @@ class BatStoreService:
                 sell = BatStoreService.compute_sell_price(
                     cost, global_percent, global_fixed, existing.margin_type,
                     existing.margin_value if existing.margin_type != MarginType.FIXED_PRICE
-                    else existing.margin_value)
+                    else existing.margin_value, global_type)
                 cat = existing.category if existing.category else auto_categorize(product_name)
                 upd = BatStoreProductDTO(
                     id=existing.id,

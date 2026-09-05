@@ -64,7 +64,14 @@ async def start(message: Message, command: CommandObject, session: AsyncSession,
     if tma_host and tma_host.startswith("https://"):
         tma_url = f"{tma_host}/app?tg_id={telegram_id}"
         keyboard.append([types.KeyboardButton(text="🛍️ Open Store WebApp", web_app=types.WebAppInfo(url=tma_url))])
-
+        try:
+            menu_btn_text = "🛍️ المتجر" if language == Language.AR else "🛍️ Shop"
+            await message.bot.set_chat_menu_button(
+                chat_id=telegram_id,
+                menu_button=types.MenuButtonWebApp(text=menu_btn_text, web_app=types.WebAppInfo(url=tma_url))
+            )
+        except Exception:
+            pass
     keyboard.extend([
         [all_categories_button, my_profile_button],
         [faq_button, help_button],

@@ -87,10 +87,18 @@ async def _notify_order_complete(order, goods: list[str]):
     )
     try:
         await NotificationService.send_to_user(text, order.telegram_id)
+        from bot import bot
+        from services.pdf_receipt import PDFReceiptService
+        date_str = order.created_at.strftime("%Y-%m-%d %H:%M:%S UTC") if getattr(order, "created_at", None) else None
+        await PDFReceiptService.dispatch_pdf_receipt(
+            order_id=order.id,
+            telegram_id=order.telegram_id,
+            order_data={"details": order.details, "total_sell": order.total_sell, "created_at": date_str, "goods": goods},
+            bot=bot
+        )
     except Exception as e:
         logging.error("Failed to notify user %s about order %s: %s",
                       order.telegram_id, order.id, e)
-
 
 async def _refund_and_notify(order, session):
     """Refund customer balance and notify about failed order."""
@@ -130,7 +138,9 @@ async def periodic_catalog_sync():
                     from services.multi_supplier import MultiSupplierService
                     res = await MultiSupplierService.sync_all_suppliers(session)
                     await check_warranty_expiries(session)
-                logging.info("Periodic multi-supplier sync completed: %s", res)
+                    from services.subscription_tracker import SubscriptionTrackerService
+                    from repositories.batstore_product import BatStoreProductRepository
+                    await SubscriptionTrackerService.check_expiring_subscriptions(session, redis_client=BatStoreProductRepository._redis)
             except Exception as e:
                 logging.error("Periodic catalog sync failed: %s", e)
 
@@ -215,17 +225,21 @@ async def check_warranty_expiries(session):
     try:
         stmt = (
             select(BatStoreOrder)
-            .where(BatStoreOrder.status == "completed", BatStoreOrder.warranty_days > 0)
+            .where(BatStoreOrder.status == "completed")
             .order_by(BatStoreOrder.id.desc())
             .limit(100)
         )
         orders = (await session_execute(stmt, session)).scalars().all()
         for o in orders:
-            if not o.created_at or not o.warranty_days:
+            if not o.created_at or not o.details:
+                continue
+            warranty_days = 0
+            for it in (o.details or []):
+                warranty_days = max(warranty_days, int(it.get("warranty_days") or 0))
+            if not warranty_days:
                 continue
             created_utc = o.created_at.replace(tzinfo=datetime.timezone.utc) if o.created_at.tzinfo is None else o.created_at
-            expiry = created_utc + datetime.timedelta(days=o.warranty_days)
-            remaining_secs = (expiry - now).total_seconds()
+            expiry = created_utc + datetime.timedelta(days=warranty_days)
             if 86400 <= remaining_secs <= 259200:
                 nudge_key = f"ghstore:warranty_nudge:{o.id}"
                 if r is not None and await r.get(nudge_key):

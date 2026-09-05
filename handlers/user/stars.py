@@ -176,3 +176,87 @@ async def stars_successful_payment(message: Message, session: AsyncSession,
         stars=stars, usd=f"{usd}", sym=sym))
     await NotificationService.send_to_admins(
         f"⭐ Stars top-up by tg:{tg_id} · {stars}⭐ → {usd}{sym}", None)
+
+
+@stars_router.subscription()
+async def stars_subscription_update(event: "BotSubscriptionUpdated", session: AsyncSession, bot: Bot):
+    """Bot API 8.3: Track user payment subscription changes for recurring Telegram Stars subscriptions."""
+    tg_id = event.user.id
+    payload = event.invoice_payload or ""
+    state = str(event.state or "").lower()
+
+    logging.info("BotSubscriptionUpdated event: tg:%s, state=%s, payload=%s", tg_id, state, payload)
+
+    if state == "active":
+        product_id = None
+        parts = payload.split(":")
+        if len(parts) >= 3 and (parts[0] in ("stars_inapp", "stars_sub")):
+            try:
+                product_id = int(parts[2])
+            except Exception:
+                pass
+
+        goods_lines = ""
+        if product_id:
+            try:
+                from repositories.batstore_product import BatStoreProductRepository
+                from repositories.batstore_order import BatStoreOrderRepository
+                from models.batstore_order import BatStoreOrderDTO
+                from services.batstore import BatStoreService
+                prod = await BatStoreProductRepository.get_by_product_id(product_id, session)
+                if prod:
+                    cust_ref = f"stars-sub-renewal-{tg_id}-{uuid.uuid4().hex[:6]}"
+                    placed = await BatStoreService.place_order(
+                        session, product_id, 1,
+                        customer_reference=cust_ref,
+                        idempotency_key=cust_ref
+                    )
+                    items = placed.get("order", {}).get("items") or []
+                    goods = [it.get("value") or it.get("data") or str(it) for it in items] if items else []
+                    await BatStoreOrderRepository.create(BatStoreOrderDTO(
+                        telegram_id=tg_id,
+                        total_sell=float(prod.sell_price_usd or 0.0),
+                        status="completed",
+                        customer_reference=cust_ref,
+                        external_order_ref=str(placed.get("order", {}).get("id") or ""),
+                        details=[{
+                            "product_id": product_id,
+                            "name": f"{prod.name} (Subscription Renewal)",
+                            "quantity": 1,
+                            "cost_usd": prod.cost_usd,
+                            "sell_usd": prod.sell_price_usd,
+                            "delivery_goods": goods,
+                        }]
+                    ), session)
+                    await session_commit(session)
+                    if goods:
+                        goods_lines = "\n\n📦 <b>بيانات التفعيل الجديدة:</b>\n" + "\n".join(f"• <code>{g}</code>" for g in goods)
+            except Exception as e:
+                logging.error("Failed to auto-fulfill recurring Star renewal: %s", e)
+
+        try:
+            msg = (
+                f"🌟 <b>تم تجديد اشتراكك بنجاح عبر نجوم تيليجرام!</b>\n\n"
+                f"تم تمديد صلاحية حسابك لشهر إضافي.{goods_lines}\n\n"
+                f"شكراً لاستمرارك معنا في متجر GH Store! ✨"
+            )
+            await bot.send_message(chat_id=tg_id, text=msg, parse_mode="HTML")
+            await NotificationService.send_to_admins(
+                f"🌟 Telegram Star subscription renewed: tg:{tg_id} · {payload}",
+                None
+            )
+        except Exception as e:
+            logging.warning("Failed to notify user of subscription renewal: %s", e)
+    elif state in ("cancelled", "expired"):
+        try:
+            await bot.send_message(
+                chat_id=tg_id,
+                text="⚠️ <b>تم إلغاء أو انتهاء اشتراك نجوم تيليجرام</b>\n\nيمكنك إعادة تفعيل الاشتراك في أي وقت من خلال متجر GH Store.",
+                parse_mode="HTML"
+            )
+            await NotificationService.send_to_admins(
+                f"⚠️ Telegram Star subscription cancelled/expired: tg:{tg_id} · {payload}",
+                None
+            )
+        except Exception as e:
+            logging.warning("Failed to notify user of subscription cancellation: %s", e)

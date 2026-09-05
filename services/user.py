@@ -89,6 +89,19 @@ class UserService:
         return await UserRepository.get_by_tgid(user_dto.telegram_id, session)
 
     @staticmethod
+    async def check_channel_membership(bot, user_id: int, channel_id: str | int | None = None) -> bool:
+        """Check if a user is an active member/admin of the official announcement channel."""
+        cid = channel_id or getattr(config, "ANNOUNCEMENT_CHANNEL_ID", None)
+        if not cid or not bot:
+            return False
+        try:
+            member = await bot.get_chat_member(chat_id=cid, user_id=user_id)
+            status = getattr(member, "status", None)
+            return status in ("member", "administrator", "creator")
+        except Exception:
+            return False
+
+    @staticmethod
     async def get_my_profile_buttons(telegram_id: int,
                                      session: AsyncSession,
                                      language: Language) -> tuple[InputMediaPhoto |

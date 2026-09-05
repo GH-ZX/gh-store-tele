@@ -77,3 +77,9 @@ class BatStoreOrderRepository:
             order.warranty_claimed_at = datetime.datetime.now(datetime.timezone.utc)
             await session.flush()
         return order
+
+    @staticmethod
+    async def update(order: BatStoreOrder, session: AsyncSession | Session) -> BatStoreOrder:
+        session.add(order)
+        await session.flush()
+        return order

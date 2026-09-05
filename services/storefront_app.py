@@ -12,13 +12,7 @@ from pathlib import Path
 
 _TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "templates" / "storefront.html"
 _CACHED_HTML: str | None = None
-
-
 import time
-
-_TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "templates" / "storefront.html"
-_CACHED_HTML: str | None = None
-
 
 def get_storefront_html(reload: bool = False) -> str:
     """Return the storefront HTML with dynamic cache-busting on static assets."""

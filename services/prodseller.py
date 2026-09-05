@@ -128,6 +128,7 @@ class ProdSellerService:
             logging.warning("Failed to fetch ProdSeller balance: %s", e)
             return 9999.0
 
+    get_cached_reseller_balance = get_cached_balance
     @staticmethod
     async def list_products(session: AsyncSession | Session | None = None) -> list[dict[str, Any]]:
         """Fetch all active products from ProdSeller."""
@@ -213,7 +214,7 @@ class ProdSellerService:
             logging.info("ProdSeller API key not configured; skipping sync.")
             return 0, 0
 
-        global_percent, global_fixed, _ = await BatStoreService._global_margin(session)
+        global_percent, global_fixed, global_type = await BatStoreService._global_margin(session)
         products = await ProdSellerService.list_products(session)
         rules = await CustomEmojiService.get_rules(session)
 
@@ -232,7 +233,7 @@ class ProdSellerService:
 
             detected_emoji, detected_custom_id = CustomEmojiService.detect_icon(name, rules)
             category = auto_categorize(name)
-            sell_price = BatStoreService.compute_sell_price(cost, global_percent, global_fixed)
+            sell_price = BatStoreService.compute_sell_price(cost, global_percent, global_fixed, None, None, global_type)
 
             existing = await BatStoreProductRepository.get_by_product_id(int_pid, session)
             if existing is None:

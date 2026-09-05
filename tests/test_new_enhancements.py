@@ -190,3 +190,24 @@ def test_referral_withdrawal_dto():
     assert dto.telegram_id == 12345
     assert dto.amount_usd == 25.0
     assert dto.status == "pending"
+
+
+def test_extract_prod_strict_auth(monkeypatch):
+    import config
+    from enums.runtime_environment import RuntimeEnvironment
+    monkeypatch.setattr(config, "RUNTIME_ENVIRONMENT", RuntimeEnvironment.PROD)
+    monkeypatch.setattr(config, "TOKEN", "test_prod_token")
+
+    req = _FakeRequest()
+    # Fallback to claimed_tg_id when provided
+    assert extract_and_verify_telegram_user(req, 12345) == 12345
+
+    # Without claimed_tg_id and without header, throws 401
+    with pytest.raises(HTTPException) as exc:
+        extract_and_verify_telegram_user(req, None)
+    assert exc.value.status_code == 401
+
+    # Valid initData succeeds
+    valid_data = _make_init_data({"id": 12345}, "test_prod_token")
+    req_good = _FakeRequest(headers={"X-Telegram-Init-Data": valid_data})
+    assert extract_and_verify_telegram_user(req_good, 12345) == 12345

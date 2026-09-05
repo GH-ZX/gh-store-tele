@@ -3,6 +3,7 @@
 and extracting structured duration, warranty, and account type badges.
 """
 
+import functools
 import re
 
 
@@ -55,8 +56,9 @@ class ProductSpecParser:
         (r"\biLovePdf\b", "iLovePDF"),
     ]
 
-    @classmethod
-    def parse(cls, raw_name: str) -> dict:
+    @staticmethod
+    @functools.lru_cache(maxsize=2048)
+    def parse(raw_name: str) -> dict:
         """Parse raw product name and extract clean name and structured spec badges."""
         if not raw_name:
             return {
@@ -185,7 +187,7 @@ class ProductSpecParser:
         clean = re.sub(r"\s+", " ", clean).strip()
 
         # Re-apply standardized brand name if found
-        for pat, brand in cls.BRAND_MAP:
+        for pat, brand in ProductSpecParser.BRAND_MAP:
             if re.search(pat, clean, re.IGNORECASE):
                 mods = []
                 if re.search(r"\b(Plus\+?)\b", clean, re.IGNORECASE):
