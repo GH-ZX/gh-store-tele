@@ -3117,6 +3117,24 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     const tgUser = tg?.initDataUnsafe?.user;
     const userId = tgUser?.id || Number(urlParams.get('tg_id') || 0);
 
+    // Immediate Zero-Latency Pre-fill from Telegram WebApp Context
+    if (tgUser) {
+      try {
+        const initial = (tgUser.first_name || 'U')[0].toUpperCase();
+        const topInit = document.getElementById('top-avatar-initial');
+        if (topInit) topInit.innerText = initial;
+        const setInit = document.getElementById('settings-avatar-initial');
+        if (setInit) setInit.innerText = initial;
+        const nameEl = document.getElementById('user-name-title');
+        if (nameEl) nameEl.innerText = `${tgUser.first_name || ''} ${tgUser.last_name || ''}`.trim() || (tgUser.username ? '@' + tgUser.username : 'Customer');
+        const handleEl = document.getElementById('user-handle-title');
+        if (handleEl && tgUser.username) {
+          handleEl.innerText = `@${tgUser.username}`;
+          handleEl.style.display = 'block';
+        }
+      } catch (e) {}
+    }
+
     // Appearance / Theme Switcher
     function setAppTheme(theme) {
       haptic('pop');
@@ -6530,6 +6548,8 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     initWishlist();
     initCart();
     loadFromCache();
+    fetchCatalogData();
+    loadUserData();
     initSSE();
     checkHomeScreenCapability();
   </script>
