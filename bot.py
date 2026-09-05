@@ -4,6 +4,7 @@ import os
 import logging
 import sys
 import traceback
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from aiogram.fsm.storage.redis import RedisStorage
@@ -1140,7 +1141,7 @@ async def create_tma_topup_invoice(request: Request):
                 logging.error("Failed to generate Stars top-up invoice: %s", e)
                 return JSONResponse({"error": "invoice_failed", "detail": str(e)}, status_code=502)
 
-        elif method == "crypto":
+        elif method in ("crypto", "bep20", "usdt", "usdt_bep20"):
             try:
                 from crypto_api.CryptoApiWrapper import CryptoApiWrapper
                 from enums.currency import Currency
@@ -1155,11 +1156,23 @@ async def create_tma_topup_invoice(request: Request):
                     callbackSecret="secret",
                 ))
                 inv_uuid = str(uuid.uuid4().hex[:10])
-                return {"status": "ok", "type": "url", "url": payment.paymentUrl or payment.address, "invoice_id": getattr(payment, "id", "") or inv_uuid, "amount": amount, "currency": "USD"}
+                pay_url = getattr(payment, "paymentUrl", None) or ""
+                addr = getattr(payment, "address", None) or ""
+                final_url = pay_url if pay_url else (f"https://bscscan.com/address/{addr}" if addr else "")
+                return {
+                    "status": "ok",
+                    "type": "crypto",
+                    "provider": "crypto",
+                    "url": final_url,
+                    "address": addr,
+                    "invoice_id": str(getattr(payment, "id", "") or inv_uuid),
+                    "amount": amount,
+                    "currency": "USDT (BEP-20)",
+                    "network": "BEP-20 (Binance Smart Chain)",
+                }
             except Exception as e:
                 logging.error("Failed to create crypto invoice: %s", e)
                 return JSONResponse({"error": "crypto_failed", "detail": str(e)}, status_code=502)
-
         elif method in ("sam", "shamcash", "syriatelcash", "syriatel"):
             provider = "syriatelcash" if method in ("syriatelcash", "syriatel") or body.get("provider") in ("syriatel", "syriatelcash") else "shamcash"
             try:

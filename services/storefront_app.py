@@ -1967,6 +1967,20 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         <div style="font-size: 13px; color: var(--text); font-weight: 700; margin-top: 3px;" id="invoice-amount-local"></div>
       </div>
 
+      <!-- Crypto BEP-20 Transfer Details Box -->
+      <div id="invoice-crypto-bep20-box" style="display: none; background: rgba(38, 161, 123, 0.08); border: 1px solid rgba(38, 161, 123, 0.35); border-radius: 14px; padding: 14px; margin-bottom: 16px;">
+        <div style="font-size: 11px; font-weight: 700; color: #26a17b; margin-bottom: 6px; text-transform: uppercase;">عنوان الإيداع المباشر (USDT BEP-20)</div>
+        <div style="font-family: monospace; font-size: 12px; word-break: break-all; color: var(--text); background: var(--input-bg); padding: 10px; border-radius: 8px; border: 1px solid var(--border); user-select: all;" id="invoice-crypto-address"></div>
+        <div style="display: flex; gap: 8px; margin-top: 10px;">
+          <button class="btn-action-secondary" onclick="copyCryptoAddress()" style="flex: 1; height: 38px; font-size: 12px; color: #26a17b; border-color: rgba(38, 161, 123, 0.4); font-weight: 700;">
+            <span>📋 نسخ عنوان المحفظة</span>
+          </button>
+        </div>
+        <div style="font-size: 11px; color: var(--hint); margin-top: 8px; line-height: 1.4;">
+          ⚠️ أرسل <b>USDT</b> حصراً عبر شبكة <b>BNB Smart Chain (BEP20)</b> لتفادي فقدان الأموال.
+        </div>
+      </div>
+
       <!-- Instructions Note -->
       <div style="font-size: 12px; color: var(--hint); line-height: 1.6; margin-bottom: 18px;" id="invoice-instructions-text">
         انقر على <b>فتح بوابة الدفع</b> للمتابعة في صفحة السداد الرسمية. بعد إتمام التحويل، اضغط على زر <b>التحقق من وصول الدفع</b> بالأسفل لتحديث رصيدك فورياً.
@@ -2129,10 +2143,10 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       <!-- 2. Cryptocurrency -->
       <div class="recharge-method-card" id="method-card-crypto" onclick="selectRechargeMethod('crypto')">
         <div class="method-card-left">
-          <span class="method-icon">🪙</span>
+          <div style="width: 32px; height: 32px; border-radius: 50%; background: #26a17b; display: flex; align-items: center; justify-content: center; color: white; font-weight: 800; font-size: 15px; flex-shrink: 0;">₮</div>
           <div>
-            <div class="method-name" id="label-method-crypto-name">العملات الرقمية (Crypto)</div>
-            <div class="method-sub" id="label-method-crypto-sub">USDT (TRC20/BEP20), Bitcoin, Solana, TON</div>
+            <div class="method-name" id="label-method-crypto-name">USDT (BEP-20 / BNB Chain)</div>
+            <div class="method-sub" id="label-method-crypto-sub">دفع مباشر وسريع عبر شبكة BEP20 (Binance Smart Chain)</div>
           </div>
         </div>
         <div class="method-radio-check">✓</div>
@@ -3450,8 +3464,8 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         method_section_title: "1. اختر وسيلة الشحن",
         stars_title: "نجوم تيليجرام (Telegram Stars)",
         stars_sub: "دفع فوري عبر Apple Pay أو Google Pay أو النجوم",
-        crypto_title: "العملات الرقمية (Crypto)",
-        crypto_sub: "USDT (TRC20/BEP20), Bitcoin, Solana, TON",
+        crypto_title: "USDT (BEP-20 / BNB Chain)",
+        crypto_sub: "دفع مباشر وسريع عبر شبكة BEP20 (Binance Smart Chain)",
         shamcash_title: "شام كاش (Sham Cash)",
         shamcash_sub: "دفع مباشر وسريع عبر بنك شام كاش",
         syriatelcash_title: "سيرياتيل كاش (Syriatel Cash)",
@@ -3541,8 +3555,8 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         method_section_title: "1. Select Payment Method",
         stars_title: "Telegram Stars",
         stars_sub: "Instant payment via Apple Pay, Google Pay or Stars",
-        crypto_title: "Cryptocurrency (Crypto)",
-        crypto_sub: "USDT (TRC20/BEP20), Bitcoin, Solana, TON",
+        crypto_title: "USDT (BEP-20 / BNB Chain)",
+        crypto_sub: "Instant payment via BEP-20 (Binance Smart Chain)",
         shamcash_title: "Sham Cash",
         shamcash_sub: "Direct payment via Sham Cash wallet",
         syriatelcash_title: "Syriatel Cash",
@@ -4598,7 +4612,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       if (!btn) return;
       let methodName = "نجوم تيليجرام";
       if (selectedRechargeMethod === 'crypto') {
-        methodName = (currentAppLanguage === 'ar') ? "العملات الرقمية" : "Crypto";
+        methodName = "USDT (BEP-20)";
       } else if (selectedRechargeMethod === 'shamcash') {
         methodName = (currentAppLanguage === 'ar') ? "شام كاش" : "Sham Cash";
       } else if (selectedRechargeMethod === 'syriatelcash') {
@@ -4736,9 +4750,9 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         if (nameEl) nameEl.innerText = (currentAppLanguage === 'ar') ? 'سيرياتيل كاش (Syriatel Cash)' : 'Syriatel Cash';
         if (subEl) subEl.innerText = (currentAppLanguage === 'ar') ? 'دفع بالليرة السورية (SYP)' : 'Direct payment in SYP';
       } else {
-        if (iconBox) iconBox.innerHTML = '<span style="font-size: 24px;">🪙</span>';
-        if (nameEl) nameEl.innerText = (currentAppLanguage === 'ar') ? 'العملات الرقمية (Crypto)' : 'Cryptocurrency';
-        if (subEl) subEl.innerText = 'USDT, Bitcoin, Solana, TON';
+        if (iconBox) iconBox.innerHTML = '<div style="width:34px; height:34px; border-radius:50%; background:#26a17b; display:flex; align-items:center; justify-content:center; color:white; font-weight:800; font-size:16px; flex-shrink:0;">₮</div>';
+        if (nameEl) nameEl.innerText = 'USDT (BEP-20 / BNB Chain)';
+        if (subEl) subEl.innerText = (currentAppLanguage === 'ar') ? 'شبكة Binance Smart Chain (BEP20)' : 'Binance Smart Chain (BEP-20)';
       }
 
       // 4. Populate Amounts
@@ -4754,6 +4768,16 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         }
       } else {
         if (localEl) localEl.style.display = 'none';
+      }
+
+      // Populate Crypto BEP-20 Address Box if present
+      const bep20Box = document.getElementById('invoice-crypto-bep20-box');
+      const addrEl = document.getElementById('invoice-crypto-address');
+      if (invoiceData.address) {
+        if (addrEl) addrEl.innerText = invoiceData.address;
+        if (bep20Box) bep20Box.style.display = 'block';
+      } else {
+        if (bep20Box) bep20Box.style.display = 'none';
       }
 
       // 5. Reset Check Status Button
@@ -4787,6 +4811,17 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         if (navStack.length === 0 && tg?.BackButton) tg.BackButton.hide();
       }
     }
+    function copyCryptoAddress() {
+      haptic('light');
+      const addrEl = document.getElementById('invoice-crypto-address');
+      const addr = addrEl ? addrEl.innerText.trim() : '';
+      if (!addr) return;
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(addr);
+      }
+      showToast((currentAppLanguage === 'ar') ? '✅ تم نسخ عنوان المحفظة (BEP-20)!' : '✅ BEP-20 Wallet Address Copied!');
+    }
+
 
     function openActiveInvoiceGateway() {
       if (!activeInvoiceUrl) return;

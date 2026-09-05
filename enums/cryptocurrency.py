@@ -107,7 +107,6 @@ class Cryptocurrency(str, Enum):
     @staticmethod
     def get_hidden() -> set['Cryptocurrency']:
         return set()
-
     @staticmethod
     def get_visible() -> list['Cryptocurrency']:
         return [cryptocurrency for cryptocurrency in Cryptocurrency if cryptocurrency not in Cryptocurrency.get_hidden()]
