@@ -63,8 +63,9 @@ async def sam_pick_provider(callback: CallbackQuery, callback_data: SamCallback,
 async def sam_amount_prompt(callback: CallbackQuery, callback_data: SamCallback,
                             state: FSMContext, language: Language):
     await state.set_state(UserStates.sam_top_up_amount)
-    await state.update_data(sam_provider=callback_data.provider, sam_waiting_amount=True)
-    currency = config.SAM_CURRENCY or "USD"
+    provider = callback_data.provider or "shamcash"
+    currency = "SYP" if provider in ("syriatel", "syriatelcash") else "USD"
+    await state.update_data(sam_provider=provider, sam_waiting_amount=True, sam_currency=currency)
     kb_builder = InlineKeyboardBuilder()
     kb_builder.row(_back(language))
     await safe_edit_message(
@@ -87,12 +88,12 @@ async def sam_amount_received(message: Message, session: AsyncSession,
     except ValueError:
         valid = False
     if not valid:
-        currency = config.SAM_CURRENCY or "USD"
+        currency = state_data.get("sam_currency") or ("SYP" if state_data.get("sam_provider") in ("syriatel", "syriatelcash") else "USD")
         await message.answer(get_text(language, BotEntity.COMMON, "sam_invalid_amount").format(currency=currency))
         return
 
-    provider = state_data.get("sam_provider")
-    currency = config.SAM_CURRENCY or "USD"
+    provider = state_data.get("sam_provider") or "shamcash"
+    currency = state_data.get("sam_currency") or ("SYP" if provider in ("syriatel", "syriatelcash") else "USD")
     user = await UserRepository.get_by_tgid(message.from_user.id, session)
     identifier = await ConfigService.get(session, "SAM_RECEIVING_WALLET",
                                          env_fallback=config.SAM_RECEIVING_WALLET)

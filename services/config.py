@@ -44,7 +44,6 @@ CONFIG_DEFINITIONS = {
     "TOPUP_ENABLE_SYRIATEL": {"secret": False, "desc": "Show Syriatel Cash top-up option (true/false)."},
     "SAM_RECEIVING_WALLET": {"secret": True,
                              "desc": "Our sam-api.pro receiving wallet address/phone/identifier for invoices."},
-    "SAM_CURRENCY": {"secret": False, "desc": "SAM invoice currency: USD | SYP | EUR."},
     "SAM_SYP_USD_RATE": {"secret": False,
                          "desc": "Optional SYP->USD rate used for SYP-denominated SAM top-ups."},
 }

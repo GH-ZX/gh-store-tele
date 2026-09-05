@@ -1588,6 +1588,8 @@ async def admin_get_all_configs(tg_id: int):
         from services.config import CONFIG_DEFINITIONS
         configs_list = []
         for key, meta in CONFIG_DEFINITIONS.items():
+            if key == "SAM_CURRENCY":
+                continue
             val = await ConfigService.get(session, key, env_fallback=os.environ.get(key, ""))
             is_secret = meta.get("secret", False)
             configs_list.append({

@@ -154,3 +154,4 @@ def test_one_time_config_definitions():
     assert "SAM_API_KEY" in CONFIG_DEFINITIONS
     assert "SAM_RECEIVING_WALLET" in CONFIG_DEFINITIONS
     assert CONFIG_DEFINITIONS["BATSTORE_API_KEY"]["secret"] is True
+    assert "SAM_CURRENCY" not in CONFIG_DEFINITIONS
