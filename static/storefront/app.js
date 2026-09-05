@@ -2161,8 +2161,8 @@ const tg = window.Telegram?.WebApp;
           : `<span class="spec-pill in-stock">${primary.stock ? `${d.in_stock} (${primary.stock})` : d.in_stock}</span>`;
         const isActivation = (primary.delivery_type === 'activation');
         const deliveryBadge = isActivation
-          ? `<span class="spec-pill delivery-activation">⚙️ ${currentAppLanguage === 'ar' ? 'تفعيل مخصص' : 'Activation'}</span>`
-          : `<span class="spec-pill delivery-instant">⚡ ${currentAppLanguage === 'ar' ? 'تسليم فوري' : 'Instant'}</span>`;
+          ? `<span class="spec-pill delivery-activation">${currentAppLanguage === 'ar' ? 'تفعيل مخصص' : 'Activation'}</span>`
+          : `<span class="spec-pill delivery-instant">${currentAppLanguage === 'ar' ? 'تسليم فوري' : 'Instant'}</span>`;
 
         const multiBadge = isMulti
           ? `<span class="spec-pill in-stock" style="background: rgba(56,189,248,0.15); color: var(--accent); font-weight: 800;">${items.length} ${currentAppLanguage === 'ar' ? 'خيارات وباقات متوفرة' : 'Options Available'}</span>`
@@ -2260,8 +2260,8 @@ const tg = window.Telegram?.WebApp;
 
           const isActivation = (p.delivery_type === 'activation');
           const deliveryBadge = isActivation
-            ? `<span class="spec-pill delivery-activation">⚙️ ${currentAppLanguage === 'ar' ? 'تفعيل مخصص' : 'Activation'}</span>`
-            : `<span class="spec-pill delivery-instant">⚡ ${currentAppLanguage === 'ar' ? 'تسليم فوري' : 'Instant'}</span>`;
+            ? `<span class="spec-pill delivery-activation">${currentAppLanguage === 'ar' ? 'تفعيل مخصص' : 'Activation'}</span>`
+            : `<span class="spec-pill delivery-instant">${currentAppLanguage === 'ar' ? 'تسليم فوري' : 'Instant'}</span>`;
 
           const durText = (currentAppLanguage === 'ar' ? p.duration_ar : p.duration_en) || null;
           const warText = (currentAppLanguage === 'ar' ? p.warranty_ar : p.warranty_en) || null;

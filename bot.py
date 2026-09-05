@@ -380,9 +380,8 @@ async def get_tma_catalog():
         flash_sale = {
             "enabled": flash_enabled,
             "percent": flash_pct,
-            "end_timestamp": flash_end,
-            "title_ar": await ConfigService.get(session, "FLASH_SALE_TITLE_AR", default="عروض فلاش محدودة 🔥"),
-            "title_en": await ConfigService.get(session, "FLASH_SALE_TITLE_EN", default="Limited Flash Sale 🔥"),
+            "title_ar": await ConfigService.get(session, "FLASH_SALE_TITLE_AR", default="عروض فلاش محدودة"),
+            "title_en": await ConfigService.get(session, "FLASH_SALE_TITLE_EN", default="Limited Flash Sale"),
         }
     return {"categories": cats_list, "products": data, "store_logo_url": store_logo_url or "", "flash_sale": flash_sale}
 

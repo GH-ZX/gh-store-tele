@@ -705,23 +705,24 @@
     }
     .btn-back-catalog:active { opacity: 0.7; }
 
-    /* Product Row Item (Clean, No Emojis, No Box Icon) */
+    /* Product Row Item (Modern Sleek TMA Design) */
     .product-row {
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 14px;
+      border-radius: 16px;
       padding: 14px 16px;
-      margin-bottom: 8px;
+      margin-bottom: 10px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
+      gap: 14px;
       cursor: pointer;
       position: relative;
-      transition: transform 0.15s, border-color 0.15s, background 0.15s;
+      transition: transform 0.12s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.12s ease, background 0.12s ease;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
     }
     .product-row:active {
-      transform: scale(0.99);
+      transform: scale(0.985);
       border-color: var(--accent);
       background: var(--card-hover);
     }
@@ -729,16 +730,27 @@
       display: flex;
       flex-direction: column;
       flex: 1;
+      min-width: 0;
       overflow: hidden;
     }
     .prod-title {
       font-size: 15px;
       font-weight: 700;
-      margin-bottom: 1px;
+      margin-bottom: 3px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
       color: var(--text);
+      direction: ltr !important;
+      text-align: left !important;
+      unicode-bidi: isolate;
+      display: block;
+      letter-spacing: -0.2px;
+    }
+    [dir="rtl"] .prod-title {
+      direction: ltr !important;
+      text-align: right !important;
+      unicode-bidi: isolate;
     }
     .prod-price-box {
       text-align: end;
@@ -803,8 +815,10 @@
       font-size: 22px;
       font-weight: 800;
       letter-spacing: -0.3px;
-      margin-bottom: 6px;
+      margin-bottom: 4px;
       color: var(--text);
+      direction: ltr !important;
+      unicode-bidi: isolate;
     }
     .hero-cat {
       font-size: 12px;
