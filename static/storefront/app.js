@@ -1009,7 +1009,7 @@ const tg = window.Telegram?.WebApp;
         in_stock: "متوفر",
         out_of_stock: "نفد المخزون",
         desc: "الوصف",
-        promo_code_label: "كود الخصم / Promo Code",
+        promo_code_label: "كود الخصم",
         apply: "تطبيق",
         total: "السعر الإجمالي",
         insufficient_balance: "الرصيد المتاح غير كافٍ لهذا الطلب.",
@@ -1034,26 +1034,26 @@ const tg = window.Telegram?.WebApp;
         wallet_ready: "جاهز للشراء",
         vip_progress: "التقدم نحو رتبة",
         method_section_title: "1. اختر وسيلة الشحن",
-        stars_title: "نجوم تيليجرام (Telegram Stars)",
+        stars_title: "نجوم تيليجرام",
         stars_sub: "دفع عبر Apple Pay أو Google Pay أو النجوم",
-        crypto_title: "USDT (BEP-20 / BNB Chain)",
-        crypto_sub: "دفع مباشر وسريع عبر شبكة BEP20 (Binance Smart Chain)",
-        shamcash_title: "شام كاش (Sham Cash)",
+        crypto_title: "USDT (BEP-20)",
+        crypto_sub: "دفع مباشر وسريع عبر شبكة BEP20",
+        shamcash_title: "شام كاش",
         shamcash_sub: "دفع مباشر وسريع عبر بنك شام كاش",
-        syriatelcash_title: "سيرياتيل كاش (Syriatel Cash)",
-        syriatelcash_sub: "دفع مباشر بالليرة السورية (SYP فقط)",
+        syriatelcash_title: "سيرياتيل كاش",
+        syriatelcash_sub: "دفع مباشر بالليرة السورية",
         amount_section_title: "2. اختر المبلغ أو حدد مخصصاً",
         custom_amount_placeholder: "أدخل المبلغ ($)... e.g. 15",
         voucher_section_title: "شحن عبر كرت هدية (Voucher)",
         voucher_btn: "شحن الكرت",
-        theme_section_title: "المظهر / Appearance",
-        theme_dark: "داكن (Dark)",
-        theme_light: "فاتح (Light)",
+        theme_section_title: "المظهر",
+        theme_dark: "الوضع الداكن",
+        theme_light: "الوضع الفاتح",
         install_section_title: "تثبيت التطبيق",
         install_desc: "أضف أيقونة متجر GH Store إلى شاشة هاتفك الرئيسية لتصفح العروض بسهولة!",
         install_btn: "إضافة إلى الشاشة الرئيسية",
         currency_title: "عملة العرض المفضلة",
-        lang_title: "اللغة / Language",
+        lang_title: "اللغة",
         referral_title: "برنامج الإحالة والأرباح",
         referral_desc: "شارك رابط الإحالة الخاص بك واحصل على <strong>0.2% عمولة أرباح</strong> مباشرة من هامش كل عملية شراء يقوم بها أصدقاؤك!",
         ref_stat_count: "المدعوون",
@@ -1066,7 +1066,7 @@ const tg = window.Telegram?.WebApp;
         sheet_payment_desc: "تم إنشاء فاتورة الشحن بنجاح. يمكنك المتابعة في المتصفح الخارجي لإتمام الدفع، أو نسخ رابط الفاتورة المباشر:",
         sheet_open_btn: "فتح صفحة الدفع في المتصفح",
         sheet_copy_btn: "نسخ رابط الفاتورة المباشر",
-        admin_center: "لوحة تحكم المشرف (Admin Center)",
+        admin_center: "لوحة تحكم المشرف",
         admin_verified: "مسؤول معتمد",
         stat_revenue: "إجمالي المبيعات",
         stat_cost: "تكلفة المورد",
@@ -1074,7 +1074,7 @@ const tg = window.Telegram?.WebApp;
         stat_balances: "أرصدة العملاء الحالية",
         stat_users: "عدد المستخدمين",
         stat_orders: "إجمالي الطلبات",
-        supplier_wallets: "أرصدة محافظ الموردين (Supplier Wallets)",
+        supplier_wallets: "احتياطي الموردين",
         refresh: "تحديث",
         admin_orders_title: "مراقبة طلبات المتجر المباشرة",
         admin_coupons_title: "إدارة كوبونات الخصم",
@@ -1093,11 +1093,11 @@ const tg = window.Telegram?.WebApp;
         order_updated: "تم تحديث حالة الطلب!",
         manual_sale_title: "بيع يدوي مدفوع خارج المتجر",
         manual_sale_btn: "تسليم بيع يدوي مدفوع",
-        recipient_label: "وجهة التسليم (Recipient)",
-        deliver_self: "تسليم لحسابي (مسؤول)",
-        deliver_other: "بيع لعميل آخر",
-        customer_tg_id: "معرف تيليجرام للعميل (Telegram ID)",
-        qty_label: "الكمية (Quantity)",
+        recipient_label: "وجهة التسليم",
+        deliver_self: "لحسابي",
+        deliver_other: "لعميل آخر",
+        customer_tg_id: "معرف تيليجرام للعميل",
+        qty_label: "الكمية",
         sale_total: "الإجمالي بالسعر الرسمي",
         external_paid_label: "تأكيد استلام المبلغ خارج المتجر",
         external_paid_note: "لا يتم خصم أي مبلغ من رصيد محفظة العميل. سيُسجل البيع بإيراد حقيقي.",
@@ -1106,6 +1106,21 @@ const tg = window.Telegram?.WebApp;
         processing_sale: "جاري تنفيذ البيع...",
         sale_success_self: "تم تسجيل البيع واستلام المنتج بنجاح!",
         external_paid_done: "مدفوع خارج المتجر",
+        suppliers_drawer: "إدارة ومفاتيح الموردين والسيرفرات",
+        one_time_setup: "إعدادات التهيئة ومفاتيح الربط",
+        orders_history_btn: "مراقبة الطلبات والاسترداد",
+        users_manage_btn: "إدارة المستخدمين والأرصدة",
+        coupons_manage_btn: "إدارة وإنشاء الكوبونات",
+        sqladmin_btn: "لوحة SQLAdmin الكاملة",
+        stuck_orders_btn: "متابعة الطلبات والعمليات المعلقة",
+        syp_rate_title: "سعر صرف الليرة السورية مقابل الدولار",
+        referral_rate_title: "نسبة عمولة الإحالة من أرباح الهامش",
+        logo_url_title: "رابط شعار المتجر",
+        margin_rate_title: "نسبة هامش الربح العام على المنتجات",
+        stars_rate_title: "قيمة النجمة الواحدة مقابل الدولار",
+        broadcast_banner_title: "شريط الإعلانات العام في المتجر",
+        force_sync_btn: "مزامنة الكتالوج والأسعار من المورد فورياً",
+        autorefund_title: "نظام الاسترداد التلقائي",
         quote_limited_note: "تم تقليص الخصم عند تكلفة المورد حتى لا يسبب خسارة.",
         quote_failed_note: "تعذر حساب السعر النهائي. يرجى إعادة المحاولة.",
         price_unavailable_note: "هذا المنتج غير متاح حالياً بهذا السعر."
@@ -1143,7 +1158,7 @@ const tg = window.Telegram?.WebApp;
         in_stock: "In Stock",
         out_of_stock: "Out of Stock",
         desc: "Description",
-        promo_code_label: "Promo Code / Coupon",
+        promo_code_label: "Promo Code",
         apply: "Apply",
         total: "Total Price",
         insufficient_balance: "Insufficient balance for this order.",
@@ -1180,7 +1195,7 @@ const tg = window.Telegram?.WebApp;
         custom_amount_placeholder: "Enter amount ($)... e.g. 15",
         voucher_section_title: "Redeem Gift Card (Voucher)",
         voucher_btn: "Redeem Card",
-        theme_section_title: "Theme & Appearance",
+        theme_section_title: "Appearance",
         theme_dark: "Dark Mode",
         theme_light: "Light Mode",
         install_section_title: "Install App",
@@ -1242,7 +1257,22 @@ const tg = window.Telegram?.WebApp;
         external_paid_done: "Paid externally",
         quote_limited_note: "Discount was capped at supplier cost to avoid a loss.",
         quote_failed_note: "Could not compute the final price. Please retry.",
-        price_unavailable_note: "This product is currently unavailable at this price."
+        price_unavailable_note: "This product is currently unavailable at this price.",
+        suppliers_drawer: "Suppliers & Servers Control",
+        one_time_setup: "Initial System Setup",
+        orders_history_btn: "Orders & Refunds Radar",
+        users_manage_btn: "Manage Users & Balances",
+        coupons_manage_btn: "Manage Discount Coupons",
+        sqladmin_btn: "Full SQLAdmin Panel",
+        stuck_orders_btn: "Pending & Stuck Orders",
+        syp_rate_title: "SYP / USD Exchange Rate",
+        referral_rate_title: "Referral Margin Commission (%)",
+        logo_url_title: "Store Brand Logo URL",
+        margin_rate_title: "Global Profit Margin (%)",
+        stars_rate_title: "Telegram Stars / USD Rate",
+        broadcast_banner_title: "Broadcast Announcement Banner",
+        force_sync_btn: "Force Sync Catalog from Supplier",
+        autorefund_title: "Automated Refunds Engine"
       }
     };
 
@@ -1254,7 +1284,6 @@ const tg = window.Telegram?.WebApp;
       const isRtl = (lang === 'ar');
       document.documentElement.dir = isRtl ? 'rtl' : 'ltr';
       document.documentElement.lang = lang;
-
       const setText = (id, txt) => { const el = document.getElementById(id); if (el) el.innerText = txt; };
       setText('i18n-tab-store', d.store);
       setText('i18n-tab-orders', d.orders);
@@ -1350,16 +1379,34 @@ const tg = window.Telegram?.WebApp;
       setText('label-ref-stat-rate', d.ref_stat_rate);
       setText('label-ref-breakdown-title', d.ref_breakdown_title);
       setText('btn-copy-ref-link', d.copy);
-      setText('admin-center-title', '👑 ' + d.admin_center);
+      setText('admin-center-title', d.admin_center);
       setText('admin-verified-badge', d.admin_verified);
+      setText('label-theme-dark', d.theme_dark);
+      setText('label-theme-light', d.theme_light);
+      setText('admin-supplier-reserves-label', d.supplier_wallets);
+      setText('btn-suppliers-drawer-label', d.suppliers_drawer);
+      setText('admin-syp-rate-title', d.syp_rate_title);
+      setText('admin-ref-rate-title', d.referral_rate_title);
+      setText('admin-logo-url-title', d.logo_url_title);
+      setText('admin-margin-rate-title', d.margin_rate_title);
+      setText('admin-stars-rate-title', d.stars_rate_title);
+      setText('admin-broadcast-banner-title', d.broadcast_banner_title);
+      setText('btn-force-sync-label', d.force_sync_btn);
+      setText('admin-autorefund-title', d.autorefund_title);
+      setText('btn-stuck-orders-label', d.stuck_orders_btn);
+      setText('btn-admin-users-drawer', d.users_manage_btn);
+      setText('btn-admin-orders-drawer', d.orders_history_btn);
+      setText('btn-admin-coupons-drawer', d.coupons_manage_btn);
+      setText('btn-admin-sqladmin-drawer', d.sqladmin_btn);
+      setText('btn-admin-onetime-label', d.one_time_setup);
       setText('admin-stat-label-revenue', d.stat_revenue);
       setText('admin-stat-label-cost', d.stat_cost);
       setText('admin-stat-label-profit', d.stat_profit);
       setText('admin-stat-label-balances', d.stat_balances);
       setText('admin-stat-label-users', d.stat_users);
       setText('admin-stat-label-orders', d.stat_orders);
-      setText('admin-detail-gift-label', '💰 ' + d.manual_sale_title);
-      setText('admin-gift-modal-title', '💰 ' + d.manual_sale_title);
+      setText('admin-detail-gift-label', d.manual_sale_title);
+      setText('admin-gift-modal-title', d.manual_sale_title);
       setText('admin-gift-recipient-label', d.recipient_label);
       setText('gift-type-self', d.deliver_self);
       setText('gift-type-user', d.deliver_other);
@@ -4399,9 +4446,9 @@ const tg = window.Telegram?.WebApp;
         if (!res.ok || d.error) {
           if (statusEl) {
             statusEl.style.color = '#ef4444';
-            statusEl.innerText = `❌ خطأ: ${d.error || d.message || 'المفتاح غير صالح'}`;
+            statusEl.innerText = `خطأ: ${d.error || d.message || 'المفتاح غير صالح'}`;
           }
-          showToast(`❌ ${d.error || 'فشل الفحص'}`);
+          showToast(d.error || 'فشل الفحص');
           return;
         }
 
@@ -4410,17 +4457,17 @@ const tg = window.Telegram?.WebApp;
         const user = d.username ? `@${d.username}` : '';
         if (statusEl) {
           statusEl.style.color = '#10b981';
-          statusEl.innerText = `✅ المفتاح فعال! الرصيد: $${bal} · العضوية: ${mem} ${user}`;
+          statusEl.innerText = `المفتاح فعال. الرصيد: $${bal} · العضوية: ${mem} ${user}`;
         }
         const prodBalEl = document.getElementById('admin-bal-prodseller');
         if (prodBalEl) prodBalEl.innerText = `$${bal}`;
         const prodTierEl = document.getElementById('admin-prodseller-tier');
         if (prodTierEl) prodTierEl.innerText = mem;
-        showToast((currentAppLanguage === 'ar') ? `✅ رصيد سيرفر 2: $${bal}` : `ProdSeller balance: $${bal}`);
+        showToast((currentAppLanguage === 'ar') ? `رصيد سيرفر 2: $${bal}` : `ProdSeller balance: $${bal}`);
       } catch (e) {
         if (statusEl) {
           statusEl.style.color = '#ef4444';
-          statusEl.innerText = `❌ خطأ في الاتصال: ${e.message}`;
+          statusEl.innerText = `خطأ في الاتصال: ${e.message}`;
         }
       }
     }
@@ -4445,13 +4492,13 @@ const tg = window.Telegram?.WebApp;
         });
         const d = await res.json();
         if (!res.ok || d.error) {
-          showToast(`❌ ${d.error || 'فشل الحفظ'}`);
+          showToast(d.error || 'فشل الحفظ');
           return;
         }
-        showToast((currentAppLanguage === 'ar') ? '✅ تم حفظ إعدادات الموردين بنجاح' : '✅ Supplier settings saved');
+        showToast((currentAppLanguage === 'ar') ? 'تم حفظ إعدادات الموردين بنجاح' : 'Supplier settings saved');
         await refreshSupplierBalances();
       } catch (e) {
-        showToast(`❌ ${e.message}`);
+        showToast(e.message);
       }
     }
 
@@ -4460,9 +4507,9 @@ const tg = window.Telegram?.WebApp;
       const btn = document.getElementById('btn-sync-suppliers');
       if (btn) {
         btn.disabled = true;
-        btn.innerText = (currentAppLanguage === 'ar') ? '⏳ جاري المزامنة...' : 'Syncing...';
+        btn.innerText = (currentAppLanguage === 'ar') ? 'جاري المزامنة...' : 'Syncing...';
       }
-      showToast((currentAppLanguage === 'ar') ? '⏳ جاري جلب ومزامنة المنتجات من جميع الموردين...' : 'Syncing all supplier catalogs...');
+      showToast((currentAppLanguage === 'ar') ? 'جاري جلب ومزامنة المنتجات من جميع الموردين...' : 'Syncing all supplier catalogs...');
       try {
         const res = await fetch('/api/admin/supplier/sync', {
           method: 'POST',
@@ -4471,22 +4518,22 @@ const tg = window.Telegram?.WebApp;
         });
         const d = await res.json();
         if (!res.ok || d.error) {
-          showToast(`❌ ${d.error || 'فشلت المزامنة'}`);
+          showToast(d.error || 'فشلت المزامنة');
           return;
         }
         const b = d.result?.batstore || {};
         const p = d.result?.prodseller || {};
         const tot = d.result?.total_products || 0;
         showToast((currentAppLanguage === 'ar')
-          ? `✅ تمت المزامنة! BatStore (${b.created || 0}+/${b.updated || 0}) · ProdSeller (${p.created || 0}+/${p.updated || 0}) · الإجمالي: ${tot}`
-          : `✅ Sync complete! Total: ${tot}`);
-        await loadProductsCatalog();
+          ? `تمت المزامنة بنجاح: BatStore (${b.created || 0}+/${b.updated || 0}) · ProdSeller (${p.created || 0}+/${p.updated || 0}) · الإجمالي: ${tot}`
+          : `Sync complete: Total ${tot}`);
+        await fetchCatalogData();
       } catch (e) {
-        showToast(`❌ ${e.message}`);
+        showToast(e.message);
       } finally {
         if (btn) {
           btn.disabled = false;
-          btn.innerText = (currentAppLanguage === 'ar') ? '🔄 مزامنة كافة الموردين' : 'Sync All Suppliers';
+          btn.innerText = (currentAppLanguage === 'ar') ? 'مزامنة كافة الموردين' : 'Sync All Suppliers';
         }
       }
     }
@@ -4859,7 +4906,7 @@ const tg = window.Telegram?.WebApp;
       if (statusEl) {
         statusEl.style.display = 'block';
         statusEl.style.color = 'var(--hint)';
-        statusEl.innerText = '⏳ جاري الاتصال بسيرفر BatStore وفحص الرصيد...';
+        statusEl.innerText = 'جاري الاتصال بسيرفر BatStore وفحص الرصيد...';
       }
 
       try {
@@ -4872,24 +4919,24 @@ const tg = window.Telegram?.WebApp;
         if (!res.ok || d.error) {
           if (statusEl) {
             statusEl.style.color = '#ef4444';
-            statusEl.innerText = `❌ خطأ في الاتصال: ${d.error || 'المفتاح غير صالح'}`;
+            statusEl.innerText = `خطأ في الاتصال: ${d.error || 'المفتاح غير صالح'}`;
           }
-          showToast(`❌ ${d.error || 'فشل فحص سيرفر 1'}`);
+          showToast(d.error || 'فشل فحص سيرفر 1');
           return;
         }
 
         const bal = Number(d.balance || 0.0).toFixed(2);
         if (statusEl) {
           statusEl.style.color = '#10b981';
-          statusEl.innerText = `✅ سيرفر 1 متصل بنجاح! الرصيد: $${bal} USD · الحساب: ${d.username || 'Reseller'}`;
+          statusEl.innerText = `سيرفر 1 متصل بنجاح: الرصيد $${bal} USD · المستخدم: ${d.username || 'Reseller'}`;
         }
         const balEl = document.getElementById('sup-card-bat-bal');
         if (balEl) balEl.innerText = `$${bal} USD`;
-        showToast(`✅ رصيد سيرفر 1: $${bal}`);
+        showToast(`رصيد سيرفر 1: $${bal}`);
       } catch (e) {
         if (statusEl) {
           statusEl.style.color = '#ef4444';
-          statusEl.innerText = `❌ خطأ: ${e.message}`;
+          statusEl.innerText = `خطأ: ${e.message}`;
         }
       } finally {
         if (btn) btn.disabled = false;
@@ -4906,7 +4953,7 @@ const tg = window.Telegram?.WebApp;
       if (statusEl) {
         statusEl.style.display = 'block';
         statusEl.style.color = 'var(--hint)';
-        statusEl.innerText = '⏳ جاري الاتصال بسيرفر ProdSeller وفحص الرصيد...';
+        statusEl.innerText = 'جاري الاتصال بسيرفر ProdSeller وفحص الرصيد...';
       }
 
       try {
@@ -4919,9 +4966,9 @@ const tg = window.Telegram?.WebApp;
         if (!res.ok || d.error) {
           if (statusEl) {
             statusEl.style.color = '#ef4444';
-            statusEl.innerText = `❌ خطأ في الاتصال: ${d.error || 'المفتاح غير صالح'}`;
+            statusEl.innerText = `خطأ في الاتصال: ${d.error || 'المفتاح غير صالح'}`;
           }
-          showToast(`❌ ${d.error || 'فشل فحص سيرفر 2'}`);
+          showToast(d.error || 'فشل فحص سيرفر 2');
           return;
         }
 
@@ -4930,17 +4977,17 @@ const tg = window.Telegram?.WebApp;
         const user = d.username ? `@${d.username}` : '';
         if (statusEl) {
           statusEl.style.color = '#10b981';
-          statusEl.innerText = `✅ سيرفر 2 متصل بنجاح! الرصيد: $${bal} USDT · العضوية: ${mem} ${user}`;
+          statusEl.innerText = `سيرفر 2 متصل بنجاح: الرصيد $${bal} USDT · العضوية: ${mem} ${user}`;
         }
         const balEl = document.getElementById('sup-card-prod-bal');
         if (balEl) balEl.innerText = `$${bal} USDT`;
         const tierEl = document.getElementById('sup-card-prod-tier');
         if (tierEl) tierEl.innerText = `عضوية: ${mem} ${user}`;
-        showToast(`✅ رصيد سيرفر 2: $${bal}`);
+        showToast(`رصيد سيرفر 2: $${bal}`);
       } catch (e) {
         if (statusEl) {
           statusEl.style.color = '#ef4444';
-          statusEl.innerText = `❌ خطأ: ${e.message}`;
+          statusEl.innerText = `خطأ: ${e.message}`;
         }
       } finally {
         if (btn) btn.disabled = false;
@@ -4973,13 +5020,13 @@ const tg = window.Telegram?.WebApp;
         });
         const d = await res.json();
         if (!res.ok || d.error) {
-          showToast(`❌ ${d.error || 'فشل الحفظ'}`);
+          showToast(d.error || 'فشل الحفظ');
           return;
         }
-        showToast('✅ تم حفظ كافة إعدادات ومفاتيح السيرفرين بنجاح');
+        showToast('تم حفظ كافة إعدادات ومفاتيح السيرفرين بنجاح');
         await loadAdminSuppliersDetails();
       } catch (e) {
-        showToast(`❌ ${e.message}`);
+        showToast(e.message);
       }
     }
 
@@ -4988,9 +5035,9 @@ const tg = window.Telegram?.WebApp;
       const btn = document.getElementById('btn-sup-page-sync');
       if (btn) {
         btn.disabled = true;
-        btn.innerText = '⏳ جاري مزامنة المنتجات من السيرفرين...';
+        btn.innerText = 'جاري مزامنة المنتجات من السيرفرين...';
       }
-      showToast('⏳ جاري جلب ومزامنة المنتجات من كلا الموردين...');
+      showToast('جاري جلب ومزامنة المنتجات من كلا الموردين...');
       try {
         const res = await fetch('/api/admin/supplier/sync', {
           method: 'POST',
@@ -4999,21 +5046,21 @@ const tg = window.Telegram?.WebApp;
         });
         const d = await res.json();
         if (!res.ok || d.error) {
-          showToast(`❌ ${d.error || 'فشلت المزامنة'}`);
+          showToast(d.error || 'فشلت المزامنة');
           return;
         }
         const b = d.result?.batstore || {};
         const p = d.result?.prodseller || {};
         const tot = d.result?.total_products || 0;
-        showToast(`✅ تمت المزامنة! BatStore (${b.created || 0}+/${b.updated || 0}) · ProdSeller (${p.created || 0}+/${p.updated || 0}) · الإجمالي: ${tot}`);
-        await loadProductsCatalog();
+        showToast(`تمت المزامنة بنجاح: BatStore (${b.created || 0}+/${b.updated || 0}) · ProdSeller (${p.created || 0}+/${p.updated || 0}) · الإجمالي: ${tot}`);
+        await fetchCatalogData();
         await loadAdminSuppliersDetails();
       } catch (e) {
-        showToast(`❌ ${e.message}`);
+        showToast(e.message);
       } finally {
         if (btn) {
           btn.disabled = false;
-          btn.innerText = '🔄 مزامنة وتحديث كافة المنتجات من كلا الموردين الآن';
+          btn.innerText = 'مزامنة وتحديث كافة المنتجات من كلا الموردين الآن';
         }
       }
     }

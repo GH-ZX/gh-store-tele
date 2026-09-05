@@ -103,7 +103,7 @@ async def test_place_order_prodseller_failover_to_batstore():
                     mock_session, product, quantity=1, customer_reference="test-failover"
                 )
                 assert res["supplier"] == "batstore"
-                assert "Failover" in res["server_badge"]
+                assert "بديل" in res["server_badge"]
                 assert res["external_order_ref"] == "bat_order_777"
                 assert res["goods"] == ["BAT-KEY-111"]
 
@@ -141,6 +141,6 @@ async def test_place_order_batstore_failover_to_prodseller():
                     mock_session, product, quantity=1, customer_reference="test-failover-2"
                 )
                 assert res["supplier"] == "prodseller"
-                assert "Failover" in res["server_badge"]
+                assert "بديل" in res["server_badge"]
                 assert res["external_order_ref"] == "ps_failover_888"
                 assert res["goods"] == ["PRODSELLER-FALLBACK-KEY"]

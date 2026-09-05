@@ -370,7 +370,7 @@ async def get_tma_catalog():
                 "stock": p.stock,
                 "delivery_type": p.delivery_type or "stock",
                 "supplier": getattr(p, "supplier", "batstore") or "batstore",
-                "server_badge": getattr(p, "server_badge", "⚡ سيرفر 1 (BatStore)") or "⚡ سيرفر 1 (BatStore)",
+                "server_badge": getattr(p, "server_badge", "سيرفر 1 (BatStore)") or "سيرفر 1 (BatStore)",
             })
         store_logo_url = await ConfigService.get(session, "STORE_LOGO_URL", env_fallback=os.environ.get("STORE_LOGO_URL", ""))
         flash_enabled = (await ConfigService.get(session, "FLASH_SALE_ENABLED", default="false")).lower() in ("true", "1", "yes")
@@ -914,7 +914,7 @@ async def tma_instant_buy(request: Request):
                 ext_ref = placed.get("external_order_ref")
                 goods_list = placed.get("goods") or []
                 supplier_used = placed.get("supplier") or getattr(product, "supplier", "batstore")
-                server_badge = placed.get("server_badge") or getattr(product, "server_badge", "⚡ سيرفر 1 (BatStore)")
+                server_badge = placed.get("server_badge") or getattr(product, "server_badge", "سيرفر 1 (BatStore)")
             except (BatStoreOutOfStockError, ProdSellerOutOfStockError) as e:
                 logging.warning("Product #%s out of stock on all suppliers: %s", product.product_id, e)
                 await UserRepository.refund_balance(user.telegram_id, total, session)
@@ -2765,7 +2765,6 @@ async def admin_get_supplier_details(tg_id: int):
     """Return paired supplier settings, status, and config for the dedicated admin suppliers page."""
     if not _verify_admin(tg_id):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
-
     async with get_db_session() as session:
         bat_key = await ConfigService.get(session, "BATSTORE_API_KEY", env_fallback=os.environ.get("BATSTORE_API_KEY", ""))
         prod_key = await ConfigService.get(session, "PRODSELLER_API_KEY", env_fallback=os.environ.get("PRODSELLER_API_KEY", ""))
@@ -2781,7 +2780,7 @@ async def admin_get_supplier_details(tg_id: int):
     return {
         "batstore": {
             "name": "سيرفر 1: BatStore / VenteBot",
-            "badge": "⚡ سيرفر 1 (BatStore)",
+            "badge": "سيرفر 1 (BatStore)",
             "api_url": config.BATSTORE_API_URL or "https://api.reseller.ventebot.com",
             "api_key_configured": bool(bat_key),
             "api_key_masked": (bat_key[:6] + "..." + bat_key[-4:]) if len(bat_key or "") > 10 else ("configured" if bat_key else ""),
@@ -2790,7 +2789,7 @@ async def admin_get_supplier_details(tg_id: int):
         },
         "prodseller": {
             "name": "سيرفر 2: ProdSeller",
-            "badge": "🚀 سيرفر 2 (ProdSeller)",
+            "badge": "سيرفر 2 (ProdSeller)",
             "api_url": "https://prodseller.com/v1",
             "api_key_configured": bool(prod_key),
             "api_key_masked": (prod_key[:6] + "..." + prod_key[-4:]) if len(prod_key or "") > 10 else ("configured" if prod_key else ""),

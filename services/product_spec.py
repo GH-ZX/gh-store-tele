@@ -136,8 +136,8 @@ class ProductSpecParser:
         type_ar = None
         type_en = None
         if re.search(r"\b(link|url)\b", name, re.IGNORECASE) or "(link)" in name.lower():
-            type_ar = "🔗 رابط تفعيل"
-            type_en = "🔗 Activation Link"
+            type_ar = "رابط تفعيل"
+            type_en = "Activation Link"
         elif re.search(r"\b(invite|invitation|slot|family)\b", name, re.IGNORECASE):
             type_ar = "دعوة عائلية"
             type_en = "Family Invite"
@@ -209,7 +209,7 @@ class ProductSpecParser:
                 if re.search(r"\bDrive\s*5TB\b", clean, re.IGNORECASE):
                     mods.append("+ 5TB Cloud")
                 if re.search(r"\b(link|url)\b", name, re.IGNORECASE) or "(link)" in name.lower():
-                    mods.append("(رابط تفعيل Link)")
+                    mods.append("(رابط تفعيل)")
                 mod_str = " ".join(dict.fromkeys(mods))
                 for m in mods:
                     if m.lower() in brand.lower():

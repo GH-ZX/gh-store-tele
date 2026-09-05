@@ -241,7 +241,7 @@ class ProdSellerService:
                     name=name,
                     description=clean_tg_emojis(p.get("description")),
                     description_ar=clean_tg_emojis(p.get("description")),
-                    emoji=detected_emoji or "⚡",
+                    emoji="",
                     custom_emoji_id=detected_custom_id,
                     image_url=p.get("imageUrl"),
                     cost_usd=cost,
@@ -256,7 +256,7 @@ class ProdSellerService:
                     hidden=not in_stock,
                     reseller_key_override=mongo_id,
                     supplier="prodseller",
-                    server_badge="🚀 سيرفر 2 (ProdSeller)",
+                    server_badge="سيرفر 2 (ProdSeller)",
                 )
                 await BatStoreProductRepository.create(dto, session)
                 created += 1
@@ -265,7 +265,7 @@ class ProdSellerService:
                 existing.stock = stock_count
                 existing.reseller_key_override = mongo_id
                 existing.supplier = "prodseller"
-                existing.server_badge = "🚀 سيرفر 2 (ProdSeller)"
+                existing.server_badge = "سيرفر 2 (ProdSeller)"
                 if not in_stock:
                     existing.stock = 0
                 await BatStoreProductRepository.update(existing, session)

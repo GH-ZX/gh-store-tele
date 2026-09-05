@@ -44,10 +44,10 @@ class MultiSupplierService:
         all_products = await BatStoreProductRepository.get_all(session)
         for p in all_products:
             if getattr(p, "supplier", "batstore") == "prodseller":
-                p.server_badge = "🚀 سيرفر 2 (ProdSeller)"
+                p.server_badge = "سيرفر 2 (ProdSeller)"
             else:
                 p.supplier = "batstore"
-                p.server_badge = "⚡ سيرفر 1 (BatStore)"
+                p.server_badge = "سيرفر 1 (BatStore)"
             await BatStoreProductRepository.update(p, session)
 
         from db import session_commit
@@ -113,7 +113,7 @@ class MultiSupplierService:
                     goods = [it.get("value") or it.get("data") or str(it) for it in items] if items else []
                     return {
                         "supplier": "batstore",
-                        "server_badge": "⚡ سيرفر 1 (BatStore - Failover)",
+                        "server_badge": "سيرفر 1 (BatStore - بديل)",
                         "external_order_ref": str(ext_ref) if ext_ref else None,
                         "goods": goods,
                         "raw_order": alt_resp,
@@ -131,7 +131,7 @@ class MultiSupplierService:
             goods = [it.get("value") or it.get("data") or str(it) for it in items] if items else []
             return {
                 "supplier": "batstore",
-                "server_badge": "⚡ سيرفر 1 (BatStore)",
+                "server_badge": "سيرفر 1 (BatStore)",
                 "external_order_ref": str(ext_ref) if ext_ref else None,
                 "goods": goods,
                 "raw_order": bat_resp,
@@ -150,7 +150,7 @@ class MultiSupplierService:
                 goods = ProdSellerService.extract_delivery_goods(alt_resp)
                 return {
                     "supplier": "prodseller",
-                    "server_badge": "🚀 سيرفر 2 (ProdSeller - Failover)",
+                    "server_badge": "سيرفر 2 (ProdSeller - بديل)",
                     "external_order_ref": str(alt_resp.get("orderId") or alt_resp.get("id") or ""),
                     "goods": goods,
                     "raw_order": alt_resp,
