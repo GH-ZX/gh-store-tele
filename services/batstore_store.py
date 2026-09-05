@@ -193,7 +193,7 @@ class BatStoreStoreService:
 
         from services.user import get_vip_tier_info
         from services.sale_pricing import price_lines
-        tier_label, discount_pct = get_vip_tier_info(getattr(user, "consume_records", 0.0))
+        tier_label, discount_pct = get_vip_tier_info(getattr(user, "consume_records", 0.0), getattr(user, "custom_discount_pct", None))
         try:
             (total_dec,), _ = price_lines(
                 [(product.sell_price_usd, product.cost_usd, callback_data.quantity, 0)],
