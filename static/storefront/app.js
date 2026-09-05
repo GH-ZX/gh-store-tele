@@ -5396,6 +5396,7 @@ const tg = window.Telegram?.WebApp;
         try { localStorage.setItem('ghstore_user_cache', JSON.stringify(d)); } catch (e) {}
         if (d.store_logo_url) applyStoreLogo(d.store_logo_url);
         updateBalancePills();
+        renderCatalogsGrid();
 
         // Re-render active collection or search with live personal discount
         if (activeCatalog) {
