@@ -146,6 +146,14 @@ class PaymentService:
                 status=get_text(language, BotEntity.USER, "status_pending"),
                 payment_lifetime=formatted
             )
+            if payment_dto.address:
+                try:
+                    from aiogram.types import InlineKeyboardButton, CopyTextButton
+                    copy_label = "📋 نسخ عنوان المحفظة" if language == Language.AR else "📋 Copy Wallet Address"
+                    kb_builder.row(InlineKeyboardButton(text=copy_label, copy_text=CopyTextButton(text=payment_dto.address)))
+                except Exception:
+                    pass
+            kb_builder.row(MyProfileCallback.create(level=1).get_back_button(language))
             qr_code_file = PaymentService.__create_qr_code(payment_dto)
             return InputMediaPhoto(media=qr_code_file, caption=caption), kb_builder
         else:
@@ -168,5 +176,13 @@ class PaymentService:
                 status=get_text(language, BotEntity.USER, "status_pending"),
                 payment_lifetime=formatted
             )
+            if payment_dto.address:
+                try:
+                    from aiogram.types import InlineKeyboardButton, CopyTextButton
+                    copy_label = "📋 نسخ عنوان المحفظة" if language == Language.AR else "📋 Copy Wallet Address"
+                    kb_builder.row(InlineKeyboardButton(text=copy_label, copy_text=CopyTextButton(text=payment_dto.address)))
+                except Exception:
+                    pass
+            kb_builder.row(MyProfileCallback.create(level=1).get_back_button(language))
             qr_code_file = PaymentService.__create_qr_code(payment_dto)
             return InputMediaPhoto(media=qr_code_file, caption=caption), kb_builder
