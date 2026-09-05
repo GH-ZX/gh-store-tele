@@ -879,8 +879,13 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       font-family: monospace;
       font-size: 13px;
     }
-    .rich-desc-container a { color: var(--accent); text-decoration: underline; }
-
+    .rich-desc-container a, .desc-link {
+      color: var(--accent);
+      text-decoration: underline;
+      word-break: break-all;
+      cursor: pointer;
+      font-weight: 600;
+    }
     /* Stepper & Action Controls */
     .stepper-capsule {
       display: inline-flex;
@@ -1835,7 +1840,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
     <!-- Structured Spec Badges in Product Detail -->
     <div class="badges-flex" id="detail-badges-box">
-      <div class="pill-badge" id="prod-delivery-badge">تسليم تلقائي فوري</div>
+      <div class="pill-badge" id="prod-delivery-badge">تسليم تلقائي</div>
       <div class="pill-badge" id="prod-stock-badge">متوفر</div>
       <div class="pill-badge" id="prod-dur-badge" style="display: none;"></div>
       <div class="pill-badge" id="prod-war-badge" style="display: none;"></div>
@@ -1851,7 +1856,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
     <div class="inset-card">
       <div style="font-size: 12px; font-weight: 700; color: var(--hint); margin-bottom: 6px;" id="label-desc-title">الوصف</div>
-      <div class="rich-desc-container" id="prod-rich-desc">تسليم فوري للمفاتيح.</div>
+      <div class="rich-desc-container" id="prod-rich-desc">تسليم المفاتيح والحسابات.</div>
     </div>
 
     <div class="inset-card">
@@ -1892,9 +1897,9 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       </div>
 
       <!-- In-App Purchase & Add to Cart Buttons Row -->
-      <div style="display: flex; gap: 8px; margin-bottom: 8px;" id="product-action-buttons-row">
-        <button class="btn-action-primary" id="btn-inapp-purchase" onclick="executeProductBuy()" style="flex: 2;">
-          <span id="btn-buy-action-label">شراء فوري</span>
+      <div style="display: flex; gap: 8px;" id="product-action-buttons-row">
+        <button class="btn-action-primary" id="btn-inapp-purchase" onclick="executeProductBuy()" style="flex: 2; height: 50px;">
+          <span id="btn-buy-action-label">شراء</span>
           <span id="btn-price-tag">($0.00)</span>
         </button>
         <button class="btn-action-secondary" id="btn-add-to-cart" onclick="addToCartCurrentProduct()" style="flex: 1; height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;" title="إضافة للسلة">
@@ -1902,9 +1907,6 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
           <span id="btn-add-cart-text" style="font-size: 11px; font-weight: 700;">أضف للسلة</span>
         </button>
       </div>
-      <button class="btn-stars-checkout" id="btn-stars-purchase" onclick="executeStarsDirectBuy()">
-        <span id="btn-stars-action-label">الدفع عبر نجوم تيليجرام</span>
-      </button>
     </div>
   </section>
 
@@ -1919,7 +1921,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       <div style="font-size: 12px; font-weight: 700; color: var(--hint); margin-bottom: 8px;" id="success-keys-title">بيانات الحساب / المفاتيح المسلمة</div>
       <div id="success-delivered-keys"></div>
       <div style="font-size: 11px; color: var(--hint); text-align: center; margin-top: 6px;" id="success-copy-hint">
-        انقر على أي كود بالأعلى للنسخ الفوري!
+        انقر على أي كود بالأعلى للنسخ!
       </div>
     </div>
 
@@ -2111,7 +2113,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     <div class="hero-banner" style="text-align: center; padding: 24px 16px;">
       <div style="font-size: 12px; color: var(--hint); text-transform: uppercase; letter-spacing: 0.5px;" id="label-wallet-balance-title">الرصيد المتاح للشراء</div>
       <div style="font-size: 36px; font-weight: 800; margin: 4px 0;" id="wallet-balance-hero">$0.00</div>
-      <div style="font-size: 13px; color: var(--accent); font-weight: 700;" id="wallet-balance-approx">جاهز للشراء الفوري</div>
+      <div style="font-size: 13px; color: var(--accent); font-weight: 700;" id="wallet-balance-approx">جاهز للشراء</div>
     </div>
 
     <!-- VIP Progress Bar -->
@@ -2134,7 +2136,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
           <span class="method-icon">⭐</span>
           <div>
             <div class="method-name" id="label-method-stars-name">نجوم تيليجرام (Telegram Stars)</div>
-            <div class="method-sub" id="label-method-stars-sub">دفع فوري عبر Apple Pay أو Google Pay أو النجوم</div>
+            <div class="method-sub" id="label-method-stars-sub">دفع عبر Apple Pay أو Google Pay أو النجوم</div>
           </div>
         </div>
         <div class="method-radio-check">✓</div>
@@ -3352,11 +3354,30 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       text = text.replace(/__(.*?)__/g, '<u>$1</u>');
 
       text = text.replace(/\*([^\*\n]+)\*/g, '<i>$1</i>');
-      text = text.replace(/_([^_\n]+)_/g, '<i>$1</i>');
+      text = text.replace(/(?<!\w)_([^_\n]+)_(?!\w)/g, '<i>$1</i>');
 
       text = text.replace(/`([^`]+)`/g, '<code class="desc-inline-code">$1</code>');
       text = text.replace(/^[\s]*[-*•]\s+(.+)$/gim, '<div class="desc-bullet">• $1</div>');
 
+      // Make URLs and markdown links clickable safely via placeholders
+      const links = [];
+      text = text.replace(/\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)/gi, (m, label, url) => {
+        const placeholder = '___LINK_' + links.length + '___';
+        links.push('<a href="' + url + '" target="_blank" rel="noopener noreferrer" class="desc-link" onclick="handleDescLink(event, \'' + url + '\')">' + label + '</a>');
+        return placeholder;
+      });
+
+      text = text.replace(/(https?:\/\/[^\s<"'\)]+)/gi, (url) => {
+        const cleanUrl = url.replace(/[.,;]+$/, '');
+        const trailing = url.slice(cleanUrl.length);
+        const placeholder = '___LINK_' + links.length + '___';
+        links.push('<a href="' + cleanUrl + '" target="_blank" rel="noopener noreferrer" class="desc-link" onclick="handleDescLink(event, \'' + cleanUrl + '\')">' + cleanUrl + '</a>');
+        return placeholder + trailing;
+      });
+
+      links.forEach((linkHtml, idx) => {
+        text = text.replace('___LINK_' + idx + '___', linkHtml);
+      });
       text = text.replace(/\r?\n/g, '<br>');
       text = text.replace(/(<br\s*\/?>){3,}/gi, '<br><br>');
 
@@ -3364,6 +3385,13 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       return text;
     }
 
+
+    function handleDescLink(e, url) {
+      if (tg?.openLink) {
+        e.preventDefault();
+        try { tg.openLink(url); } catch (err) { window.open(url, '_blank'); }
+      }
+    }
     // Structured Credential Splitter
     function renderStructuredCredentials(goods) {
       if (!goods || !goods.length) {
@@ -3432,13 +3460,13 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         filter_all: "الكل",
         filter_wishlist: "المفضلة",
         filter_stock: "متوفر فقط",
-        filter_instant: "تسليم فوري",
+        filter_instant: "تسليم مباشر",
         filter_lowprice: "الأقل سعراً",
         banner_badge: "تحديثات المتجر",
-        banner_title: "اشتراكات كلود وجيميني متوفرة فورياً",
-        banner_sub: "تسليم تلقائي فوري للمفاتيح والحسابات على مدار الساعة",
+        banner_title: "اشتراكات كلود وجيميني متوفرة الآن",
+        banner_sub: "تسليم تلقائي للمفاتيح والحسابات على مدار الساعة",
         pwa_title: "أضف التطبيق للشاشة الرئيسية",
-        pwa_sub: "لوصول فوري ومباشر دون فتح تيليجرام",
+        pwa_sub: "لوصول مباشر وسريع دون فتح تيليجرام",
         pwa_btn: "إضافة الآن",
         collections: "التصنيفات المميزة",
         all_catalogs: "جميع التصنيفات",
@@ -3449,7 +3477,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         view_grid: "شبكة",
         view_list: "قائمة",
         product: "المنتج",
-        instant_delivery: "تسليم تلقائي فوري",
+        instant_delivery: "تسليم تلقائي",
         custom_activation: "تفعيل مخصص",
         warranty_30d: "ضمان 30 يوم",
         in_stock: "متوفر",
@@ -3460,12 +3488,12 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         total: "السعر الإجمالي",
         insufficient_balance: "الرصيد المتاح غير كافٍ لهذا الطلب.",
         topup_to_continue: "شحن الرصيد للمتابعة",
-        buy_now: "شراء فوري",
+        buy_now: "شراء",
         stars_buy: "الدفع عبر نجوم تيليجرام",
         restock_alert: "نبهني فور التوفر",
         order_success: "تم الطلب بنجاح!",
         delivered_keys: "بيانات الحساب / المفاتيح المسلمة",
-        copy_hint: "انقر على أي كود بالأعلى للنسخ الفوري!",
+        copy_hint: "انقر على أي كود بالأعلى للنسخ!",
         view_orders: "عرض في طلباتي",
         continue_shopping: "متابعة التسوق",
         orders_title: "العمليات والسجل",
@@ -3477,11 +3505,11 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         step_delivered: "تم التسليم",
         claim_warranty: "طلب تعويض الضمان",
         wallet_balance_title: "الرصيد المتاح للشراء",
-        wallet_ready: "جاهز للشراء الفوري",
+        wallet_ready: "جاهز للشراء",
         vip_progress: "التقدم نحو رتبة",
         method_section_title: "1. اختر وسيلة الشحن",
         stars_title: "نجوم تيليجرام (Telegram Stars)",
-        stars_sub: "دفع فوري عبر Apple Pay أو Google Pay أو النجوم",
+        stars_sub: "دفع عبر Apple Pay أو Google Pay أو النجوم",
         crypto_title: "USDT (BEP-20 / BNB Chain)",
         crypto_sub: "دفع مباشر وسريع عبر شبكة BEP20 (Binance Smart Chain)",
         shamcash_title: "شام كاش (Sham Cash)",
@@ -3496,7 +3524,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         theme_dark: "داكن (Dark)",
         theme_light: "فاتح (Light)",
         install_section_title: "تثبيت التطبيق",
-        install_desc: "أضف أيقونة متجر GH Store إلى شاشة هاتفك الرئيسية لتصفح العروض فورياً!",
+        install_desc: "أضف أيقونة متجر GH Store إلى شاشة هاتفك الرئيسية لتصفح العروض بسهولة!",
         install_btn: "إضافة إلى الشاشة الرئيسية",
         currency_title: "عملة العرض المفضلة",
         lang_title: "اللغة / Language",
@@ -3540,7 +3568,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         view_grid: "Grid",
         view_list: "List",
         product: "Product",
-        instant_delivery: "Instant Automated Delivery",
+        instant_delivery: "Automated Delivery",
         custom_activation: "Custom Activation",
         warranty_30d: "30 Days Warranty",
         in_stock: "In Stock",
@@ -3551,7 +3579,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         total: "Total Price",
         insufficient_balance: "Insufficient balance for this order.",
         topup_to_continue: "Top Up Balance to Continue",
-        buy_now: "Instant Buy",
+        buy_now: "Buy",
         stars_buy: "Pay with Telegram Stars",
         restock_alert: "Notify When Available (Restock Alert)",
         order_success: "Order Successful!",
@@ -3568,7 +3596,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         step_delivered: "Delivered",
         claim_warranty: "Claim Warranty",
         wallet_balance_title: "Available Balance",
-        wallet_ready: "Ready for instant purchase",
+        wallet_ready: "Ready for purchase",
         vip_progress: "Progress to",
         method_section_title: "1. Select Payment Method",
         stars_title: "Telegram Stars",
@@ -4167,12 +4195,12 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         const isOutOfStock = (selectedProduct.stock !== null && selectedProduct.stock <= 0);
 
         setTxt('prod-delivery-badge', isInstant
-          ? (currentAppLanguage === 'ar' ? 'تسليم تلقائي فوري' : 'Instant Automated Delivery')
+          ? (currentAppLanguage === 'ar' ? 'تسليم تلقائي' : 'Automated Delivery')
           : (currentAppLanguage === 'ar' ? 'تفعيل مخصص' : 'Custom Activation'));
 
         setTxt('prod-stock-badge', isOutOfStock
           ? (currentAppLanguage === 'ar' ? 'نفد المخزون' : 'Out of Stock')
-          : (selectedProduct.stock ? `${currentAppLanguage === 'ar' ? 'متوفر' : 'In Stock'} (${selectedProduct.stock})` : (currentAppLanguage === 'ar' ? 'تسليم فوري' : 'Instant Delivery')));
+          : (selectedProduct.stock ? `${currentAppLanguage === 'ar' ? 'متوفر' : 'In Stock'} (${selectedProduct.stock})` : (currentAppLanguage === 'ar' ? 'تسليم مباشر' : 'Direct Delivery')));
 
         // Admin detail edit button
         const adminDetailEdit = document.getElementById('admin-detail-edit-container');
@@ -4204,16 +4232,13 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
         const restockBox = document.getElementById('restock-alert-box');
         const buyBtn = document.getElementById('btn-inapp-purchase');
-        const starsBtn = document.getElementById('btn-stars-purchase');
 
         if (isOutOfStock) {
           if (restockBox) restockBox.style.display = 'block';
           if (buyBtn) buyBtn.style.display = 'none';
-          if (starsBtn) starsBtn.style.display = 'none';
         } else {
           if (restockBox) restockBox.style.display = 'none';
           if (buyBtn) buyBtn.style.display = 'flex';
-          if (starsBtn) starsBtn.style.display = 'flex';
         }
 
         updateWishlistUI();
@@ -4358,25 +4383,11 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         if (buyBtn) buyBtn.onclick = executeProductBuy;
       }
 
-      if (tg?.MainButton && selectedProduct) {
+      if (tg?.MainButton) {
         tg.MainButton.offClick(executeProductBuy);
         tg.MainButton.offClick(goToWalletFromMainBtn);
         tg.MainButton.offClick(triggerInAppRestockSubscribe);
-
-        const isOutOfStock = (selectedProduct.stock !== null && selectedProduct.stock <= 0);
-        if (isOutOfStock) {
-          tg.MainButton.setText(currentAppLanguage === 'ar' ? 'تنبيه عند التوفر 🔔' : 'Notify on Restock 🔔')
-            .setParams({ color: '#f59e0b', text_color: '#ffffff', is_visible: true, is_active: true });
-          tg.MainButton.onClick(triggerInAppRestockSubscribe);
-        } else if (userBalance < total) {
-          tg.MainButton.setText(currentAppLanguage === 'ar' ? `شحن الرصيد للمتابعة ($${userBalance.toFixed(2)})` : `Top Up to Continue ($${userBalance.toFixed(2)})`)
-            .setParams({ color: '#f59e0b', text_color: '#ffffff', is_visible: true, is_active: true });
-          tg.MainButton.onClick(goToWalletFromMainBtn);
-        } else {
-          tg.MainButton.setText(`${d.buy_now} • $${total.toFixed(2)}`)
-            .setParams({ has_shine_effect: true, color: '#2481cc', text_color: '#ffffff', is_visible: true, is_active: true });
-          tg.MainButton.onClick(executeProductBuy);
-        }
+        tg.MainButton.hide();
       }
     }
 
