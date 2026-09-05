@@ -356,6 +356,7 @@ async def get_tma_catalog():
                 "clean_name": clean_title,
                 "category": p.category or "Other",
                 "price": p.sell_price_usd,
+                "cost_usd": round(float(p.cost_usd or 0.0), 2),
                 "sym": sym,
                 "description": clean_tg_emojis(p.description),
                 "description_ar": clean_tg_emojis(getattr(p, "description_ar", None)),
@@ -479,7 +480,7 @@ async def get_tma_user_data(tg_id: int, request: Request):
             return {"error": "user_not_found"}
 
         from services.user import get_vip_tier_info, format_currency_display
-        tier_label, discount_pct = get_vip_tier_info(user.consume_records)
+        tier_label, discount_pct = get_vip_tier_info(user.consume_records, getattr(user, "custom_discount_pct", None))
         balance = round((user.top_up_amount or 0.0) - (user.consume_records or 0.0), 2)
         curr_pref = getattr(user, "currency_preference", "USD") or "USD"
         syp_cfg = await ConfigService.get(session, "SAM_SYP_USD_RATE", env_fallback=os.environ.get("SAM_SYP_USD_RATE"))
@@ -865,7 +866,7 @@ async def tma_instant_buy(request: Request):
                 }, status_code=503)
 
             from services.sale_pricing import price_lines
-            tier_label, discount_pct = get_vip_tier_info(getattr(user, "consume_records", 0.0))
+            tier_label, discount_pct = get_vip_tier_info(getattr(user, "consume_records", 0.0), getattr(user, "custom_discount_pct", None))
             vol_disc_pct = BatStoreService.get_volume_discount(quantity)
             coupon_code = (body.get("coupon_code") or "").strip()
             coupon_type = coupon_value = None
@@ -1875,7 +1876,7 @@ async def create_tma_stars_invoice(request: Request):
         user = await UserRepository.get_by_tgid(tg_id, session)
         from services.user import get_vip_tier_info
         from services.sale_pricing import price_lines
-        tier_label, discount_pct = get_vip_tier_info(getattr(user, "consume_records", 0.0))
+        tier_label, discount_pct = get_vip_tier_info(getattr(user, "consume_records", 0.0), getattr(user, "custom_discount_pct", None))
         try:
             (total_dec,), _ = price_lines(
                 [(product.sell_price_usd, product.cost_usd, qty, 0)],

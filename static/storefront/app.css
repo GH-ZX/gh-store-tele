@@ -752,6 +752,38 @@
       font-weight: 800;
       color: var(--accent);
     }
+    .prod-price-original {
+      font-size: 11px;
+      text-decoration: line-through;
+      color: var(--hint);
+      opacity: 0.75;
+      margin-inline-start: 4px;
+      font-weight: 600;
+    }
+    .prod-discount-badge {
+      background: rgba(16, 185, 129, 0.15);
+      color: #10b981;
+      font-size: 10px;
+      font-weight: 800;
+      padding: 1px 5px;
+      border-radius: 6px;
+      margin-inline-start: 4px;
+      display: inline-block;
+    }
+    .prod-admin-cost {
+      font-size: 10px;
+      color: var(--hint);
+      font-family: monospace;
+      margin-top: 2px;
+      white-space: nowrap;
+    }
+    .prod-price-row-wrap {
+      display: flex;
+      align-items: baseline;
+      justify-content: flex-end;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
     .prod-tap-hint {
       font-size: 11px;
       color: var(--hint);

@@ -1769,18 +1769,23 @@ const tg = window.Telegram?.WebApp;
           return nameStr.includes(rawQ);
         }).slice(0, 5);
         if (suggestions.length) {
-          autoBox.innerHTML = suggestions.map(p => `
-            <div class="search-autocomplete-item" onclick="selectSearchAutocomplete(${p.id})">
-              <div class="search-item-left">
-                <span class="search-item-icon">${p.emoji || '⚡'}</span>
-                <div style="min-width: 0;">
-                  <div class="search-item-name">${p.clean_name || p.name}</div>
-                  <div class="search-item-cat">${p.category || 'Digital'}</div>
+          autoBox.innerHTML = suggestions.map(p => {
+            const { origPrice, finalPrice, hasDiscount, discPct } = calculateProductPrices(p);
+            const priceHtml = hasDiscount
+              ? `<div style="display:flex; align-items:baseline; gap:4px;"><span style="color:var(--accent); font-weight:800;">${formatPrice(finalPrice)}</span><span style="font-size:10px; text-decoration:line-through; color:var(--hint);">${formatPrice(origPrice)}</span><span class="prod-discount-badge" style="font-size:9px;">-${discPct}%</span></div>`
+              : `<span style="color:var(--accent); font-weight:800;">${formatPrice(origPrice)}</span>`;
+            return `
+              <div class="search-autocomplete-item" onclick="selectSearchAutocomplete(${p.id})">
+                <div class="search-item-left">
+                  <div style="min-width: 0;">
+                    <div class="search-item-name">${p.clean_name || p.name}</div>
+                    <div class="search-item-cat">${p.category || 'Digital'}</div>
+                  </div>
                 </div>
+                <div class="search-item-price">${priceHtml}</div>
               </div>
-              <div class="search-item-price">${p.price ? p.price.toFixed(2) + (p.sym || '$') : ''}</div>
-            </div>
-          `).join('');
+            `;
+          }).join('');
           autoBox.style.display = 'block';
         } else {
           autoBox.style.display = 'none';
@@ -1916,6 +1921,89 @@ const tg = window.Telegram?.WebApp;
       return p.clean_name || p.name;
     }
 
+    function getUserDiscountPercent() {
+      if (userData?.vip_discount !== undefined && userData?.vip_discount !== null) {
+        return Number(userData.vip_discount);
+      }
+      try {
+        const cached = JSON.parse(localStorage.getItem('ghstore_user_cache') || '{}');
+        return Number(cached.vip_discount || 0);
+      } catch (e) {
+        return 0;
+      }
+    }
+    function calculateProductPrices(product) {
+      const origPrice = Number(product?.price || 0.0);
+      const costUsd = Number(product?.cost_usd || 0.0);
+      const discPct = getUserDiscountPercent();
+
+      let finalPrice = origPrice;
+      let hasDiscount = false;
+
+      if (discPct > 0) {
+        const rawDiscounted = Math.round((origPrice * (1 - discPct / 100)) * 100) / 100;
+        finalPrice = costUsd > 0 ? Math.max(costUsd, rawDiscounted) : rawDiscounted;
+        hasDiscount = (finalPrice < origPrice);
+      }
+
+      const profitUsd = Math.max(0, Math.round((finalPrice - costUsd) * 100) / 100);
+      const marginPct = costUsd > 0 ? Math.round(((finalPrice - costUsd) / costUsd) * 100) : 0;
+
+      return {
+        origPrice,
+        finalPrice,
+        hasDiscount,
+        discPct,
+        costUsd,
+        profitUsd,
+        marginPct
+      };
+    }
+
+    function renderPriceBoxHTML(product, isMulti, favSvg, tapHint) {
+      const { origPrice, finalPrice, hasDiscount, discPct, costUsd, profitUsd } = calculateProductPrices(product);
+      const isAdmin = !!(userData && userData.is_admin);
+      const d = I18N[currentAppLanguage] || I18N.ar;
+      const startsPrefix = isMulti ? `<span style="font-size: 10px; color: var(--hint); font-weight: 600;">${d.starts_from || 'من'} </span>` : '';
+
+      let priceRow = '';
+      if (hasDiscount) {
+        priceRow = `
+          <div class="prod-price-row-wrap">
+            ${startsPrefix}
+            <span class="prod-price">${formatPrice(finalPrice)}</span>
+            <span class="prod-price-original">${formatPrice(origPrice)}</span>
+            <span class="prod-discount-badge">-${discPct}%</span>
+          </div>
+        `;
+      } else {
+        priceRow = `<div class="prod-price">${startsPrefix}${formatPrice(origPrice)}</div>`;
+      }
+
+      let adminCostRow = '';
+      if (isAdmin && costUsd > 0) {
+        const costLbl = (currentAppLanguage === 'ar') ? 'مورد' : 'Cost';
+        const profLbl = (currentAppLanguage === 'ar') ? 'ربح' : 'Profit';
+        adminCostRow = `
+          <div class="prod-admin-cost">
+            <span>${costLbl}: ${formatPrice(costUsd)}</span>
+            <span>· ${profLbl}: +${formatPrice(profitUsd)}</span>
+          </div>
+        `;
+      }
+
+      return `
+        <div class="prod-price-box">
+          ${priceRow}
+          ${adminCostRow}
+          <div style="display: flex; align-items: center; gap: 4px; margin-top: 2px;">
+            ${favSvg ? `<button class="fav-btn-action" data-pid="${product.id}" onclick="toggleWishlist(${product.id}, event)">${favSvg}</button>` : ''}
+            <div class="prod-tap-hint">${tapHint}</div>
+          </div>
+        </div>
+      `;
+    }
+
     // Category Products Listing: Groups multi-variant products into clean family cards
     function renderProductItems(products) {
       const container = document.getElementById('catalog-products-list');
@@ -2009,15 +2097,7 @@ const tg = window.Telegram?.WebApp;
                 ${warPill}
               </div>
             </div>
-            <div class="prod-price-box">
-              <div class="prod-price">${priceDisplay}</div>
-              <div style="display: flex; align-items: center; gap: 4px; margin-top: 2px;">
-                <button class="fav-btn-action" data-pid="${primary.id}" onclick="toggleWishlist(${primary.id}, event)">
-                  ${favSvg}
-                </button>
-                <div class="prod-tap-hint">${isMulti ? (currentAppLanguage === 'ar' ? 'عرض الباقات ‹' : 'Options ›') : d.view_details}</div>
-              </div>
-            </div>
+            ${renderPriceBoxHTML(primary, isMulti, favSvg, isMulti ? (currentAppLanguage === 'ar' ? 'عرض الباقات ‹' : 'Options ›') : d.view_details)}
           </div>
         `;
       }
@@ -2104,15 +2184,7 @@ const tg = window.Telegram?.WebApp;
                   ${typPill}
                 </div>
               </div>
-              <div class="prod-price-box">
-                <div class="prod-price">${formatPrice(p.price)}</div>
-                <div style="display: flex; align-items: center; gap: 4px; margin-top: 2px;">
-                  <button class="fav-btn-action" data-pid="${p.id}" onclick="toggleWishlist(${p.id}, event)">
-                    ${favSvg}
-                  </button>
-                  <div class="prod-tap-hint">${d.view_details}</div>
-                </div>
-              </div>
+              ${renderPriceBoxHTML(p, false, favSvg, d.view_details)}
             </div>
           `;
         }).join('');
@@ -2397,6 +2469,40 @@ const tg = window.Telegram?.WebApp;
       }
 
       const total = quote.total;
+      const origTotal = unit * selectedQty;
+      const origTag = document.getElementById('prod-original-price');
+      const liveDiscBadge = document.getElementById('prod-live-discount-badge');
+      const adminPricingBox = document.getElementById('admin-detail-pricing-box');
+
+      // Live customer discount calculation
+      if (total < origTotal && origTag && liveDiscBadge) {
+        origTag.style.display = 'inline';
+        origTag.innerText = formatPrice(origTotal);
+        liveDiscBadge.style.display = 'inline-block';
+        const effectivePct = Math.round(((origTotal - total) / origTotal) * 100);
+        liveDiscBadge.innerText = `-${effectivePct}%`;
+      } else {
+        if (origTag) origTag.style.display = 'none';
+        if (liveDiscBadge) liveDiscBadge.style.display = 'none';
+      }
+
+      // Admin live wholesale cost and margin breakdown
+      if (adminPricingBox) {
+        const costUsd = Number(selectedProduct.cost_usd || 0.0);
+        const isAdmin = !!(userData && userData.is_admin);
+        if (isAdmin && costUsd > 0) {
+          adminPricingBox.style.display = 'block';
+          const setVal = (id, txt) => { const el = document.getElementById(id); if (el) el.innerText = txt; };
+          const totalCost = costUsd * selectedQty;
+          const totalProfit = Math.max(0, total - totalCost);
+          setVal('admin-detail-cost-val', formatPrice(totalCost));
+          setVal('admin-detail-sell-val', formatPrice(origTotal));
+          setVal('admin-detail-profit-val', `+${formatPrice(totalProfit)}`);
+        } else {
+          adminPricingBox.style.display = 'none';
+        }
+      }
+
       let discountText = '';
       if (quote.discount_limited) discountText = d.quote_limited_note;
       else if (appliedCoupon?.code) discountText = (currentAppLanguage === 'ar') ? `(كوبون: ${appliedCoupon.code})` : `(Coupon: ${appliedCoupon.code})`;
@@ -2419,10 +2525,10 @@ const tg = window.Telegram?.WebApp;
             </div>
             <div style="display: flex; gap: 6px; justify-content: center; flex-wrap: wrap;">
               <button type="button" onclick="quickTopupShortageStars(${shortage})" class="btn-action-warning" style="height: 32px; padding: 0 12px; font-size: 11px; font-weight: 800; background: linear-gradient(135deg, #f59e0b, #d97706); border: none; color: #fff; border-radius: 8px;">
-                ⭐ ${(currentAppLanguage === 'ar') ? `شحن النقص فوراً بالنجوم ($${shortage.toFixed(2)})` : `Top up exact $${shortage.toFixed(2)} via Stars`}
+                ${(currentAppLanguage === 'ar') ? `شحن النقص بالنجوم ($${shortage.toFixed(2)})` : `Top up exact $${shortage.toFixed(2)} via Stars`}
               </button>
               <button type="button" onclick="quickTopupShortageWallet(${shortage})" class="btn-action-secondary" style="height: 32px; padding: 0 10px; font-size: 11px; font-weight: 700;">
-                💳 ${(currentAppLanguage === 'ar') ? 'خيارات شحن أخرى' : 'Other Payment Rails'}
+                ${(currentAppLanguage === 'ar') ? 'خيارات شحن أخرى' : 'Other Payment Rails'}
               </button>
             </div>
           `;
@@ -4554,6 +4660,12 @@ const tg = window.Telegram?.WebApp;
         if (d.store_logo_url) applyStoreLogo(d.store_logo_url);
         updateBalancePills();
 
+        // Re-render active collection or search with live personal discount
+        if (activeCatalog) {
+          let filtered = allProducts.filter(p => p.category === activeCatalog);
+          filtered = filterAndSortProducts(filtered);
+          renderProductItems(filtered);
+        }
         // Check & Render Admin Control Center in Settings
         // 1. Check & Render Admin Control Center in Settings
         const adminCenterCard = document.getElementById('admin-control-center-card');

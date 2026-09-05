@@ -581,9 +581,40 @@
       <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
         <div>
           <div style="font-size: 12px; color: var(--hint);" id="label-total-title">السعر الإجمالي</div>
-          <div style="font-size: 24px; font-weight: 800; color: var(--accent);" id="prod-total-price">$0.00</div>
+          <div style="display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;">
+            <div style="font-size: 24px; font-weight: 800; color: var(--accent);" id="prod-total-price">$0.00</div>
+            <div style="font-size: 13px; text-decoration: line-through; color: var(--hint); display: none;" id="prod-original-price">$0.00</div>
+            <span class="prod-discount-badge" id="prod-live-discount-badge" style="display: none;">-10%</span>
+          </div>
           <div style="font-size: 12px; color: var(--success); font-weight: 700;" id="prod-discount-tag"></div>
         </div>
+        <div class="stepper-capsule">
+          <button class="stepper-btn" onclick="adjustQty(-1)">–</button>
+          <div class="stepper-divider"></div>
+          <span class="stepper-val" id="prod-qty-val">1</span>
+          <div class="stepper-divider"></div>
+          <button class="stepper-btn" onclick="adjustQty(1)">+</button>
+        </div>
+      </div>
+
+      <!-- Admin Live Wholesale & Margin Box (Visible Only for Admins) -->
+      <div id="admin-detail-pricing-box" style="display: none; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 12px; padding: 10px; margin-bottom: 14px;">
+        <div style="font-size: 11px; font-weight: 700; color: var(--accent); margin-bottom: 6px;" id="admin-detail-box-title">بيانات تسعير المشرف</div>
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; text-align: center; font-size: 11px;">
+          <div style="background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 6px;">
+            <div style="color: var(--hint); font-size: 10px;" id="admin-detail-cost-label">تكلفة المورد</div>
+            <div style="font-weight: 800; font-size: 13px; color: #f59e0b; margin-top: 2px;" id="admin-detail-cost-val">$0.00</div>
+          </div>
+          <div style="background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 6px;">
+            <div style="color: var(--hint); font-size: 10px;" id="admin-detail-sell-label">سعر البيع</div>
+            <div style="font-weight: 800; font-size: 13px; color: var(--accent); margin-top: 2px;" id="admin-detail-sell-val">$0.00</div>
+          </div>
+          <div style="background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 6px;">
+            <div style="color: var(--hint); font-size: 10px;" id="admin-detail-profit-label">الربح المقدر</div>
+            <div style="font-weight: 800; font-size: 13px; color: #10b981; margin-top: 2px;" id="admin-detail-profit-val">+$0.00</div>
+          </div>
+        </div>
+      </div>
         <div class="stepper-capsule">
           <button class="stepper-btn" onclick="adjustQty(-1)">–</button>
           <div class="stepper-divider"></div>
