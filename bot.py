@@ -2722,9 +2722,89 @@ async def admin_test_prodseller_balance(request: Request):
         return JSONResponse({"error": str(e)}, status_code=502)
 
 
+@app.post("/api/admin/batstore/test-balance")
+async def admin_test_batstore_balance(request: Request):
+    """Test BatStore API key live and return real-time balance and user status."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not _verify_admin(admin_id, request):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+
+    api_key = str(body.get("api_key") or "").strip()
+    from services.batstore import BatStoreService
+    try:
+        async with get_db_session() as session:
+            if api_key:
+                base = config.BATSTORE_API_URL or "https://api.reseller.ventebot.com"
+                headers = {"Authorization": f"Bearer {api_key}", "Accept": "application/json"}
+                async with await BatStoreService._client() as client:
+                    resp = await client.get(f"{base}/user", headers=headers)
+                if resp.status_code != 200:
+                    return JSONResponse({"error": f"BatStore HTTP {resp.status_code}: {resp.text[:100]}"}, status_code=400)
+                data = resp.json()
+            else:
+                data = await BatStoreService.me(session)
+        raw_b = data.get("wallet_balance")
+        if raw_b is None:
+            raw_b = data.get("wallet", {}).get("balance", 0.0)
+        return {
+            "status": "ok",
+            "balance": round(float(raw_b or 0.0), 2),
+            "username": data.get("username") or data.get("name") or "",
+            "role": data.get("role") or "reseller"
+        }
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+
+@app.get("/api/admin/supplier/details")
+async def admin_get_supplier_details(tg_id: int):
+    """Return paired supplier settings, status, and config for the dedicated admin suppliers page."""
+    if not _verify_admin(tg_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+
+    async with get_db_session() as session:
+        bat_key = await ConfigService.get(session, "BATSTORE_API_KEY", env_fallback=os.environ.get("BATSTORE_API_KEY", ""))
+        prod_key = await ConfigService.get(session, "PRODSELLER_API_KEY", env_fallback=os.environ.get("PRODSELLER_API_KEY", ""))
+        strategy = await ConfigService.get(session, "SUPPLIER_ROUTING_STRATEGY", default="auto_cheapest")
+        bat_sync = (await ConfigService.get(session, "BATSTORE_SYNC_ENABLED", default="true")).lower() == "true"
+        prod_sync = (await ConfigService.get(session, "PRODSELLER_SYNC_ENABLED", default="true")).lower() == "true"
+        auto_failover = (await ConfigService.get(session, "SUPPLIER_AUTO_FAILOVER", default="true")).lower() == "true"
+
+        from models.batstore_product import BatStoreProduct
+        bat_prod_count = (await session_execute(select(func.count(BatStoreProduct.id)).where(BatStoreProduct.supplier == "batstore"), session)).scalar() or 0
+        prod_prod_count = (await session_execute(select(func.count(BatStoreProduct.id)).where(BatStoreProduct.supplier == "prodseller"), session)).scalar() or 0
+
+    return {
+        "batstore": {
+            "name": "سيرفر 1: BatStore / VenteBot",
+            "badge": "⚡ سيرفر 1 (BatStore)",
+            "api_url": config.BATSTORE_API_URL or "https://api.reseller.ventebot.com",
+            "api_key_configured": bool(bat_key),
+            "api_key_masked": (bat_key[:6] + "..." + bat_key[-4:]) if len(bat_key or "") > 10 else ("configured" if bat_key else ""),
+            "sync_enabled": bat_sync,
+            "product_count": bat_prod_count,
+        },
+        "prodseller": {
+            "name": "سيرفر 2: ProdSeller",
+            "badge": "🚀 سيرفر 2 (ProdSeller)",
+            "api_url": "https://prodseller.com/v1",
+            "api_key_configured": bool(prod_key),
+            "api_key_masked": (prod_key[:6] + "..." + prod_key[-4:]) if len(prod_key or "") > 10 else ("configured" if prod_key else ""),
+            "sync_enabled": prod_sync,
+            "product_count": prod_prod_count,
+        },
+        "routing_strategy": strategy,
+        "auto_failover": auto_failover,
+    }
+
+
 @app.post("/api/admin/supplier/config")
 async def admin_update_supplier_config(request: Request):
-    """Save ProdSeller API Key and supplier routing strategy to database."""
+    """Save paired supplier keys, sync preferences, and routing strategy to database."""
     try:
         body = await request.json()
     except Exception:
@@ -2733,18 +2813,29 @@ async def admin_update_supplier_config(request: Request):
     if not _verify_admin(admin_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
 
-    api_key = str(body.get("prodseller_api_key") or "").strip()
+    bat_key = str(body.get("batstore_api_key") or "").strip()
+    prod_key = str(body.get("prodseller_api_key") or "").strip()
     strategy = str(body.get("routing_strategy") or "auto_cheapest").strip().lower()
+    bat_sync = body.get("batstore_sync_enabled")
+    prod_sync = body.get("prodseller_sync_enabled")
+    failover = body.get("auto_failover")
 
     async with get_db_session() as session:
-        if api_key:
-            await ConfigService.set(session, "PRODSELLER_API_KEY", api_key)
+        if bat_key:
+            await ConfigService.set(session, "BATSTORE_API_KEY", bat_key)
+        if prod_key:
+            await ConfigService.set(session, "PRODSELLER_API_KEY", prod_key)
         if strategy in ("auto_cheapest", "batstore_primary", "prodseller_primary"):
             await ConfigService.set(session, "SUPPLIER_ROUTING_STRATEGY", strategy)
+        if bat_sync is not None:
+            await ConfigService.set(session, "BATSTORE_SYNC_ENABLED", "true" if bat_sync else "false")
+        if prod_sync is not None:
+            await ConfigService.set(session, "PRODSELLER_SYNC_ENABLED", "true" if prod_sync else "false")
+        if failover is not None:
+            await ConfigService.set(session, "SUPPLIER_AUTO_FAILOVER", "true" if failover else "false")
         await session_commit(session)
 
     return {"status": "ok", "routing_strategy": strategy}
-
 
 @app.post("/api/admin/supplier/sync")
 async def admin_sync_all_suppliers(request: Request):

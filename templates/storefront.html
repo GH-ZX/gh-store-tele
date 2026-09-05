@@ -801,6 +801,158 @@
     </div>
   </section>
 
+  <!-- DEDICATED IN-APP MULTI-SUPPLIER & SERVERS MANAGEMENT VIEW -->
+  <section id="view-admin-suppliers" class="tab-view">
+    <div class="subview-header">
+      <button class="btn-back-catalog" onclick="closeAdminSuppliersPage()">
+        <span>→</span>
+        <span>العودة للإعدادات</span>
+      </button>
+      <span style="font-size: 13px; color: var(--accent); font-weight: 700;">إدارة الموردين والسيرفرات</span>
+    </div>
+
+    <!-- Supplier Reserves Master Banner -->
+    <div class="inset-card" style="margin-top: 10px; padding: 14px; margin-bottom: 12px; background: linear-gradient(135deg, rgba(2, 132, 199, 0.12), rgba(99, 102, 241, 0.12)); border-color: rgba(56, 189, 248, 0.4);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+        <div style="font-size: 14px; font-weight: 800; color: var(--text);">💼 إجمالي الاحتياطي المالي لدى الموردين</div>
+        <button class="btn-copy-mini" onclick="refreshSupplierBalances(true)" style="font-size: 10px; padding: 3px 8px;">🔄 تحديث الأرصدة</button>
+      </div>
+      <div style="font-size: 24px; font-weight: 900; color: var(--success); margin-bottom: 4px;" id="suppliers-view-total-bal">$0.00 USD</div>
+      <div style="font-size: 11px; color: var(--hint);">
+        رصيد مشترياتك المشحون مسبقاً لدى الموردين لإتمام طلبات العملاء فورياً عبر الـ API.
+      </div>
+    </div>
+
+    <!-- PAIRED SUPPLIER SERVERS (BALANCED SIDE-BY-SIDE / PAIRED CARDS) -->
+    <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 14px;">
+
+      <!-- SERVER 1: BatStore / VenteBot Card -->
+      <div class="inset-card" style="border: 1px solid rgba(56, 189, 248, 0.35); background: var(--card); padding: 14px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 18px;">⚡</span>
+            <div>
+              <div style="font-size: 13px; font-weight: 800; color: var(--text);">سيرفر 1: BatStore / VenteBot</div>
+              <div style="font-size: 10px; color: var(--hint);" id="sup-card-bat-count">72 منتج مرتبط</div>
+            </div>
+          </div>
+          <span class="pill-badge" style="background: rgba(56, 189, 248, 0.15); color: var(--accent); font-size: 11px; font-weight: 700;" id="sup-card-bat-badge">نشط (Active)</span>
+        </div>
+
+        <!-- Server 1 Live Balance Row -->
+        <div style="background: var(--input-bg); border-radius: 10px; padding: 10px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <div style="font-size: 10px; color: var(--hint);">الرصيد المتاح بالسيرفر:</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--accent);" id="sup-card-bat-bal">$0.08 USD</div>
+          </div>
+          <button class="btn-action-secondary" onclick="testBatStoreKeyLive()" id="btn-test-batstore" style="height: 34px; padding: 0 12px; font-size: 11px; font-weight: 700;">
+            🔍 فحص الرصيد والاتصال
+          </button>
+        </div>
+        <div id="sup-card-bat-status" style="font-size: 11px; margin-bottom: 10px; display: none;"></div>
+
+        <!-- Server 1 API Key Input -->
+        <div style="margin-bottom: 10px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label style="font-size: 11px; font-weight: 700; color: var(--text);">🔑 مفتاح API (Bearer Token):</label>
+            <span style="font-size: 10px; color: var(--hint);" id="sup-card-bat-key-state">محفوظ بقاعدة البيانات</span>
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <input type="password" class="admin-text-input" id="sup-card-bat-key" placeholder="ادخل مفتاح BatStore API..." style="flex: 1; font-family: monospace; font-size: 11px;">
+            <button class="btn-copy-mini" onclick="togglePasswordVisibility('sup-card-bat-key')" style="padding: 0 10px; font-size: 12px;">👁️</button>
+          </div>
+        </div>
+
+        <!-- Server 1 Sync Toggle -->
+        <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 4px;">
+          <span style="font-size: 11px; color: var(--hint);">مزامنة وتحديث الأسعار التلقائية لهذا السيرفر</span>
+          <input type="checkbox" id="sup-card-bat-sync" checked style="width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer;">
+        </div>
+      </div>
+
+      <!-- SERVER 2: ProdSeller Card -->
+      <div class="inset-card" style="border: 1px solid rgba(16, 185, 129, 0.35); background: var(--card); padding: 14px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 18px;">🚀</span>
+            <div>
+              <div style="font-size: 13px; font-weight: 800; color: var(--text);">سيرفر 2: ProdSeller API</div>
+              <div style="font-size: 10px; color: var(--hint);" id="sup-card-prod-count">32 منتج مرتبط</div>
+            </div>
+          </div>
+          <span class="pill-badge" style="background: rgba(16, 185, 129, 0.15); color: #10b981; font-size: 11px; font-weight: 700;" id="sup-card-prod-badge">نشط (Active)</span>
+        </div>
+
+        <!-- Server 2 Live Balance Row -->
+        <div style="background: var(--input-bg); border-radius: 10px; padding: 10px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <div style="font-size: 10px; color: var(--hint);">الرصيد المتاح بالسيرفر:</div>
+            <div style="font-size: 16px; font-weight: 800; color: #10b981;" id="sup-card-prod-bal">$13.18 USDT</div>
+            <div style="font-size: 9px; color: var(--hint);" id="sup-card-prod-tier">عضوية: bronze @ahmedghxx</div>
+          </div>
+          <button class="btn-action-secondary" onclick="testProdSellerKeyLiveInSuppliersPage()" id="btn-test-prodseller" style="height: 34px; padding: 0 12px; font-size: 11px; font-weight: 700;">
+            🔍 فحص الرصيد والاتصال
+          </button>
+        </div>
+        <div id="sup-card-prod-status" style="font-size: 11px; margin-bottom: 10px; display: none;"></div>
+
+        <!-- Server 2 API Key Input -->
+        <div style="margin-bottom: 10px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label style="font-size: 11px; font-weight: 700; color: var(--text);">🔑 مفتاح API (psk_...):</label>
+            <span style="font-size: 10px; color: var(--hint);" id="sup-card-prod-key-state">محفوظ بقاعدة البيانات</span>
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <input type="password" class="admin-text-input" id="sup-card-prod-key" placeholder="psk_..." style="flex: 1; font-family: monospace; font-size: 11px;">
+            <button class="btn-copy-mini" onclick="togglePasswordVisibility('sup-card-prod-key')" style="padding: 0 10px; font-size: 12px;">👁️</button>
+          </div>
+        </div>
+
+        <!-- Server 2 Sync Toggle -->
+        <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 4px;">
+          <span style="font-size: 11px; color: var(--hint);">مزامنة وتحديث الأسعار التلقائية لهذا السيرفر</span>
+          <input type="checkbox" id="sup-card-prod-sync" checked style="width: 18px; height: 18px; accent-color: #10b981; cursor: pointer;">
+        </div>
+      </div>
+
+    </div>
+
+    <!-- SMART ROUTING STRATEGY & FAILOVER CONTROLS -->
+    <div class="inset-card" style="margin-bottom: 14px; padding: 14px; border-color: rgba(99, 102, 241, 0.35);">
+      <div style="font-size: 13px; font-weight: 800; color: var(--accent); margin-bottom: 6px;">
+        🎯 سياسة التوجيه الذكي للمنتجات المشتركة بين السيرفرين
+      </div>
+      <div style="font-size: 11px; color: var(--hint); margin-bottom: 10px; line-height: 1.5;">
+        عند توفر نفس الخدمة (مثل Canva Pro أو Gemini أو CapCut) لدى كلا الموردين، يمكنك تحديد كيفية توجيه طلب العميل:
+      </div>
+
+      <select class="admin-text-input" id="sup-page-routing-select" style="font-size: 12px; padding: 10px; margin-bottom: 12px; font-weight: 700;">
+        <option value="auto_cheapest">⚡ التوجيه التلقائي الذكي للأرخص تكلفة (أعلى هامش ربح) - مستحسن ⭐</option>
+        <option value="batstore_primary">⚡ سيرفر 1 (BatStore) أساسي مع التحويل لسيرفر 2 عند النفاد</option>
+        <option value="prodseller_primary">🚀 سيرفر 2 (ProdSeller) أساسي مع التحويل لسيرفر 1 عند النفاد</option>
+      </select>
+
+      <!-- Auto-Failover Protection Switch -->
+      <div style="background: var(--input-bg); border-radius: 10px; padding: 10px; display: flex; justify-content: space-between; align-items: center;">
+        <div style="padding-left: 10px;">
+          <div style="font-size: 12px; font-weight: 700; color: var(--text);">🛡️ ميزة التحويل التلقائي عند نفاد المخزون (Auto-Failover)</div>
+          <div style="font-size: 10px; color: var(--hint); margin-top: 2px;">إذا كان المنتج غير متوفر لدى السيرفر المفضل وقت الشراء، يتم جلبه فوراً من السيرفر البديل.</div>
+        </div>
+        <input type="checkbox" id="sup-page-failover" checked style="width: 20px; height: 20px; accent-color: #10b981; cursor: pointer;">
+      </div>
+    </div>
+
+    <!-- UNIFIED ACTIONS -->
+    <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px;">
+      <button class="btn-action-primary" onclick="saveSuppliersPageSettings()" style="height: 46px; font-size: 13px; font-weight: 800;">
+        💾 حفظ كافة إعدادات ومفاتيح السيرفرين
+      </button>
+      <button class="btn-action-secondary" onclick="syncAllSupplierCatalogsInSuppliersPage()" id="btn-sup-page-sync" style="height: 44px; font-size: 12px; font-weight: 700; background: linear-gradient(135deg, #6366f1, #4f46e5); color: #fff;">
+        🔄 مزامنة وتحديث كافة المنتجات من كلا الموردين الآن
+      </button>
+    </div>
+  </section>
+
 
   <!-- TAB 2: PROCESSES & ACTIVITY VIEW (ORDERS & RECHARGES) -->
   <main id="view-orders" class="tab-view">
@@ -1117,43 +1269,15 @@
         </div>
       </div>
 
-      <!-- Multi-Supplier & Smart Routing Engine Control -->
-      <div style="background: var(--input-bg); border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 14px; padding: 12px; margin-bottom: 14px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-          <div style="font-size: 13px; font-weight: 800; color: var(--accent);">⚡ إدارة الموردين وتوجيه السيرفرات (Multi-Supplier)</div>
-          <span class="pill-badge" style="background: rgba(56,189,248,0.15); color: var(--accent); font-size: 10px;">سيرفر 1 + سيرفر 2</span>
-        </div>
-        
-        <!-- ProdSeller API Key Configuration -->
-        <div style="margin-bottom: 10px;">
-          <div style="font-size: 11px; font-weight: 700; margin-bottom: 4px;">🚀 رمز API لمورد ProdSeller (Server 2 API Key):</div>
-          <div style="display: flex; gap: 6px;">
-            <input type="password" class="admin-text-input" id="admin-prodseller-key-input" placeholder="psk_..." style="flex: 1; font-family: monospace; font-size: 11px;">
-            <button class="btn-copy-mini" onclick="toggleProdSellerKeyVisibility()" style="padding: 0 8px; font-size: 11px;">👁️</button>
-            <button class="btn-action-secondary" onclick="testProdSellerKeyLive()" style="height: 38px; padding: 0 10px; font-size: 11px; white-space: nowrap;">فحص الرصيد</button>
+      <!-- Dedicated Multi-Supplier & Server Management Drawer Button -->
+      <div style="margin-bottom: 14px;">
+        <button class="btn-action-primary" onclick="openAdminSuppliersPage()" style="width: 100%; height: 48px; background: linear-gradient(135deg, #0284c7, #6366f1); font-weight: 800; font-size: 13px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border-radius: 12px; box-shadow: 0 4px 14px rgba(2, 132, 199, 0.25);">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 16px;">⚡</span>
+            <span>إدارة ومفاتيح الموردين والسيرفرات (Suppliers & Servers)</span>
           </div>
-          <div id="admin-prodseller-test-status" style="font-size: 11px; margin-top: 4px; display: none;"></div>
-        </div>
-
-        <!-- Supplier Routing Strategy -->
-        <div style="margin-bottom: 10px;">
-          <div style="font-size: 11px; font-weight: 700; margin-bottom: 4px;">🎯 استراتيجية التوجيه الذكي للمنتجات المشتركة:</div>
-          <select class="admin-text-input" id="admin-supplier-routing-select" style="font-size: 11px; padding: 8px;">
-            <option value="auto_cheapest">⚡ التوجيه التلقائي للأرخص تكلفة (أعلى هامش ربح للمتجر) - مستحسن</option>
-            <option value="batstore_primary">⚡ سيرفر 1 (BatStore) أساسي مع التحويل لسيرفر 2 عند نفاد المخزون</option>
-            <option value="prodseller_primary">🚀 سيرفر 2 (ProdSeller) أساسي مع التحويل لسيرفر 1 عند نفاد المخزون</option>
-          </select>
-        </div>
-
-        <!-- Actions -->
-        <div style="display: flex; gap: 8px;">
-          <button class="btn-action-primary" onclick="saveSupplierSettings()" style="flex: 1; height: 38px; font-size: 12px; font-weight: 700;">
-            💾 حفظ إعدادات الموردين
-          </button>
-          <button class="btn-action-secondary" onclick="syncAllSupplierCatalogs()" id="btn-sync-suppliers" style="flex: 1; height: 38px; font-size: 12px; font-weight: 700; background: linear-gradient(135deg, #6366f1, #4f46e5); color: #fff;">
-            🔄 مزامنة كافة الموردين
-          </button>
-        </div>
+          <span style="font-size: 14px; opacity: 0.85;">←</span>
+        </button>
       </div>
 
       <!-- Live Exchange Rate & Currency Manager -->

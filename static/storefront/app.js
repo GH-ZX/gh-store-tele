@@ -4315,9 +4315,11 @@ const tg = window.Telegram?.WebApp;
         run();
       }
     }
-    async function refreshSupplierBalances() {
-      haptic('light');
-      showToast((currentAppLanguage === 'ar') ? 'جاري تحديث أرصدة محافظ الموردين...' : 'Updating supplier balances...');
+    async function refreshSupplierBalances(showUserToast = true) {
+      if (showUserToast) {
+        haptic('light');
+        showToast((currentAppLanguage === 'ar') ? 'جاري تحديث أرصدة محافظ الموردين...' : 'Updating supplier balances...');
+      }
       try {
         const res = await fetch(`/api/user-data?tg_id=${userId}&refresh_wallets=true`);
         const d = await res.json();
@@ -4329,10 +4331,13 @@ const tg = window.Telegram?.WebApp;
           setText('admin-bal-sam-usd', `$${Number(sw.sam_usd || 0).toFixed(2)} USD`);
           setText('admin-bal-sam-syp', `${Math.round(Number(sw.sam_syp || 0)).toLocaleString()} ل.س`);
           setText('admin-bal-total-suppliers-pill', `إجمالي: $${Number(sw.total_supplier_usd || 0).toFixed(2)}`);
-          showToast((currentAppLanguage === 'ar') ? '✅ تم تحديث الأرصدة بنجاح' : '✅ Balances updated');
+          setText('sup-card-bat-bal', `$${Number(sw.batstore_usd || 0).toFixed(2)} USD`);
+          setText('sup-card-prod-bal', `$${Number(sw.prodseller_usd || 0).toFixed(2)} USDT`);
+          setText('suppliers-view-total-bal', `$${Number(sw.total_supplier_usd || 0).toFixed(2)} USD`);
+          if (showUserToast) showToast((currentAppLanguage === 'ar') ? '✅ تم تحديث الأرصدة بنجاح' : '✅ Balances updated');
         }
       } catch (e) {
-        showToast((currentAppLanguage === 'ar') ? 'تعذر التحديث' : 'Update failed');
+        if (showUserToast) showToast((currentAppLanguage === 'ar') ? 'تعذر التحديث' : 'Update failed');
       }
     }
 
@@ -4776,6 +4781,240 @@ const tg = window.Telegram?.WebApp;
       if (navStack.length > 0 && navStack[navStack.length - 1].name === 'admin_config') {
         navStack.pop();
         if (navStack.length === 0 && tg?.BackButton) tg.BackButton.hide();
+      }
+    }
+
+    function togglePasswordVisibility(inputId) {
+      const el = document.getElementById(inputId);
+      if (el) {
+        el.type = (el.type === 'password') ? 'text' : 'password';
+      }
+    }
+
+    function openAdminSuppliersPage() {
+      haptic('pop');
+      document.querySelectorAll('.tab-view').forEach(el => el.classList.remove('active'));
+      const view = document.getElementById('view-admin-suppliers');
+      if (view) view.classList.add('active');
+      window.scrollTo(0, 0);
+      pushNav('admin_suppliers', closeAdminSuppliersPage);
+    }
+
+    function closeAdminSuppliersPage() {
+      haptic('light');
+      const view = document.getElementById('view-admin-suppliers');
+      if (view) view.classList.remove('active');
+      const setView = document.getElementById('view-settings');
+      if (setView) setView.classList.add('active');
+      if (navStack.length > 0 && navStack[navStack.length - 1].name === 'admin_suppliers') {
+        navStack.pop();
+        if (navStack.length === 0 && tg?.BackButton) tg.BackButton.hide();
+      }
+    }
+
+    async function loadAdminSuppliersDetails() {
+      try {
+        const res = await fetch(`/api/admin/supplier/details?tg_id=${userId}`);
+        const d = await res.json();
+        if (!res.ok || d.error) return;
+
+        // Server 1 BatStore
+        const bat = d.batstore || {};
+        const batCountEl = document.getElementById('sup-card-bat-count');
+        if (batCountEl) batCountEl.innerText = `${bat.product_count || 0} منتج مرتبط`;
+        const batSyncEl = document.getElementById('sup-card-bat-sync');
+        if (batSyncEl) batSyncEl.checked = !!bat.sync_enabled;
+        const batKeyState = document.getElementById('sup-card-bat-key-state');
+        if (batKeyState) batKeyState.innerText = bat.api_key_configured ? `محفوظ (${bat.api_key_masked})` : 'غير مهيأ';
+
+        // Server 2 ProdSeller
+        const prod = d.prodseller || {};
+        const prodCountEl = document.getElementById('sup-card-prod-count');
+        if (prodCountEl) prodCountEl.innerText = `${prod.product_count || 0} منتج مرتبط`;
+        const prodSyncEl = document.getElementById('sup-card-prod-sync');
+        if (prodSyncEl) prodSyncEl.checked = !!prod.sync_enabled;
+        const prodKeyState = document.getElementById('sup-card-prod-key-state');
+        if (prodKeyState) prodKeyState.innerText = prod.api_key_configured ? `محفوظ (${prod.api_key_masked})` : 'غير مهيأ';
+
+        // Routing & Failover
+        const routingEl = document.getElementById('sup-page-routing-select');
+        if (routingEl && d.routing_strategy) routingEl.value = d.routing_strategy;
+        const failoverEl = document.getElementById('sup-page-failover');
+        if (failoverEl) failoverEl.checked = (d.auto_failover !== false);
+
+        // Update live balances
+        await refreshSupplierBalances(false);
+      } catch (e) {
+        console.error('Failed to load supplier details:', e);
+      }
+    }
+
+    async function testBatStoreKeyLive() {
+      haptic('light');
+      const keyVal = document.getElementById('sup-card-bat-key')?.value?.trim() || '';
+      const statusEl = document.getElementById('sup-card-bat-status');
+      const btn = document.getElementById('btn-test-batstore');
+      if (btn) btn.disabled = true;
+
+      if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.style.color = 'var(--hint)';
+        statusEl.innerText = '⏳ جاري الاتصال بسيرفر BatStore وفحص الرصيد...';
+      }
+
+      try {
+        const res = await fetch('/api/admin/batstore/test-balance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_tg_id: userId, api_key: keyVal })
+        });
+        const d = await res.json();
+        if (!res.ok || d.error) {
+          if (statusEl) {
+            statusEl.style.color = '#ef4444';
+            statusEl.innerText = `❌ خطأ في الاتصال: ${d.error || 'المفتاح غير صالح'}`;
+          }
+          showToast(`❌ ${d.error || 'فشل فحص سيرفر 1'}`);
+          return;
+        }
+
+        const bal = Number(d.balance || 0.0).toFixed(2);
+        if (statusEl) {
+          statusEl.style.color = '#10b981';
+          statusEl.innerText = `✅ سيرفر 1 متصل بنجاح! الرصيد: $${bal} USD · الحساب: ${d.username || 'Reseller'}`;
+        }
+        const balEl = document.getElementById('sup-card-bat-bal');
+        if (balEl) balEl.innerText = `$${bal} USD`;
+        showToast(`✅ رصيد سيرفر 1: $${bal}`);
+      } catch (e) {
+        if (statusEl) {
+          statusEl.style.color = '#ef4444';
+          statusEl.innerText = `❌ خطأ: ${e.message}`;
+        }
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    async function testProdSellerKeyLiveInSuppliersPage() {
+      haptic('light');
+      const keyVal = document.getElementById('sup-card-prod-key')?.value?.trim() || '';
+      const statusEl = document.getElementById('sup-card-prod-status');
+      const btn = document.getElementById('btn-test-prodseller');
+      if (btn) btn.disabled = true;
+
+      if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.style.color = 'var(--hint)';
+        statusEl.innerText = '⏳ جاري الاتصال بسيرفر ProdSeller وفحص الرصيد...';
+      }
+
+      try {
+        const res = await fetch('/api/admin/prodseller/test-balance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_tg_id: userId, api_key: keyVal })
+        });
+        const d = await res.json();
+        if (!res.ok || d.error) {
+          if (statusEl) {
+            statusEl.style.color = '#ef4444';
+            statusEl.innerText = `❌ خطأ في الاتصال: ${d.error || 'المفتاح غير صالح'}`;
+          }
+          showToast(`❌ ${d.error || 'فشل فحص سيرفر 2'}`);
+          return;
+        }
+
+        const bal = Number(d.balance || 0.0).toFixed(2);
+        const mem = d.membership || 'bronze';
+        const user = d.username ? `@${d.username}` : '';
+        if (statusEl) {
+          statusEl.style.color = '#10b981';
+          statusEl.innerText = `✅ سيرفر 2 متصل بنجاح! الرصيد: $${bal} USDT · العضوية: ${mem} ${user}`;
+        }
+        const balEl = document.getElementById('sup-card-prod-bal');
+        if (balEl) balEl.innerText = `$${bal} USDT`;
+        const tierEl = document.getElementById('sup-card-prod-tier');
+        if (tierEl) tierEl.innerText = `عضوية: ${mem} ${user}`;
+        showToast(`✅ رصيد سيرفر 2: $${bal}`);
+      } catch (e) {
+        if (statusEl) {
+          statusEl.style.color = '#ef4444';
+          statusEl.innerText = `❌ خطأ: ${e.message}`;
+        }
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    async function saveSuppliersPageSettings() {
+      haptic('medium');
+      const batKey = document.getElementById('sup-card-bat-key')?.value?.trim() || '';
+      const prodKey = document.getElementById('sup-card-prod-key')?.value?.trim() || '';
+      const strategy = document.getElementById('sup-page-routing-select')?.value || 'auto_cheapest';
+      const batSync = document.getElementById('sup-card-bat-sync')?.checked;
+      const prodSync = document.getElementById('sup-card-prod-sync')?.checked;
+      const failover = document.getElementById('sup-page-failover')?.checked;
+
+      showToast('جاري حفظ إعدادات السيرفرين...');
+      try {
+        const res = await fetch('/api/admin/supplier/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            admin_tg_id: userId,
+            batstore_api_key: batKey,
+            prodseller_api_key: prodKey,
+            routing_strategy: strategy,
+            batstore_sync_enabled: batSync,
+            prodseller_sync_enabled: prodSync,
+            auto_failover: failover
+          })
+        });
+        const d = await res.json();
+        if (!res.ok || d.error) {
+          showToast(`❌ ${d.error || 'فشل الحفظ'}`);
+          return;
+        }
+        showToast('✅ تم حفظ كافة إعدادات ومفاتيح السيرفرين بنجاح');
+        await loadAdminSuppliersDetails();
+      } catch (e) {
+        showToast(`❌ ${e.message}`);
+      }
+    }
+
+    async function syncAllSupplierCatalogsInSuppliersPage() {
+      haptic('medium');
+      const btn = document.getElementById('btn-sup-page-sync');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerText = '⏳ جاري مزامنة المنتجات من السيرفرين...';
+      }
+      showToast('⏳ جاري جلب ومزامنة المنتجات من كلا الموردين...');
+      try {
+        const res = await fetch('/api/admin/supplier/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_tg_id: userId })
+        });
+        const d = await res.json();
+        if (!res.ok || d.error) {
+          showToast(`❌ ${d.error || 'فشلت المزامنة'}`);
+          return;
+        }
+        const b = d.result?.batstore || {};
+        const p = d.result?.prodseller || {};
+        const tot = d.result?.total_products || 0;
+        showToast(`✅ تمت المزامنة! BatStore (${b.created || 0}+/${b.updated || 0}) · ProdSeller (${p.created || 0}+/${p.updated || 0}) · الإجمالي: ${tot}`);
+        await loadProductsCatalog();
+        await loadAdminSuppliersDetails();
+      } catch (e) {
+        showToast(`❌ ${e.message}`);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerText = '🔄 مزامنة وتحديث كافة المنتجات من كلا الموردين الآن';
+        }
       }
     }
 
