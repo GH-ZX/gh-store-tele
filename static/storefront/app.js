@@ -2004,6 +2004,53 @@ const tg = window.Telegram?.WebApp;
       `;
     }
 
+    function findAlternateServerProduct(product) {
+      if (!product || !allProducts || !allProducts.length) return null;
+      const clean = (product.clean_name || product.name || '').trim().toLowerCase();
+      if (!clean) return null;
+      return allProducts.find(p => {
+        if (p.id === product.id) return false;
+        if (p.supplier === product.supplier) return false;
+        if (p.stock !== null && Number(p.stock) <= 0) return false;
+        const pClean = (p.clean_name || p.name || '').trim().toLowerCase();
+        return pClean.includes(clean) || clean.includes(pClean);
+      });
+    }
+
+    function checkProductEffectiveStock(product) {
+      if (!product) {
+        return { isOutOfStock: true, effectiveStock: 0, isFailoverAvailable: false, alternateProduct: null };
+      }
+      const directInStock = (product.stock === null || Number(product.stock) > 0);
+      if (directInStock) {
+        return {
+          isOutOfStock: false,
+          effectiveStock: product.stock,
+          isFailoverAvailable: false,
+          alternateProduct: null
+        };
+      }
+
+      // Direct item has stock <= 0, check if alternate server has duplicate offering in stock
+      const alternate = findAlternateServerProduct(product);
+      if (alternate) {
+        return {
+          isOutOfStock: false,
+          effectiveStock: alternate.stock,
+          isFailoverAvailable: true,
+          alternateProduct: alternate
+        };
+      }
+
+      // Out of stock on BOTH servers
+      return {
+        isOutOfStock: true,
+        effectiveStock: 0,
+        isFailoverAvailable: false,
+        alternateProduct: null
+      };
+    }
+
     // Category Products Listing: Groups multi-variant products into clean family cards
     function renderProductItems(products) {
       const container = document.getElementById('catalog-products-list');
@@ -2029,7 +2076,15 @@ const tg = window.Telegram?.WebApp;
       let regIdx = 0;
       let html = '';
       for (const [famKey, items] of familyMap.entries()) {
-        items.sort((a, b) => (a.price || 0) - (b.price || 0));
+        // Prioritize in-stock offerings from either server first
+        items.sort((a, b) => {
+          const aStock = checkProductEffectiveStock(a);
+          const bStock = checkProductEffectiveStock(b);
+          if (aStock.isOutOfStock !== bStock.isOutOfStock) {
+            return aStock.isOutOfStock ? 1 : -1;
+          }
+          return (a.price || 0) - (b.price || 0);
+        });
         const primary = items[0];
         const isMulti = items.length > 1;
         const currentIdx = regIdx++;
@@ -2040,12 +2095,12 @@ const tg = window.Telegram?.WebApp;
           items: items
         });
         const isFav = wishlistSet.has(Number(primary.id));
-        const isOutOfStock = (primary.stock !== null && primary.stock <= 0);
+        const anyInStock = items.some(it => !checkProductEffectiveStock(it).isOutOfStock);
+        const isOutOfStock = !anyInStock;
 
         const stockBadge = isOutOfStock
           ? `<span class="spec-pill stock-out">${d.out_of_stock}</span>`
           : `<span class="spec-pill in-stock">${primary.stock ? `${d.in_stock} (${primary.stock})` : d.in_stock}</span>`;
-
         const isActivation = (primary.delivery_type === 'activation');
         const deliveryBadge = isActivation
           ? `<span class="spec-pill delivery-activation">⚙️ ${currentAppLanguage === 'ar' ? 'تفعيل مخصص' : 'Activation'}</span>`
@@ -2138,11 +2193,12 @@ const tg = window.Telegram?.WebApp;
 
         container.innerHTML = siblings.map(p => {
           const isFav = wishlistSet.has(Number(p.id));
-          const isOutOfStock = (p.stock !== null && p.stock <= 0);
+          const stockInfo = checkProductEffectiveStock(p);
+          const isOutOfStock = stockInfo.isOutOfStock;
 
           const stockBadge = isOutOfStock
             ? `<span class="spec-pill stock-out">${d.out_of_stock}</span>`
-            : `<span class="spec-pill in-stock">${p.stock ? `${d.in_stock} (${p.stock})` : d.in_stock}</span>`;
+            : `<span class="spec-pill in-stock">${p.stock ? `${d.in_stock} (${p.stock})` : (stockInfo.isFailoverAvailable ? `${d.in_stock} (بديل)` : d.in_stock)}</span>`;
 
           const isActivation = (p.delivery_type === 'activation');
           const deliveryBadge = isActivation
@@ -2249,15 +2305,28 @@ const tg = window.Telegram?.WebApp;
         if (descBox) descBox.innerHTML = formatRichDescription(rawDesc);
 
         const isInstant = selectedProduct.delivery_type !== 'activation';
-        const isOutOfStock = (selectedProduct.stock !== null && selectedProduct.stock <= 0);
+        const stockInfo = checkProductEffectiveStock(selectedProduct);
+        const isOutOfStock = stockInfo.isOutOfStock;
 
         setTxt('prod-delivery-badge', isInstant
           ? (currentAppLanguage === 'ar' ? 'تسليم تلقائي' : 'Automated Delivery')
           : (currentAppLanguage === 'ar' ? 'تفعيل مخصص' : 'Custom Activation'));
 
-        setTxt('prod-stock-badge', isOutOfStock
-          ? (currentAppLanguage === 'ar' ? 'نفد المخزون' : 'Out of Stock')
-          : (selectedProduct.stock ? `${currentAppLanguage === 'ar' ? 'متوفر' : 'In Stock'} (${selectedProduct.stock})` : (currentAppLanguage === 'ar' ? 'تسليم مباشر' : 'Direct Delivery')));
+        let stockText = d.in_stock;
+        if (isOutOfStock) {
+          stockText = d.out_of_stock;
+        } else if (stockInfo.isFailoverAvailable) {
+          stockText = (currentAppLanguage === 'ar') ? 'متوفر (سيرفر بديل)' : 'In Stock (Alternate Server)';
+        } else if (selectedProduct.stock) {
+          stockText = `${d.in_stock} (${selectedProduct.stock})`;
+        } else {
+          stockText = d.instant_delivery;
+        }
+        setTxt('prod-stock-badge', stockText);
+        const stockBadgeEl = document.getElementById('prod-stock-badge');
+        if (stockBadgeEl) {
+          stockBadgeEl.className = isOutOfStock ? 'pill-badge spec-pill stock-out' : 'pill-badge in-stock';
+        }
 
         // Admin detail edit and gift buttons
         const adminDetailEdit = document.getElementById('admin-detail-edit-container');

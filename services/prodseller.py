@@ -253,7 +253,7 @@ class ProdSellerService:
                     margin_value=None,
                     category=category,
                     sell_price_usd=sell_price,
-                    hidden=not in_stock,
+                    hidden=False,
                     reseller_key_override=mongo_id,
                     supplier="prodseller",
                     server_badge="سيرفر 2 (ProdSeller)",
