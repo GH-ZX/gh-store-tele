@@ -49,20 +49,30 @@ async def safe_edit_message(
         pass
 
     if isinstance(content, (InputMediaPhoto, InputMediaVideo, InputMediaAnimation)):
+        caption = getattr(content, "caption", None)
         try:
             await callback.message.edit_media(media=content, reply_markup=reply_markup)
             return
         except Exception as e:
             if "message is not modified" in str(e).lower():
                 return
+
         try:
             await callback.message.delete()
         except Exception:
             pass
-        from utils.utils import get_bot_photo_id
-        photo = getattr(content, "media", None) or get_bot_photo_id()
-        caption = getattr(content, "caption", None)
-        await callback.message.answer_photo(photo=photo, caption=caption, reply_markup=reply_markup)
+
+        photo = getattr(content, "media", None)
+        if photo and photo != "no_image_placeholder" and not str(photo).startswith("0AgAC"):
+            try:
+                await callback.message.answer_photo(photo=photo, caption=caption, reply_markup=reply_markup)
+                return
+            except Exception:
+                pass
+
+        if caption:
+            await callback.message.answer(text=caption, reply_markup=reply_markup)
+            return
         return
     else:
         text = str(content)

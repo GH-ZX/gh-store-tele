@@ -185,9 +185,12 @@ async def _startup() -> None:
     if bot_photo_id is None:
         logging.warning("No bot/fallback profile photo obtained; skipping media init.")
     else:
-        with open("static/no_image.jpeg", "w") as f:
-            f.write(bot_photo_id)
-        await MediaService.update_inaccessible_media(bot)
+        try:
+            with open("static/no_image.jpeg", "w") as f:
+                f.write(bot_photo_id)
+            await MediaService.update_inaccessible_media(bot)
+        except Exception as e:
+            logging.warning("update_inaccessible_media skipped: %s", e)
     validate_i18n()
     await ButtonMediaRepository.init_buttons_media()
     if config.CRYPTO_FORWARDING_MODE:

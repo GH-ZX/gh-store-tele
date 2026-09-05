@@ -142,30 +142,36 @@ class MediaService:
         ), kb_builder
 
     @staticmethod
-    def convert_to_media(media_id: str, caption: str) -> InputMediaPhoto | InputMediaVideo | InputMediaAnimation:
+    def convert_to_media(media_id: str, caption: str) -> InputMediaPhoto | InputMediaVideo | InputMediaAnimation | None:
+        if not media_id or len(media_id) < 2:
+            return None
         category_media_type = media_id[0]
         category_media_id = media_id[1:]
         if category_media_type == "0":
-            media = InputMediaPhoto(media=category_media_id, caption=caption)
+            return InputMediaPhoto(media=category_media_id, caption=caption)
         elif category_media_type == "1":
-            media = InputMediaVideo(media=category_media_id, caption=caption)
+            return InputMediaVideo(media=category_media_id, caption=caption)
         else:
-            media = InputMediaAnimation(media=category_media_id, caption=caption)
-        return media
+            return InputMediaAnimation(media=category_media_id, caption=caption)
 
     @staticmethod
     async def update_inaccessible_media(bot: Bot):
-        bot_photo_id = f"0{get_bot_photo_id()}"
+        bot_photo = get_bot_photo_id()
+        if not bot_photo or bot_photo.startswith("no_image"):
+            return
+        bot_photo_id = f"0{bot_photo}"
         async with get_db_session() as session:
             unique_file_ids = await ButtonMediaRepository.get_all_file_ids(session)
             inaccessible_media_list = []
             for unique_id in unique_file_ids:
+                if not unique_id or len(unique_id) < 2:
+                    continue
                 parsed_unique_id = unique_id
                 if parsed_unique_id[0] in ["0", "1", "2"]:
                     parsed_unique_id = unique_id[1:]
                 try:
                     await bot.get_file(parsed_unique_id)
-                except TelegramBadRequest as _:
+                except Exception:
                     inaccessible_media_list.append(unique_id)
             for media_id in inaccessible_media_list:
                 await ButtonMediaRepository.update_media_id(media_id, bot_photo_id, session)

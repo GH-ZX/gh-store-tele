@@ -93,6 +93,9 @@ class UserService:
                                                                   InputMediaVideo |
                                                                   InputMediaAnimation, InlineKeyboardBuilder]:
         kb_builder = InlineKeyboardBuilder()
+        user = await UserRepository.get_by_tgid(telegram_id, session)
+        curr_pref = getattr(user, "currency_preference", "USD") or "USD"
+
         kb_builder.button(text=get_text(language, BotEntity.USER, "top_up_balance_button"),
                           callback_data=MyProfileCallback.create(level=1))
         kb_builder.button(text=get_text(language, BotEntity.USER, "purchase_history_button"),
@@ -103,26 +106,55 @@ class UserService:
                           callback_data=MyProfileCallback.create(level=7))
         kb_builder.button(text=get_text(language, BotEntity.USER, "language"),
                           callback_data=MyProfileCallback.create(level=6))
-        user = await UserRepository.get_by_tgid(telegram_id, session)
-        curr_pref = getattr(user, "currency_preference", "USD") or "USD"
         kb_builder.button(text=f"💱 {curr_pref}",
                           callback_data=MyProfileCallback.create(level=9))
         kb_builder.adjust(2)
 
-        fiat_balance = round(user.top_up_amount - user.consume_records, 2)
-        caption = (get_text(language, BotEntity.USER, "my_profile_msg")
-                   .format(telegram_id=user.telegram_id,
-                           fiat_balance=fiat_balance,
-                           currency_text=config.CURRENCY.get_localized_text(),
-                           currency_sym=config.CURRENCY.get_localized_symbol()))
-        tier_label, discount_pct = get_vip_tier_info(user.consume_records)
+        tma_host = (config.WEBHOOK_HOST or "").strip().rstrip('/')
+        if tma_host and tma_host.startswith("https://"):
+            from aiogram.types import WebAppInfo, InlineKeyboardButton
+            kb_builder.row(
+                InlineKeyboardButton(
+                    text="🛍️ متجر الويب (Mini App)",
+                    web_app=WebAppInfo(url=f"{tma_host}/app")
+                )
+            )
+
+        if user.telegram_id in config.ADMIN_ID_LIST:
+            from callbacks import AdminMenuCallback
+            from aiogram.types import InlineKeyboardButton
+            kb_builder.row(
+                InlineKeyboardButton(
+                    text="👑 لوحة تحكم المسؤول (Admin Panel)",
+                    callback_data=AdminMenuCallback.create(level=0).pack()
+                )
+            )
+
+        fiat_balance = round((user.top_up_amount or 0.0) - (user.consume_records or 0.0), 2)
+        total_spent = round(user.consume_records or 0.0, 2)
+        custom_disc = getattr(user, "custom_discount_pct", None)
+        tier_label, discount_pct = get_vip_tier_info(user.consume_records, custom_disc)
         display_bal = format_currency_display(fiat_balance, curr_pref)
-        vip_info = f"\n🎖️ Rank: <b>{tier_label}</b>" + (f" (<b>-{discount_pct:.0f}%</b> checkout discount)" if discount_pct > 0 else "")
-        curr_info = f"\n💱 Display Currency: <b>{curr_pref}</b> (approx: <b>{display_bal}</b>)" if curr_pref != "USD" else ""
-        caption += f"{vip_info}{curr_info}"
+
+        caption = (
+            f"👤 <b>الملف الشخصي (Profile)</b>\n\n"
+            f"• <b>Telegram ID:</b> <code>{user.telegram_id}</code>\n"
+            f"• <b>اسم المستخدم:</b> @{user.telegram_username or 'none'}\n\n"
+            f"💰 <b>الرصيد المتاح:</b> <b>${fiat_balance:.2f}</b>"
+            + (f" <i>(≈ {display_bal})</i>\n" if curr_pref != "USD" else "\n")
+            + f"🛒 <b>إجمالي المشتريات:</b> <b>${total_spent:.2f}</b>\n"
+            f"🎖️ <b>الرتبة:</b> <b>{tier_label}</b>"
+            + (f" (<b>-{discount_pct:.0f}%</b> خصم تلقائي)\n" if discount_pct > 0 else "\n")
+        )
+
         button_media = await ButtonMediaRepository.get_by_button(KeyboardButton.MY_PROFILE, session)
-        media = MediaService.convert_to_media(button_media.media_id, caption=caption)
-        return media, kb_builder
+        if button_media and button_media.media_id and not str(button_media.media_id).startswith("0AgAC"):
+            try:
+                media = MediaService.convert_to_media(button_media.media_id, caption=caption)
+                return media, kb_builder
+            except Exception:
+                pass
+        return caption, kb_builder
 
     @staticmethod
     async def _topup_enabled(session: AsyncSession | None,

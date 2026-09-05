@@ -3,6 +3,7 @@ from aiogram.types import InputMediaPhoto, InputMediaVideo, InputMediaAnimation,
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import config
 from callbacks import AllCategoriesCallback
 from repositories.batstore_product import BatStoreProductRepository
 from enums.bot_entity import BotEntity
@@ -94,5 +95,10 @@ class CategoryService:
         button_media = await ButtonMediaRepository.get_by_button(
             KeyboardButton.ALL_CATEGORIES, session
         )
-        media = MediaService.convert_to_media(button_media.media_id, caption=caption)
-        return media, kb_builder
+        if button_media and button_media.media_id and not str(button_media.media_id).startswith("0AgAC"):
+            try:
+                media = MediaService.convert_to_media(button_media.media_id, caption=caption)
+                return media, kb_builder
+            except Exception:
+                pass
+        return caption, kb_builder
