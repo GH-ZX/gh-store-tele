@@ -78,53 +78,64 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       transition: background-color 0.25s, color 0.25s;
     }
 
-    /* Top Sticky Navigation Bar */
+    /* Sleek Top Navigation Bar (Telegram Native Chrome Harmony) */
     .top-header {
       position: sticky;
       top: 0;
       z-index: 50;
-      backdrop-filter: blur(28px) saturate(200%);
-      -webkit-backdrop-filter: blur(28px) saturate(200%);
+      backdrop-filter: blur(24px) saturate(180%);
+      -webkit-backdrop-filter: blur(24px) saturate(180%);
       background: var(--header-bg);
       border-bottom: 1px solid var(--border);
-      padding: calc(var(--safe-top, 0px) + 10px) 16px 10px 16px;
+      padding-top: max(var(--safe-top, 0px), 8px);
+      padding-bottom: 8px;
+      padding-left: max(var(--tg-content-safe-area-inset-left, 0px), 14px);
+      padding-right: max(var(--tg-content-safe-area-inset-right, 0px), 14px);
       display: flex;
       align-items: center;
       justify-content: space-between;
+      min-height: 52px;
       transition: background-color 0.25s, border-color 0.25s;
     }
-    .header-user {
+    .header-brand {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 9px;
       cursor: pointer;
     }
-    .avatar-img {
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      object-fit: cover;
-      border: 1.5px solid var(--accent);
+    .store-logo-wrapper {
+      width: 32px;
+      height: 32px;
+      border-radius: 9px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid var(--border);
+      flex-shrink: 0;
     }
-    .avatar-fallback {
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, #38bdf8, #6366f1);
-      color: white;
-      font-size: 15px;
-      font-weight: 700;
+    .store-logo-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .store-logo-fallback {
+      font-size: 16px;
       display: flex;
       align-items: center;
       justify-content: center;
     }
-    .header-meta h1 {
-      font-size: 16px;
-      font-weight: 700;
-      letter-spacing: -0.3px;
+    .store-brand-info {
       display: flex;
       align-items: center;
       gap: 6px;
+    }
+    .store-title {
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: -0.3px;
+      color: var(--text);
     }
     .vip-tag {
       background: rgba(245, 158, 11, 0.18);
@@ -134,26 +145,180 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       padding: 2px 6px;
       border-radius: 6px;
     }
-    .header-actions {
+    .header-right-actions {
       display: flex;
       align-items: center;
       gap: 8px;
     }
-    .header-balance-btn {
+    .header-balance-pill {
       background: rgba(56, 189, 248, 0.12);
       border: 1px solid rgba(56, 189, 248, 0.35);
-      color: var(--accent);
-      padding: 6px 14px;
       border-radius: 20px;
-      font-size: 13px;
-      font-weight: 700;
+      padding: 5px 11px;
       display: flex;
       align-items: center;
       gap: 5px;
       cursor: pointer;
-      box-shadow: 0 2px 8px var(--accent-glow);
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--accent);
+      transition: transform 0.15s, background-color 0.2s;
     }
-    .header-balance-btn:active { transform: scale(0.96); }
+    .header-balance-pill:active { transform: scale(0.96); }
+    .bal-pill-plus { font-size: 10px; opacity: 0.85; }
+    .header-user-badge {
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+    }
+    .avatar-img {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 1.5px solid var(--accent);
+    }
+    .avatar-fallback {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #38bdf8, #6366f1);
+      color: white;
+      font-size: 14px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Floating Cart Badge Capsule */
+    .floating-cart-badge {
+      position: fixed;
+      bottom: calc(var(--nav-height) + var(--safe-bottom) + 14px);
+      left: 16px;
+      z-index: 90;
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      color: #ffffff;
+      padding: 9px 15px;
+      border-radius: 28px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      cursor: pointer;
+      box-shadow: 0 8px 24px rgba(2, 132, 199, 0.45);
+      font-size: 13px;
+      font-weight: 800;
+      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s;
+      animation: cartPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    [dir="ltr"] .floating-cart-badge { left: auto; right: 16px; }
+    .floating-cart-badge:active { transform: scale(0.94); }
+    .cart-badge-sep { opacity: 0.6; font-size: 11px; }
+    @keyframes cartPop { from { transform: scale(0.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+    /* Trending Searches Bar */
+    .trending-searches-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      overflow-x: auto;
+      padding: 2px 0 8px 0;
+      scrollbar-width: none;
+    }
+    .trending-searches-bar::-webkit-scrollbar { display: none; }
+    .trending-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--hint);
+      white-space: nowrap;
+    }
+    .trending-chip {
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 14px;
+      padding: 3px 9px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .trending-chip:active { background: rgba(56, 189, 248, 0.15); border-color: var(--accent); }
+
+    /* Cart Drawer Items */
+    .cart-item-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 10px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .cart-item-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex: 1;
+      min-width: 0;
+    }
+    .cart-item-icon {
+      font-size: 20px;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .cart-item-name {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .cart-item-price {
+      font-size: 12px;
+      color: var(--accent);
+      font-weight: 700;
+    }
+    .cart-stepper {
+      display: flex;
+      align-items: center;
+      background: var(--input-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .cart-stepper button {
+      background: transparent;
+      border: none;
+      color: var(--text);
+      padding: 4px 8px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .cart-stepper span {
+      padding: 0 6px;
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--accent);
+      font-family: monospace;
+    }
+    .cart-del-btn {
+      background: transparent;
+      border: none;
+      color: #ef4444;
+      font-size: 14px;
+      cursor: pointer;
+      padding: 4px;
+      margin-left: 6px;
+    }
+    [dir="ltr"] .cart-del-btn { margin-left: 0; margin-right: 6px; }
 
     /* Views */
     .tab-view {
@@ -1499,22 +1664,73 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       </div>
     </div>
   </div>
-
-  <!-- Top Sticky Bar -->
-  <header class="top-header">
-    <div class="header-user" onclick="switchTab('settings')">
-      <div id="top-avatar-box">
-        <div class="avatar-fallback" id="top-avatar-initial">U</div>
+  <!-- MULTI-ITEM CART DRAWER MODAL SHEET -->
+  <div class="admin-modal-overlay" id="cart-drawer-sheet">
+    <div class="admin-modal-sheet" style="max-height: 85vh; display: flex; flex-direction: column;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 20px;">🛒</span>
+          <h3 style="font-size: 17px; font-weight: 800;" id="cart-drawer-title">سلة المشتريات</h3>
+          <span class="pill-badge" id="cart-drawer-count-badge" style="background: rgba(56,189,248,0.2); color: var(--accent);">0</span>
+        </div>
+        <button class="circle-icon-btn" onclick="closeCartDrawer()">✕</button>
       </div>
-      <div class="header-meta">
-        <h1>🛍️ GH Store <span class="vip-tag" id="top-vip-tag" style="display: none;">VIP</span></h1>
-        <span id="top-sub-caption">المتجر الرقمي المعتمد</span>
+
+      <div id="cart-drawer-items-list" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; max-height: 40vh;">
+        <!-- Dynamic Cart Items -->
+      </div>
+
+      <div id="cart-empty-message" style="text-align: center; padding: 24px 0; color: var(--hint); display: none;">
+        السلة فارغة حالياً. تصفح المنتجات وأضف ما ترغب به!
+      </div>
+
+      <!-- Cart Summary & Checkout Box -->
+      <div id="cart-checkout-box" style="border-top: 1px solid var(--border); padding-top: 12px;">
+        <div style="display: flex; justify-content: space-between; font-size: 13px; color: var(--hint); margin-bottom: 4px;">
+          <span id="cart-summary-subtotal-label">المجموع الجزئي:</span>
+          <span id="cart-summary-subtotal">$0.00</span>
+        </div>
+        <div id="cart-summary-disc-row" style="display: none; justify-content: space-between; font-size: 13px; color: var(--success); margin-bottom: 4px;">
+          <span id="cart-summary-disc-label">خصم الرتبة:</span>
+          <span id="cart-summary-discount">-$0.00</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 16px; font-weight: 800; margin-bottom: 12px;">
+          <span id="cart-summary-total-label">الإجمالي النهائي:</span>
+          <span style="color: var(--accent);" id="cart-summary-total">$0.00</span>
+        </div>
+
+        <div style="display: flex; gap: 8px;">
+          <button class="btn-action-secondary" onclick="clearEntireCart()" style="flex: 1; height: 46px;" id="cart-btn-clear">إفراغ</button>
+          <button class="btn-action-primary" id="btn-cart-checkout" onclick="executeCartCheckout()" style="flex: 3; height: 46px;">
+            <span id="cart-btn-checkout-label">تأكيد شراء السلة</span>
+          </button>
+        </div>
       </div>
     </div>
-    <div class="header-actions">
-      <div class="header-balance-btn" onclick="switchTab('wallet')">
-        <span id="top-balance-str">$0.00</span>
-        <span>➕</span>
+  </div>
+
+
+  <!-- Top Sleek Navigation Bar (Native Chrome Space) -->
+  <header class="top-header">
+    <div class="header-brand" onclick="switchTab('store')">
+      <div class="store-logo-wrapper">
+        <img id="top-store-logo" class="store-logo-img" src="" alt="GH Store" style="display: none;" onerror="this.style.display='none'; document.getElementById('top-store-fallback').style.display='flex';">
+        <div id="top-store-fallback" class="store-logo-fallback">🛍️</div>
+      </div>
+      <div class="store-brand-info">
+        <span class="store-title">GH Store</span>
+        <span class="vip-tag" id="top-vip-tag" style="display: none;">VIP</span>
+      </div>
+    </div>
+    <div class="header-right-actions">
+      <div class="header-balance-pill" onclick="switchTab('wallet')" title="المحفظة">
+        <span class="bal-pill-amount" id="top-balance-str">$0.00</span>
+        <span class="bal-pill-plus">➕</span>
+      </div>
+      <div class="header-user-badge" onclick="switchTab('settings')" title="الإعدادات">
+        <div id="top-avatar-box">
+          <div class="avatar-fallback" id="top-avatar-initial">U</div>
+        </div>
       </div>
     </div>
   </header>
@@ -1537,6 +1753,16 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       <span class="clear-search" id="store-clear-btn" onclick="clearSearch()">✕</span>
     </div>
 
+    <!-- Trending Searches Bar -->
+    <div class="trending-searches-bar" id="trending-searches-bar">
+      <span class="trending-label">🔥 الأكثر بحثاً:</span>
+      <span class="trending-chip" onclick="applySearchQuery('ChatGPT')">🤖 ChatGPT</span>
+      <span class="trending-chip" onclick="applySearchQuery('Claude')">⚡ Claude</span>
+      <span class="trending-chip" onclick="applySearchQuery('Gemini')">🧠 Gemini</span>
+      <span class="trending-chip" onclick="applySearchQuery('Peacock')">🍿 Peacock</span>
+      <span class="trending-chip" onclick="applySearchQuery('Windows')">💻 Windows</span>
+      <span class="trending-chip" onclick="applySearchQuery('Canva')">🎨 Canva</span>
+    </div>
     <!-- Quick Filters & Sorting -->
     <div class="filter-chips-row" id="quick-filters-row">
       <div class="filter-chip active" id="filter-all" onclick="applyCatalogFilter('all')">الكل</div>
@@ -1587,6 +1813,14 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       <div id="catalog-products-list"></div>
     </div>
   </main>
+  <!-- Floating Cart Capsule Badge -->
+  <div class="floating-cart-badge" id="floating-cart-badge" onclick="openCartDrawer()" style="display: none;">
+    <span class="cart-badge-icon">🛒</span>
+    <span class="cart-badge-count" id="cart-badge-count">0</span>
+    <span class="cart-badge-sep">·</span>
+    <span class="cart-badge-total" id="cart-badge-total">$0.00</span>
+  </div>
+
 
   <!-- DEDICATED IN-APP PRODUCT DETAIL PAGE (Clean Hero, No Emojis) -->
   <section id="view-product-detail" class="tab-view">
@@ -1667,12 +1901,17 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         </button>
       </div>
 
-      <!-- In-App Purchase Action Button -->
-      <button class="btn-action-primary" id="btn-inapp-purchase" onclick="executeProductBuy()">
-        <span id="btn-buy-action-label">شراء فوري</span>
-        <span id="btn-price-tag">($0.00)</span>
-      </button>
-
+      <!-- In-App Purchase & Add to Cart Buttons Row -->
+      <div style="display: flex; gap: 8px; margin-bottom: 8px;" id="product-action-buttons-row">
+        <button class="btn-action-primary" id="btn-inapp-purchase" onclick="executeProductBuy()" style="flex: 2;">
+          <span id="btn-buy-action-label">شراء فوري</span>
+          <span id="btn-price-tag">($0.00)</span>
+        </button>
+        <button class="btn-action-secondary" id="btn-add-to-cart" onclick="addToCartCurrentProduct()" style="flex: 1; height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;" title="إضافة للسلة">
+          <span style="font-size: 16px;">🛒</span>
+          <span id="btn-add-cart-text" style="font-size: 11px; font-weight: 700;">أضف للسلة</span>
+        </button>
+      </div>
       <button class="btn-stars-checkout" id="btn-stars-purchase" onclick="executeStarsDirectBuy()">
         <span id="btn-stars-action-label">الدفع عبر نجوم تيليجرام</span>
       </button>
@@ -1875,6 +2114,16 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
           <button class="btn-action-primary" onclick="submitAdminUpdateReferralRate()" style="height: 38px; width: auto; padding: 0 16px; font-size: 12px;">تحديث</button>
         </div>
       </div>
+      <!-- Store Brand Logo Manager -->
+      <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 14px;">
+        <div style="font-size: 12px; font-weight: 700; margin-bottom: 6px;">🖼️ رابط شعار المتجر (Store Logo URL)</div>
+        <div style="font-size: 11px; color: var(--hint); margin-bottom: 8px;">يظهر في أعلى المتجر بجانب الاسم (يدعم PNG و SVG و WebP)</div>
+        <div style="display: flex; gap: 8px;">
+          <input type="text" class="admin-text-input" id="admin-store-logo-input" placeholder="https://example.com/logo.png" style="flex: 1; font-size: 12px;">
+          <button class="btn-action-primary" onclick="submitAdminUpdateStoreLogo()" style="height: 38px; width: auto; padding: 0 16px; font-size: 12px;">حفظ الشعار</button>
+        </div>
+      </div>
+
 
       <!-- Quick Admin Management Navigation Drawers -->
       <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px;">
@@ -2194,6 +2443,322 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     let wishlistSet = new Set();
     let currentCatalogViewMode = localStorage.getItem('ghstore_cat_view') || 'grid';
 
+    let cartMap = {};
+    let currentStoreLogo = '';
+
+    const SEARCH_ALIASES = {
+      'شات': ['chatgpt', 'gpt', 'openai'],
+      'جي بي تي': ['chatgpt', 'gpt'],
+      'ذكاء': ['ai', 'chatgpt', 'claude', 'gemini'],
+      'كلود': ['claude', 'anthropic'],
+      'جيميني': ['gemini', 'google'],
+      'ويندوز': ['windows', 'microsoft'],
+      'اوفيس': ['office', 'microsoft 365', 'family'],
+      'بي كوك': ['peacock'],
+      'بيكوك': ['peacock'],
+      'كانفا': ['canva'],
+      'يوتيوب': ['youtube'],
+      'سبوتيفاي': ['spotify'],
+      'نتفلكس': ['netflix'],
+      'في بي ان': ['vpn', 'nordvpn']
+    };
+
+    function applyStoreLogo(url) {
+      currentStoreLogo = url || '';
+      const img = document.getElementById('top-store-logo');
+      const fallback = document.getElementById('top-store-fallback');
+      const input = document.getElementById('admin-store-logo-input');
+      if (input && url) input.value = url;
+      if (img && fallback) {
+        if (url && url.trim()) {
+          img.src = url.trim();
+          img.style.display = 'block';
+          fallback.style.display = 'none';
+        } else {
+          img.style.display = 'none';
+          fallback.style.display = 'flex';
+        }
+      }
+    }
+
+    async function submitAdminUpdateStoreLogo() {
+      const input = document.getElementById('admin-store-logo-input');
+      const url = (input?.value || '').trim();
+      haptic('light');
+      try {
+        const res = await fetch('/api/admin/store-logo/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_tg_id: userId, logo_url: url })
+        });
+        const d = await res.json();
+        if (d.status === 'ok') {
+          haptic('success');
+          showToast(currentAppLanguage === 'ar' ? 'تم تحديث شعار المتجر بنجاح!' : 'Store logo updated successfully!');
+          applyStoreLogo(url);
+        } else {
+          showToast(d.error || 'فشل تحديث الشعار');
+        }
+      } catch (e) {
+        showToast('خطأ في الاتصال بالخادم');
+      }
+    }
+
+    // Cart Management & Cross-Device CloudStorage
+    function initCart() {
+      try {
+        const local = localStorage.getItem('ghstore_cart');
+        if (local) cartMap = JSON.parse(local) || {};
+      } catch (e) {}
+      try {
+        if (tg?.CloudStorage) {
+          tg.CloudStorage.getItem('ghstore_cart', (err, val) => {
+            if (!err && val) {
+              try {
+                cartMap = JSON.parse(val) || {};
+                updateFloatingCartUI();
+              } catch (e) {}
+            }
+          });
+        }
+      } catch (e) {}
+      updateFloatingCartUI();
+    }
+
+    function saveCart() {
+      try { localStorage.setItem('ghstore_cart', JSON.stringify(cartMap)); } catch (e) {}
+      try {
+        if (tg?.CloudStorage) {
+          tg.CloudStorage.setItem('ghstore_cart', JSON.stringify(cartMap), () => {});
+        }
+      } catch (e) {}
+      updateFloatingCartUI();
+    }
+
+    function updateFloatingCartUI() {
+      const items = Object.values(cartMap);
+      const totalQty = items.reduce((acc, it) => acc + (it.quantity || 1), 0);
+      const totalPrice = items.reduce((acc, it) => acc + ((it.price || 0) * (it.quantity || 1)), 0);
+      const sym = items[0]?.sym || '$';
+
+      const badge = document.getElementById('floating-cart-badge');
+      const countEl = document.getElementById('cart-badge-count');
+      const totalEl = document.getElementById('cart-badge-total');
+      if (badge && countEl && totalEl) {
+        if (totalQty > 0 && activeTab === 'store') {
+          badge.style.display = 'flex';
+          countEl.innerText = totalQty;
+          totalEl.innerText = `${totalPrice.toFixed(2)}${sym}`;
+        } else {
+          badge.style.display = 'none';
+        }
+      }
+    }
+
+    function addToCartCurrentProduct() {
+      if (!selectedProduct) return;
+      haptic('pop');
+      const pid = selectedProduct.id;
+      const qty = selectedQty || 1;
+      const existing = cartMap[pid];
+      if (existing) {
+        existing.quantity = Math.min(20, existing.quantity + qty);
+      } else {
+        cartMap[pid] = {
+          id: pid,
+          name: selectedProduct.name,
+          clean_name: selectedProduct.clean_name || selectedProduct.name,
+          price: selectedProduct.price,
+          sym: selectedProduct.sym || '$',
+          emoji: selectedProduct.emoji || '⚡',
+          quantity: qty
+        };
+      }
+      saveCart();
+      showToast(currentAppLanguage === 'ar' ? `🛒 تمت إضافة ${selectedProduct.clean_name || selectedProduct.name} للسلة` : `🛒 Added ${selectedProduct.clean_name || selectedProduct.name} to Cart`);
+      closeProductDetailPage();
+    }
+
+    function openCartDrawer() {
+      haptic('pop');
+      renderCartDrawerItems();
+      const sheet = document.getElementById('cart-drawer-sheet');
+      if (sheet) sheet.style.display = 'flex';
+      pushNav('cart_drawer', closeCartDrawer);
+      if (tg?.disableVerticalSwipes) tg.disableVerticalSwipes();
+    }
+
+    function closeCartDrawer() {
+      const sheet = document.getElementById('cart-drawer-sheet');
+      if (sheet) sheet.style.display = 'none';
+      if (tg?.enableVerticalSwipes) tg.enableVerticalSwipes();
+      if (navStack.length > 0 && navStack[navStack.length - 1].name === 'cart_drawer') {
+        navStack.pop();
+        if (navStack.length === 0 && tg?.BackButton) tg.BackButton.hide();
+      }
+    }
+
+    function changeCartQty(pid, delta) {
+      haptic('light');
+      if (!cartMap[pid]) return;
+      cartMap[pid].quantity += delta;
+      if (cartMap[pid].quantity <= 0) {
+        delete cartMap[pid];
+      }
+      saveCart();
+      renderCartDrawerItems();
+    }
+
+    function removeCartItem(pid) {
+      haptic('pop');
+      delete cartMap[pid];
+      saveCart();
+      renderCartDrawerItems();
+    }
+
+    function clearEntireCart() {
+      haptic('pop');
+      cartMap = {};
+      saveCart();
+      renderCartDrawerItems();
+    }
+
+    function renderCartDrawerItems() {
+      const items = Object.values(cartMap);
+      const list = document.getElementById('cart-drawer-items-list');
+      const emptyMsg = document.getElementById('cart-empty-message');
+      const box = document.getElementById('cart-checkout-box');
+      const countBadge = document.getElementById('cart-drawer-count-badge');
+      if (countBadge) countBadge.innerText = items.length;
+
+      if (!items.length) {
+        if (list) list.innerHTML = '';
+        if (emptyMsg) emptyMsg.style.display = 'block';
+        if (box) box.style.display = 'none';
+        return;
+      }
+      if (emptyMsg) emptyMsg.style.display = 'none';
+      if (box) box.style.display = 'block';
+
+      const sym = items[0]?.sym || '$';
+      let subtotal = 0.0;
+      if (list) {
+        list.innerHTML = items.map(it => {
+          const itemTotal = (it.price || 0) * (it.quantity || 1);
+          subtotal += itemTotal;
+          return `
+            <div class="cart-item-card">
+              <div class="cart-item-left">
+                <span class="cart-item-icon">${it.emoji || '⚡'}</span>
+                <div style="min-width: 0;">
+                  <div class="cart-item-name">${it.clean_name || it.name}</div>
+                  <div class="cart-item-price">${it.price.toFixed(2)}${sym} × ${it.quantity} = <strong>${itemTotal.toFixed(2)}${sym}</strong></div>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center;">
+                <div class="cart-stepper">
+                  <button onclick="changeCartQty(${it.id}, -1)">–</button>
+                  <span>${it.quantity}</span>
+                  <button onclick="changeCartQty(${it.id}, 1)">+</button>
+                </div>
+                <button class="cart-del-btn" onclick="removeCartItem(${it.id})" title="حذف">✕</button>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      const discRow = document.getElementById('cart-summary-disc-row');
+      const discEl = document.getElementById('cart-summary-discount');
+      const subEl = document.getElementById('cart-summary-subtotal');
+      const totEl = document.getElementById('cart-summary-total');
+
+      const vipDiscPct = userData?.vip_discount || 0;
+      let discVal = 0.0;
+      if (vipDiscPct > 0) {
+        discVal = subtotal * (vipDiscPct / 100);
+      }
+      const finalTotal = Math.max(0.01, subtotal - discVal);
+
+      if (subEl) subEl.innerText = `${subtotal.toFixed(2)}${sym}`;
+      if (discRow && discEl) {
+        if (discVal > 0) {
+          discRow.style.display = 'flex';
+          discEl.innerText = `-${discVal.toFixed(2)}${sym} (${vipDiscPct}%)`;
+        } else {
+          discRow.style.display = 'none';
+        }
+      }
+      if (totEl) totEl.innerText = `${finalTotal.toFixed(2)}${sym}`;
+
+      const checkBtn = document.getElementById('btn-cart-checkout');
+      const userBal = userData?.balance || 0.0;
+      if (checkBtn) {
+        if (userBal < finalTotal) {
+          checkBtn.innerHTML = `<span>شحن الرصيد للمتابعة ($${userBal.toFixed(2)})</span>`;
+          checkBtn.onclick = () => { closeCartDrawer(); switchTab('wallet'); };
+        } else {
+          checkBtn.innerHTML = `<span>تأكيد شراء السلة (${items.length} منتجات) • ${finalTotal.toFixed(2)}${sym}</span>`;
+          checkBtn.onclick = executeCartCheckout;
+        }
+      }
+    }
+
+    async function executeCartCheckout() {
+      const items = Object.values(cartMap);
+      if (!items.length || !userId) return;
+      haptic('light');
+
+      const btn = document.getElementById('btn-cart-checkout');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span>جاري معالجة السلة...</span>`;
+      }
+      if (tg?.MainButton) tg.MainButton.showProgress(false);
+
+      const payload = {
+        tg_id: userId,
+        items: items.map(it => ({ product_id: it.id, quantity: it.quantity }))
+      };
+
+      try {
+        const res = await fetch('/api/cart/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const d = await res.json();
+        if (btn) btn.disabled = false;
+        if (tg?.MainButton) tg.MainButton.hideProgress();
+
+        if (d.status === 'success') {
+          fireConfetti();
+          haptic('success');
+          cartMap = {};
+          saveCart();
+          closeCartDrawer();
+          loadUserData();
+
+          document.getElementById('success-meta-sub').innerText = (currentAppLanguage === 'ar')
+            ? `طلب #${d.order_id} · تم شراء ${d.items_count} منتجات بنجاح`
+            : `Order #${d.order_id} · ${d.items_count} items purchased successfully`;
+          const keysBox = document.getElementById('success-delivered-keys');
+          if (keysBox) keysBox.innerHTML = renderStructuredCredentials(d.goods);
+
+          document.querySelectorAll('.tab-view').forEach(el => el.classList.remove('active'));
+          const successView = document.getElementById('view-order-success');
+          if (successView) successView.classList.add('active');
+        } else {
+          haptic('error');
+          showToast(d.error || 'فشل إتمام شراء السلة');
+          renderCartDrawerItems();
+        }
+      } catch (e) {
+        if (btn) btn.disabled = false;
+        if (tg?.MainButton) tg.MainButton.hideProgress();
+        showToast('خطأ في الاتصال أثناء شراء السلة');
+      }
+    }
     // Recharge Flow State
     let selectedRechargeMethod = 'stars';
     let selectedRechargeAmount = 10.0;
@@ -2234,24 +2799,28 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         if (local) wishlistSet = new Set(JSON.parse(local));
       } catch (e) {}
 
-      if (tg?.CloudStorage) {
-        tg.CloudStorage.getItem('ghstore_wishlist', (err, val) => {
-          if (!err && val) {
-            try {
-              wishlistSet = new Set(JSON.parse(val));
-              if (activeCatalogFilter === 'wishlist') applyCatalogFilter('wishlist');
-            } catch (e) {}
-          }
-        });
-      }
+      try {
+        if (tg?.CloudStorage) {
+          tg.CloudStorage.getItem('ghstore_wishlist', (err, val) => {
+            if (!err && val) {
+              try {
+                wishlistSet = new Set(JSON.parse(val));
+                if (activeCatalogFilter === 'wishlist') applyCatalogFilter('wishlist');
+              } catch (e) {}
+            }
+          });
+        }
+      } catch (e) {}
     }
 
     function saveWishlist() {
       const arr = Array.from(wishlistSet);
       try { localStorage.setItem('ghstore_wishlist', JSON.stringify(arr)); } catch (e) {}
-      if (tg?.CloudStorage) {
-        tg.CloudStorage.setItem('ghstore_wishlist', JSON.stringify(arr), () => {});
-      }
+      try {
+        if (tg?.CloudStorage) {
+          tg.CloudStorage.setItem('ghstore_wishlist', JSON.stringify(arr), () => {});
+        }
+      } catch (e) {}
     }
 
     function toggleWishlist(productId, e) {
@@ -2870,6 +3439,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         allProducts = d.products || [];
         categoriesList = d.categories || [];
         try { localStorage.setItem('ghstore_catalog_cache', JSON.stringify(d)); } catch (e) {}
+        if (d.store_logo_url) applyStoreLogo(d.store_logo_url);
         renderCatalogsGrid();
         if (activeCatalog) {
           openCollection(activeCatalog);
@@ -3081,30 +3651,43 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       return result;
     }
 
+    function applySearchQuery(term) {
+      haptic('light');
+      const input = document.getElementById('store-search-input');
+      if (input) {
+        input.value = term;
+        handleSearch();
+      }
+    }
+
     function handleSearch() {
-      const q = (document.getElementById('store-search-input').value || '').trim().toLowerCase();
+      const rawQ = (document.getElementById('store-search-input').value || '').trim().toLowerCase();
       const clearBtn = document.getElementById('store-clear-btn');
 
-      if (q) {
+      if (rawQ) {
         clearBtn.style.display = 'block';
         document.getElementById('catalogs-collection-mode').style.display = 'none';
         document.getElementById('products-catalog-mode').style.display = 'block';
-        document.getElementById('active-collection-title').innerText = (currentAppLanguage === 'ar') ? `بحث: "${q}"` : `Search: "${q}"`;
+        document.getElementById('active-collection-title').innerText = (currentAppLanguage === 'ar') ? `نتائج البحث: "${rawQ}"` : `Search: "${rawQ}"`;
 
-        let matched = allProducts.filter(p =>
-          (p.clean_name || p.name).toLowerCase().includes(q) ||
-          p.name.toLowerCase().includes(q) ||
-          (p.description || '').toLowerCase().includes(q) ||
-          (p.description_ar || '').toLowerCase().includes(q) ||
-          (p.category || '').toLowerCase().includes(q)
-        );
+        let queryTokens = [rawQ];
+        for (const [k, aliases] of Object.entries(SEARCH_ALIASES)) {
+          if (rawQ.includes(k) || k.includes(rawQ)) {
+            queryTokens.push(...aliases);
+          }
+        }
+
+        let matched = allProducts.filter(p => {
+          const nameStr = ((p.clean_name || '') + ' ' + (p.name || '')).toLowerCase();
+          const descStr = ((p.description || '') + ' ' + (p.description_ar || '')).toLowerCase();
+          const catStr = (p.category || '').toLowerCase();
+          return queryTokens.some(tok => nameStr.includes(tok) || descStr.includes(tok) || catStr.includes(tok));
+        });
+
         matched = filterAndSortProducts(matched);
         renderProductItems(matched);
 
-        if (tg?.BackButton) {
-          tg.BackButton.show();
-          tg.BackButton.onClick(returnToCollections);
-        }
+        pushNav('search_results', returnToCollections);
       } else {
         clearBtn.style.display = 'none';
         if (activeCatalogFilter === 'all') returnToCollections();
@@ -4408,6 +4991,7 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         }
         userData = d;
         try { localStorage.setItem('ghstore_user_cache', JSON.stringify(d)); } catch (e) {}
+        if (d.store_logo_url) applyStoreLogo(d.store_logo_url);
         updateBalancePills();
 
         // Check & Render Admin Control Center in Settings
@@ -4428,6 +5012,8 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
               const refInput = document.getElementById('admin-ref-rate-input');
               if (refInput && !refInput.value) refInput.value = d.admin_stats.referral_commission_percent || 0.2;
             }
+              const logoInput = document.getElementById('admin-store-logo-input');
+              if (logoInput && !logoInput.value && d.store_logo_url) logoInput.value = d.store_logo_url;
           } else {
             adminCenterCard.style.display = 'none';
           }
@@ -4615,19 +5201,46 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
           <!-- Structured Credential Splitter -->
           ${renderStructuredCredentials(o.goods)}
 
-          <div style="display: flex; gap: 8px; margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px;">
-            ${o.warranty_days && !o.warranty_claimed && o.status === 'completed' ? `
-              <button class="btn-action-secondary" onclick="claimOrderWarranty(${o.id})">${d.claim_warranty}</button>
+          <div style="display: flex; gap: 8px; align-items: center; margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px; flex-wrap: wrap;">
+            ${o.warranty_days ? `
+              <span class="pill-badge" style="background: rgba(56,189,248,0.15); color: var(--accent); font-size: 11px;">🛡️ ${currentAppLanguage === 'ar' ? `ضمان ${o.warranty_days} يوم` : `${o.warranty_days}d Warranty`}</span>
             ` : ''}
+            ${o.warranty_days && !o.warranty_claimed && o.status === 'completed' ? `
+              <button class="btn-action-secondary" onclick="claimOrderWarranty(${o.id})" style="height: 36px; font-size: 11px; padding: 0 12px;">${d.claim_warranty}</button>
+            ` : ''}
+            <button class="btn-action-secondary" onclick="openOrderSupport(${o.id})" style="flex: 1; height: 36px; font-size: 11px; min-width: 140px;">💬 ${currentAppLanguage === 'ar' ? 'تواصل مع الدعم' : 'Contact Support'}</button>
           </div>
         </div>
       `).join('');
     }
 
     function copyCredText(text) {
-      navigator.clipboard.writeText(text).then(() => {
-        showToast(currentAppLanguage === 'ar' ? 'تم النسخ بنجاح!' : 'Copied successfully!');
-      });
+      haptic('success');
+      if (navigator?.clipboard?.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+          showToast(currentAppLanguage === 'ar' ? 'تم النسخ بنجاح!' : 'Copied successfully!');
+        }).catch(() => fallbackCopy(text));
+      } else {
+        fallbackCopy(text);
+      }
+    }
+
+    function fallbackCopy(text) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      showToast(currentAppLanguage === 'ar' ? 'تم النسخ بنجاح!' : 'Copied successfully!');
+    }
+
+    function openOrderSupport(orderId) {
+      haptic('light');
+      const botUser = userData?.bot_username || 'demo_aiogramshopbot';
+      const link = `https://t.me/${botUser}?start=support_order_${orderId}`;
+      if (tg?.openTelegramLink) tg.openTelegramLink(link);
+      else window.open(link, '_blank');
     }
 
     function copyReferralLink() {
@@ -4705,9 +5318,8 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     const initialLang = localStorage.getItem('ghstore_lang') || 'ar';
     applyLanguage(initialLang);
     initWishlist();
+    initCart();
     loadFromCache();
-    fetchCatalogData();
-    loadUserData();
     initSSE();
     checkHomeScreenCapability();
   </script>

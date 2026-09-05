@@ -360,7 +360,8 @@ async def get_tma_catalog():
                 "stock": p.stock,
                 "delivery_type": p.delivery_type or "stock",
             })
-    return {"categories": cats_list, "products": data}
+        store_logo_url = await ConfigService.get(session, "STORE_LOGO_URL", env_fallback=os.environ.get("STORE_LOGO_URL", ""))
+    return {"categories": cats_list, "products": data, "store_logo_url": store_logo_url or ""}
 
 
 _sse_subscribers: set[asyncio.Queue] = set()
@@ -534,6 +535,7 @@ async def get_tma_user_data(tg_id: int):
             "is_admin": is_admin,
             "admin_stats": admin_stats,
             "orders": orders_data,
+            "store_logo_url": await ConfigService.get(session, "STORE_LOGO_URL", env_fallback=os.environ.get("STORE_LOGO_URL", "")),
         }
 
 
@@ -738,6 +740,123 @@ async def tma_instant_buy(request: Request):
             "goods": goods_list,
             "delivery_type": product.delivery_type or "stock",
             "warranty_days": product.warranty_days or 0
+        }
+
+
+@app.post("/api/cart/checkout")
+async def tma_cart_checkout(request: Request):
+    """Atomic multi-item checkout for the Telegram Mini App Cart Drawer."""
+    import uuid
+    from models.batstore_order import BatStoreOrderDTO
+    from services.user import get_vip_tier_info
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+
+    tg_id = int(body.get("tg_id") or 0)
+    items_input = body.get("items") or []
+    if not tg_id or not items_input:
+        return JSONResponse({"error": "missing_parameters"}, status_code=400)
+
+    async with get_db_session() as session:
+        user = await UserRepository.get_by_tgid(tg_id, session)
+        if not user:
+            return JSONResponse({"error": "user_not_found"}, status_code=404)
+
+        cart_products = []
+        raw_total = 0.0
+        for it in items_input:
+            pid = int(it.get("product_id") or 0)
+            qty = max(1, min(20, int(it.get("quantity") or 1)))
+            prod = await BatStoreProductRepository.get_by_product_id(pid, session)
+            if not prod or prod.hidden:
+                return JSONResponse({"error": f"Product #{pid} is unavailable"}, status_code=400)
+            line_total = round(qty * prod.sell_price_usd, 2)
+            raw_total += line_total
+            cart_products.append({"product": prod, "quantity": qty, "line_total": line_total})
+
+        tier_label, discount_pct = get_vip_tier_info(getattr(user, "consume_records", 0.0), getattr(user, "custom_discount_pct", None))
+        total = raw_total
+        if discount_pct > 0:
+            disc_val = round(total * (discount_pct / 100.0), 2)
+            total = max(0.01, round(total - disc_val, 2))
+
+        coupon_code = (body.get("coupon_code") or "").strip()
+        if coupon_code:
+            from repositories.coupon import CouponRepository
+            from enums.coupon_type import CouponType
+            coupon = await CouponRepository.get_by_code(coupon_code, session)
+            if coupon and coupon.is_active:
+                if not (coupon.usage_limit and coupon.usage_count >= coupon.usage_limit):
+                    if coupon.type == CouponType.PERCENT:
+                        c_disc = total * (float(coupon.value) / 100.0)
+                    else:
+                        c_disc = float(coupon.value)
+                    total = max(0.01, round(total - c_disc, 2))
+                    await CouponRepository.increment_usage(coupon.id, session)
+
+        total = round(total, 2)
+
+        debited = await UserRepository.try_debit_balance(user.telegram_id, total, session)
+        if not debited:
+            available = round((user.top_up_amount or 0.0) - (user.consume_records or 0.0), 2)
+            return JSONResponse({
+                "error": "insufficient_balance",
+                "needed": total,
+                "available": available,
+                "shortage": round(total - available, 2)
+            }, status_code=400)
+        await session_commit(session)
+
+        all_goods = []
+        order_details = []
+        for cp in cart_products:
+            prod = cp["product"]
+            qty = cp["quantity"]
+            cust_ref = f"cart-{user.telegram_id}-{uuid.uuid4().hex[:8]}"
+            goods_list = []
+            try:
+                placed = await BatStoreService.place_order(
+                    session, prod.product_id, qty,
+                    customer_reference=cust_ref,
+                    idempotency_key=cust_ref
+                )
+                items = placed.get("order", {}).get("items") or []
+                goods_list = [it.get("value") or it.get("data") or str(it) for it in items] if items else []
+                all_goods.extend(goods_list)
+            except Exception as e:
+                logging.error("Failed to place item #%s in cart checkout: %s", prod.product_id, e)
+
+            order_details.append({
+                "product_id": prod.product_id,
+                "name": prod.name,
+                "quantity": qty,
+                "cost_usd": prod.cost_usd,
+                "sell_usd": cp["line_total"],
+                "delivery_type": prod.delivery_type,
+                "delivery_goods": goods_list,
+                "warranty_days": prod.warranty_days or 0
+            })
+
+        order = await BatStoreOrderRepository.create(BatStoreOrderDTO(
+            telegram_id=user.telegram_id,
+            total_sell=total,
+            status="completed",
+            customer_reference=f"cart-{uuid.uuid4().hex[:10]}",
+            details=order_details
+        ), session)
+        await session_commit(session)
+
+        sym = config.CURRENCY.get_localized_symbol()
+        return {
+            "status": "success",
+            "order_id": order.id,
+            "total_paid": total,
+            "sym": sym,
+            "goods": all_goods,
+            "items_count": len(cart_products)
         }
 
 
@@ -1108,6 +1227,23 @@ async def admin_update_referral_rate(request: Request):
         await ConfigService.set(session, "REFERRAL_MARGIN_COMMISSION_PERCENT", str(ref_rate))
         await session_commit(session)
     return {"status": "ok", "referral_rate": ref_rate}
+
+
+@app.post("/api/admin/store-logo/update")
+async def admin_update_store_logo(request: Request):
+    """Update the store logo URL in PostgreSQL app_config."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not _verify_admin(admin_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    logo_url = (body.get("logo_url") or "").strip()
+    async with get_db_session() as session:
+        await ConfigService.set(session, "STORE_LOGO_URL", logo_url)
+        await session_commit(session)
+    return {"status": "ok", "store_logo_url": logo_url}
 
 
 @app.get("/api/admin/users")

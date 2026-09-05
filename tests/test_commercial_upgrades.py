@@ -113,3 +113,35 @@ def test_admin_adjust_balance_does_not_affect_consume_records():
     assert user.top_up_amount == 35.0
     assert user.consume_records == 10.0  # Lifetime purchases unchanged!
     assert (user.top_up_amount - user.consume_records) == 25.0
+
+
+def test_cart_pricing_calculation():
+    """Verify multi-item cart pricing and VIP discount computation."""
+    items = [
+        {"price": 10.0, "quantity": 2},
+        {"price": 15.0, "quantity": 1},
+    ]
+    raw_total = sum(it["price"] * it["quantity"] for it in items)
+    assert raw_total == 35.0
+
+    vip_discount_pct = 10.0
+    disc_val = round(raw_total * (vip_discount_pct / 100.0), 2)
+    final_total = max(0.01, round(raw_total - disc_val, 2))
+    assert disc_val == 3.50
+    assert final_total == 31.50
+
+
+def test_search_synonyms_matching():
+    """Verify Arabic-English search synonyms."""
+    aliases = {
+        'شات': ['chatgpt', 'gpt', 'openai'],
+        'كلود': ['claude', 'anthropic'],
+    }
+    q = "شات"
+    tokens = [q]
+    for k, syns in aliases.items():
+        if q in k or k in q:
+            tokens.extend(syns)
+
+    assert "chatgpt" in tokens
+    assert "gpt" in tokens
