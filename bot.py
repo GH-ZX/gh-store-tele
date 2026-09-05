@@ -599,6 +599,42 @@ async def get_tma_user_data(tg_id: int):
                 stars_cfg = await ConfigService.get(session, "GHSTORE_STARS_TO_USD", env_fallback=os.environ.get("GHSTORE_STARS_TO_USD", "0.01"))
                 announcement_cfg = await ConfigService.get(session, "STORE_ANNOUNCEMENT", env_fallback="")
 
+                # Fetch supplier wallet balances (BatStore & SAM)
+                batstore_bal = 0.08
+                try:
+                    from services.batstore import BatStoreService
+                    me_info = await BatStoreService.me(session)
+                    raw_b = me_info.get("wallet_balance")
+                    if raw_b is None:
+                        raw_b = me_info.get("wallet", {}).get("balance", 0.0)
+                    batstore_bal = round(float(raw_b or 0.0), 2)
+                except Exception as e:
+                    logging.warning("Could not fetch BatStore balance: %s", e)
+
+                sam_bal = {"usd": 0.0, "syp": 0.0}
+                try:
+                    from services.sam import SamService
+                    wallets = await SamService.list_wallets(session)
+                    for w in wallets:
+                        prov = w.get("provider") or "shamcash"
+                        addr = w.get("walletAddress") or w.get("id") or w.get("phone")
+                        if addr:
+                            base, key = await SamService._resolve(session)
+                            async with await SamService._client() as client:
+                                b_resp = await client.get(f"{base}/v1/wallets/{prov}/{addr}/balance", headers=SamService._headers(key))
+                                if b_resp.status_code == 200:
+                                    b_data = b_resp.json()
+                                    if isinstance(b_data, list):
+                                        for b_item in b_data:
+                                            curr = (b_item.get("currency") or "").upper()
+                                            amt = float(b_item.get("amount") or 0.0)
+                                            if curr == "USD":
+                                                sam_bal["usd"] = round(sam_bal["usd"] + amt, 2)
+                                            elif curr == "SYP":
+                                                sam_bal["syp"] = round(sam_bal["syp"] + amt, 2)
+                except Exception as e:
+                    logging.warning("Could not fetch SAM balance: %s", e)
+
                 admin_stats = {
                     "total_revenue": round(float(tot_rev), 2),
                     "total_orders_count": int(tot_ord),
@@ -610,6 +646,11 @@ async def get_tma_user_data(tg_id: int):
                     "stars_to_usd_rate": float(stars_cfg or 0.01),
                     "store_announcement": announcement_cfg or "",
                     "autorefund_enabled": (await ConfigService.get(session, "AUTOREFUND_ENABLED", default="false")).lower() in ("true", "1", "yes"),
+                    "supplier_wallets": {
+                        "batstore_usd": batstore_bal,
+                        "sam_usd": sam_bal["usd"],
+                        "sam_syp": sam_bal["syp"],
+                    },
                 }
             except Exception as e:
                 logging.error("Failed to compile admin stats: %s", e)

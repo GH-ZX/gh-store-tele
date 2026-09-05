@@ -2276,6 +2276,35 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         </div>
       </div>
 
+      <!-- Supplier & Reseller Wallets Overview (BatStore & SAM) -->
+      <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 14px; padding: 12px; margin-bottom: 14px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <div style="font-size: 12px; font-weight: 800; color: var(--text);">💼 أرصدة محافظ الموردين (Supplier Wallets)</div>
+          <button class="btn-copy-mini" onclick="refreshSupplierBalances()" style="font-size: 10px; padding: 2px 8px;">🔄 تحديث</button>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;">
+          <!-- BatStore Reseller Wallet -->
+          <div style="background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px;">
+            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 2px;">
+              <span style="font-size: 14px;">🦇</span>
+              <span style="font-size: 11px; font-weight: 700; color: var(--hint);">محفظة BatStore</span>
+            </div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--accent);" id="admin-bal-batstore">$0.00</div>
+            <div style="font-size: 10px; color: var(--hint);">رصيد شراء المنتجات</div>
+          </div>
+
+          <!-- SAM Multi-Currency Wallet (USD & SYP Only) -->
+          <div style="background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px;">
+            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 2px;">
+              <span style="font-size: 14px;">💳</span>
+              <span style="font-size: 11px; font-weight: 700; color: var(--hint);">محفظة SAM (شام كاش)</span>
+            </div>
+            <div style="font-size: 15px; font-weight: 800; color: var(--success);" id="admin-bal-sam-usd">$0.00 USD</div>
+            <div style="font-size: 12px; font-weight: 700; color: var(--warning); margin-top: 1px;" id="admin-bal-sam-syp">0 ل.س</div>
+          </div>
+        </div>
+      </div>
+
       <!-- Live Exchange Rate & Currency Manager -->
       <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 12px;">
         <div style="font-size: 12px; font-weight: 700; margin-bottom: 6px;">💱 سعر صرف الليرة السورية مقابل الدولار (SYP / USD)</div>
@@ -5820,6 +5849,12 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         showToast('خطأ في الاتصال بالخادم أثناء الاسترداد');
       }
     }
+    async function refreshSupplierBalances() {
+      haptic('light');
+      showToast('جاري تحديث أرصدة محافظ الموردين...');
+      await loadUserData();
+    }
+
 
     // User Profile, Settings & Referral Data Loading
     async function loadUserData() {
@@ -5873,12 +5908,19 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
               if (announceInput && !announceInput.value && d.admin_stats.store_announcement) {
                 announceInput.value = d.admin_stats.store_announcement;
               }
+              if (d.admin_stats.supplier_wallets) {
+                const sw = d.admin_stats.supplier_wallets;
+                const batEl = document.getElementById('admin-bal-batstore');
+                const samUsdEl = document.getElementById('admin-bal-sam-usd');
+                const samSypEl = document.getElementById('admin-bal-sam-syp');
+                if (batEl) batEl.innerText = `$${(sw.batstore_usd || 0.0).toFixed(2)}`;
+                if (samUsdEl) samUsdEl.innerText = `$${(sw.sam_usd || 0.0).toFixed(2)} USD`;
+                if (samSypEl) samSypEl.innerText = `${Math.round(sw.sam_syp || 0.0).toLocaleString()} ل.س`;
+              }
+              isAutoRefundEnabled = !!d.admin_stats.autorefund_enabled;
+              updateAutoRefundBtnUI();
           } else {
             adminCenterCard.style.display = 'none';
-              if (d.admin_stats) {
-                isAutoRefundEnabled = !!d.admin_stats.autorefund_enabled;
-                updateAutoRefundBtnUI();
-              }
           }
         }
 
