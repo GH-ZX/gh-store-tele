@@ -575,6 +575,10 @@ async def get_tma_user_data(tg_id: int):
 
                 ref_cfg = await ConfigService.get(session, "REFERRAL_MARGIN_COMMISSION_PERCENT", env_fallback="0.2")
                 ref_val = float(ref_cfg or 0.2)
+                margin_cfg = await ConfigService.get(session, "GLOBAL_MARGIN_PERCENT", env_fallback=os.environ.get("GLOBAL_MARGIN_PERCENT", "20"))
+                stars_cfg = await ConfigService.get(session, "GHSTORE_STARS_TO_USD", env_fallback=os.environ.get("GHSTORE_STARS_TO_USD", "0.01"))
+                announcement_cfg = await ConfigService.get(session, "STORE_ANNOUNCEMENT", env_fallback="")
+
                 admin_stats = {
                     "total_revenue": round(float(tot_rev), 2),
                     "total_orders_count": int(tot_ord),
@@ -582,6 +586,9 @@ async def get_tma_user_data(tg_id: int):
                     "total_users_balance": round(float(tot_bal), 2),
                     "syp_usd_rate": syp_market,
                     "referral_commission_percent": ref_val,
+                    "global_margin_percent": float(margin_cfg or 20.0),
+                    "stars_to_usd_rate": float(stars_cfg or 0.01),
+                    "store_announcement": announcement_cfg or "",
                 }
             except Exception as e:
                 logging.error("Failed to compile admin stats: %s", e)
@@ -608,6 +615,7 @@ async def get_tma_user_data(tg_id: int):
             "orders": orders_data,
             "recharges": recharges_data,
             "store_logo_url": await ConfigService.get(session, "STORE_LOGO_URL", env_fallback=os.environ.get("STORE_LOGO_URL", "")),
+            "store_announcement": await ConfigService.get(session, "STORE_ANNOUNCEMENT", env_fallback=""),
         }
 
 
@@ -1378,6 +1386,79 @@ async def admin_update_store_logo(request: Request):
         await ConfigService.set(session, "STORE_LOGO_URL", logo_url)
         await session_commit(session)
     return {"status": "ok", "store_logo_url": logo_url}
+
+
+@app.post("/api/admin/margin/update")
+async def admin_update_margin(request: Request):
+    """Update global profit margin percentage on reseller products."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not _verify_admin(admin_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    margin_val = float(body.get("margin_percent") or 20.0)
+    async with get_db_session() as session:
+        await ConfigService.set(session, "GLOBAL_MARGIN_PERCENT", str(margin_val))
+        await session_commit(session)
+    return {"status": "ok", "margin_percent": margin_val}
+
+
+@app.post("/api/admin/stars-rate/update")
+async def admin_update_stars_rate(request: Request):
+    """Update Telegram Stars to USD conversion rate."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not _verify_admin(admin_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    rate_val = float(body.get("stars_rate") or 0.01)
+    async with get_db_session() as session:
+        await ConfigService.set(session, "GHSTORE_STARS_TO_USD", str(rate_val))
+        await session_commit(session)
+    return {"status": "ok", "stars_rate": rate_val}
+
+
+@app.post("/api/admin/announcement/update")
+async def admin_update_announcement(request: Request):
+    """Update broadcast store announcement message."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not _verify_admin(admin_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    announcement = (body.get("announcement") or "").strip()
+    async with get_db_session() as session:
+        await ConfigService.set(session, "STORE_ANNOUNCEMENT", announcement)
+        await session_commit(session)
+    return {"status": "ok", "announcement": announcement}
+
+
+@app.post("/api/admin/catalog/sync")
+async def admin_sync_catalog(request: Request):
+    """Force an immediate background sync of the BatStore supplier catalog."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not _verify_admin(admin_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    async with get_db_session() as session:
+        from services.batstore import BatStoreService
+        created, updated = await BatStoreService.sync_catalog(session)
+        await session_commit(session)
+    return {
+        "status": "ok",
+        "created": created,
+        "updated": updated,
+        "message": f"تمت مزامنة الكتالوج بنجاح! تم إنشاء {created} وتحديث {updated} منتج."
+    }
 
 
 @app.get("/api/admin/users")

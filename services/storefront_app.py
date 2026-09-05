@@ -2135,12 +2135,27 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       <div id="settings-avatar-box">
         <div class="avatar-fallback" id="settings-avatar-initial" style="width: 48px; height: 48px; font-size: 20px;">U</div>
       </div>
-      <div>
+      <div style="flex: 1; min-width: 0;">
         <div style="font-size: 17px; font-weight: 800;" id="user-name-title">العميل</div>
         <div style="font-size: 13px; color: var(--accent); font-weight: 700; margin-top: 1px; display: none;" id="user-handle-title">@username</div>
-        <div style="font-size: 11px; color: var(--hint); font-family: monospace; margin-top: 2px;" id="user-tg-num">ID: 000000000</div>
+        <div style="display: flex; align-items: center; gap: 6px; margin-top: 3px;">
+          <span style="font-size: 11px; color: var(--hint); font-family: monospace;" id="user-tg-num">ID: 000000000</span>
+          <button onclick="copyUserId()" class="btn-copy-mini" style="padding: 1px 6px; font-size: 9px;">نسخ ID</button>
+        </div>
         <!-- VIP badge is displayed ONLY if user has a real discount applied (>0%) -->
         <div style="margin-top: 5px; display: none;" id="user-vip-pill-box"></div>
+      </div>
+    </div>
+
+    <!-- User Financial Overview (Balance & Spent) -->
+    <div class="inset-card" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px; margin-top: -2px;">
+      <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 10px; text-align: center;">
+        <div style="font-size: 11px; color: var(--hint); margin-bottom: 2px;">الرصيد المتاح</div>
+        <div style="font-size: 18px; font-weight: 800; color: var(--accent);" id="settings-card-balance">$0.00</div>
+      </div>
+      <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 10px; text-align: center;">
+        <div style="font-size: 11px; color: var(--hint); margin-bottom: 2px;">إجمالي المشتريات</div>
+        <div style="font-size: 18px; font-weight: 800; color: var(--text);" id="settings-card-spent">$0.00</div>
       </div>
     </div>
 
@@ -2200,6 +2215,43 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
           <button class="btn-action-primary" onclick="submitAdminUpdateStoreLogo()" style="height: 38px; width: auto; padding: 0 16px; font-size: 12px;">حفظ الشعار</button>
         </div>
       </div>
+      <!-- Global Profit Margin Manager -->
+      <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 12px;">
+        <div style="font-size: 12px; font-weight: 700; margin-bottom: 6px;">📈 نسبة هامش الربح العام على المنتجات (%)</div>
+        <div style="font-size: 11px; color: var(--hint); margin-bottom: 8px;">تحدد نسبة ربح المتجر التلقائية على أسعار المورد لجميع المنتجات</div>
+        <div style="display: flex; gap: 8px;">
+          <input type="number" step="any" class="admin-text-input" id="admin-margin-input" placeholder="20" style="flex: 1; font-family: monospace; font-weight: 700;">
+          <button class="btn-action-primary" onclick="submitAdminUpdateMargin()" style="height: 38px; width: auto; padding: 0 16px; font-size: 12px;">تحديث الهامش</button>
+        </div>
+      </div>
+
+      <!-- Telegram Stars Rate Manager -->
+      <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 12px;">
+        <div style="font-size: 12px; font-weight: 700; margin-bottom: 6px;">⭐ قيمة النجمة الواحدة مقابل الدولار (Stars / USD Rate)</div>
+        <div style="font-size: 11px; color: var(--hint); margin-bottom: 8px;">افتراضياً: 0.01$ للنجمة الواحدة (100 نجمة = 1$)</div>
+        <div style="display: flex; gap: 8px;">
+          <input type="number" step="any" class="admin-text-input" id="admin-stars-rate-input" placeholder="0.01" style="flex: 1; font-family: monospace; font-weight: 700;">
+          <button class="btn-action-primary" onclick="submitAdminUpdateStarsRate()" style="height: 38px; width: auto; padding: 0 16px; font-size: 12px;">حفظ سعر النجوم</button>
+        </div>
+      </div>
+
+      <!-- Broadcast Announcement Banner Manager -->
+      <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 14px;">
+        <div style="font-size: 12px; font-weight: 700; margin-bottom: 6px;">📢 شريط الإعلانات العام في المتجر (Broadcast Banner)</div>
+        <div style="font-size: 11px; color: var(--hint); margin-bottom: 8px;">يظهر أعلى الصفحة لجميع الزوار (اتركه فارغاً لإخفائه)</div>
+        <div style="display: flex; gap: 8px;">
+          <input type="text" class="admin-text-input" id="admin-announcement-input" placeholder="خصم خاص بمناسبة العطلة..." style="flex: 1; font-size: 12px;">
+          <button class="btn-action-primary" onclick="submitAdminUpdateAnnouncement()" style="height: 38px; width: auto; padding: 0 16px; font-size: 12px;">نشر الإعلان</button>
+        </div>
+      </div>
+
+      <!-- Force Supplier Catalog Sync -->
+      <div style="margin-bottom: 14px;">
+        <button class="btn-action-primary" id="btn-force-sync-catalog" onclick="submitAdminCatalogSync()" style="width: 100%; height: 44px; background: linear-gradient(135deg, #6366f1, #4f46e5); font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 8px;">
+          <span>🔄 مزامنة الكتالوج والأسعار من المورد فورياً</span>
+        </button>
+      </div>
+
 
 
       <!-- Quick Admin Management Navigation Drawers -->
@@ -2313,6 +2365,16 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       </div>
       <div id="referrals-breakdown-list" style="display: flex; flex-direction: column; gap: 6px;"></div>
     </div>
+    <!-- Direct Customer Support & Official Channels -->
+    <div class="inset-card" style="display: flex; flex-direction: column; gap: 8px;">
+      <div class="section-title" style="margin-top: 0;">الدعم وقنوات المتجر</div>
+      <button class="btn-action-secondary" onclick="openCustomerSupportChat()" style="height: 42px; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 8px;">
+        <span>💬 التواصل مع خدمة العملاء والدعم</span>
+      </button>
+      <button class="btn-action-secondary" onclick="openOfficialChannel()" style="height: 42px; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 8px;">
+        <span>📢 قناة العروض والتحديثات الرسمية</span>
+      </button>
+    </div>
   </main>
 
   <!-- FLOATING LIQUID GLASS BOTTOM NAVBAR (Flyout Capsule) -->
@@ -2344,6 +2406,12 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         try { tg.disableVerticalSwipes?.(); } catch (e) {}
       }
       if (tg.enableClosingConfirmation) tg.enableClosingConfirmation();
+      if (tg.SettingsButton) {
+        try {
+          tg.SettingsButton.show();
+          tg.SettingsButton.onClick(() => switchTab('settings'));
+        } catch (e) {}
+      }
     }
 
     function updateSafeAreaInsets() {
@@ -5236,6 +5304,125 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       }
     }
 
+    function copyUserId() {
+      if (!userId) return;
+      copyCredText(String(userId));
+    }
+
+    function openCustomerSupportChat() {
+      haptic('light');
+      const botUser = userData?.bot_username || 'demo_aiogramshopbot';
+      const link = `https://t.me/${botUser}?start=support`;
+      if (tg?.openTelegramLink) tg.openTelegramLink(link);
+      else window.open(link, '_blank');
+    }
+
+    function openOfficialChannel() {
+      haptic('light');
+      const botUser = userData?.bot_username || 'demo_aiogramshopbot';
+      const link = `https://t.me/${botUser}`;
+      if (tg?.openTelegramLink) tg.openTelegramLink(link);
+      else window.open(link, '_blank');
+    }
+
+    async function submitAdminUpdateMargin() {
+      const val = parseFloat(document.getElementById('admin-margin-input')?.value || 20);
+      haptic('light');
+      try {
+        const res = await fetch('/api/admin/margin/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_tg_id: userId, margin_percent: val })
+        });
+        const d = await res.json();
+        if (d.status === 'ok') {
+          haptic('success');
+          showToast(currentAppLanguage === 'ar' ? `تم تحديث نسبة الهامش إلى ${d.margin_percent}% بنجاح!` : `Margin updated to ${d.margin_percent}%!`);
+        } else {
+          showToast('فشل تحديث نسبة الهامش');
+        }
+      } catch (e) {
+        showToast('خطأ في الاتصال بالخادم');
+      }
+    }
+
+    async function submitAdminUpdateStarsRate() {
+      const val = parseFloat(document.getElementById('admin-stars-rate-input')?.value || 0.01);
+      haptic('light');
+      try {
+        const res = await fetch('/api/admin/stars-rate/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_tg_id: userId, stars_rate: val })
+        });
+        const d = await res.json();
+        if (d.status === 'ok') {
+          haptic('success');
+          showToast(currentAppLanguage === 'ar' ? `تم تحديث سعر النجوم إلى $${d.stars_rate} بنجاح!` : `Stars rate updated to $${d.stars_rate}!`);
+        } else {
+          showToast('فشل تحديث سعر النجوم');
+        }
+      } catch (e) {
+        showToast('خطأ في الاتصال بالخادم');
+      }
+    }
+
+    async function submitAdminUpdateAnnouncement() {
+      const val = (document.getElementById('admin-announcement-input')?.value || '').trim();
+      haptic('light');
+      try {
+        const res = await fetch('/api/admin/announcement/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_tg_id: userId, announcement: val })
+        });
+        const d = await res.json();
+        if (d.status === 'ok') {
+          haptic('success');
+          showToast(currentAppLanguage === 'ar' ? 'تم تحديث شريط الإعلانات العام بنجاح!' : 'Announcement updated successfully!');
+        } else {
+          showToast('فشل نشر الإعلان');
+        }
+      } catch (e) {
+        showToast('خطأ في الاتصال بالخادم');
+      }
+    }
+
+    async function submitAdminCatalogSync() {
+      const btn = document.getElementById('btn-force-sync-catalog');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span>⏳ جاري مزامنة الكتالوج من المورد...</span>`;
+      }
+      haptic('light');
+      try {
+        const res = await fetch('/api/admin/catalog/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_tg_id: userId })
+        });
+        const d = await res.json();
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = `<span>🔄 مزامنة الكتالوج والأسعار من المورد فورياً</span>`;
+        }
+        if (d.status === 'ok') {
+          fireConfetti();
+          haptic('success');
+          showToast(d.message || 'تمت مزامنة الكتالوج بنجاح!');
+          await fetchCatalogData();
+        } else {
+          showToast('فشلت المزامنة من المورد');
+        }
+      } catch (e) {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = `<span>🔄 مزامنة الكتالوج والأسعار من المورد فورياً</span>`;
+        }
+        showToast('خطأ في الاتصال أثناء المزامنة');
+      }
+    }
+
     // User Profile, Settings & Referral Data Loading
     async function loadUserData() {
       if (!userId) {
@@ -5274,6 +5461,20 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
             }
               const logoInput = document.getElementById('admin-store-logo-input');
               if (logoInput && !logoInput.value && d.store_logo_url) logoInput.value = d.store_logo_url;
+              const marginInput = document.getElementById('admin-margin-input');
+              if (marginInput && !marginInput.value && d.admin_stats.global_margin_percent) {
+                marginInput.value = d.admin_stats.global_margin_percent;
+              }
+
+              const starsRateInput = document.getElementById('admin-stars-rate-input');
+              if (starsRateInput && !starsRateInput.value && d.admin_stats.stars_to_usd_rate) {
+                starsRateInput.value = d.admin_stats.stars_to_usd_rate;
+              }
+
+              const announceInput = document.getElementById('admin-announcement-input');
+              if (announceInput && !announceInput.value && d.admin_stats.store_announcement) {
+                announceInput.value = d.admin_stats.store_announcement;
+              }
           } else {
             adminCenterCard.style.display = 'none';
           }
@@ -5401,6 +5602,11 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       document.getElementById('wallet-balance-approx').innerText = userData.currency_preference !== 'USD'
         ? `≈ ${userData.display_balance}`
         : (currentAppLanguage === 'ar' ? 'جاهز للشراء الفوري' : 'Ready for instant purchases');
+
+      const cardBal = document.getElementById('settings-card-balance');
+      const cardSpent = document.getElementById('settings-card-spent');
+      if (cardBal) cardBal.innerText = `$${userData.balance.toFixed(2)}`;
+      if (cardSpent) cardSpent.innerText = `$${(userData.total_spent || 0).toFixed(2)}`;
 
       const topVipTag = document.getElementById('top-vip-tag');
       if (userData.vip_discount > 0 && userData.vip_tier && userData.vip_tier !== 'Standard') {
