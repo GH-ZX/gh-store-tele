@@ -111,3 +111,37 @@ def clean_tg_emojis(raw: str | None) -> str:
     text = re.sub(r"_*TG_?EMOJI_\d+_*", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\bTG_?emoji\d+\b", "", text, flags=re.IGNORECASE)
     return text.strip()
+
+
+import hashlib
+import hmac
+import json
+import time
+import urllib.parse
+from typing import Any
+
+def validate_telegram_init_data(init_data: str, bot_token: str, max_age_seconds: int = 86400) -> dict[str, Any]:
+    """Cryptographically validate Telegram WebApp initData string using HMAC-SHA256."""
+    if not init_data:
+        raise ValueError("Missing init_data")
+    parsed = dict(urllib.parse.parse_qsl(init_data, keep_blank_values=True))
+    received_hash = parsed.pop("hash", None)
+    parsed.pop("signature", None)
+    if not received_hash:
+        raise ValueError("Missing hash parameter")
+    auth_date = int(parsed.get("auth_date", 0))
+    if max_age_seconds > 0 and (time.time() - auth_date) > max_age_seconds:
+        raise ValueError("init_data has expired")
+    check_items = [f"{k}={v}" for k, v in sorted(parsed.items())]
+    data_check_string = "\n".join(check_items)
+    secret_key = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
+    calculated_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(calculated_hash, received_hash):
+        raise ValueError("Invalid init_data signature")
+    result = dict(parsed)
+    if "user" in result:
+        try:
+            result["user"] = json.loads(result["user"])
+        except Exception:
+            pass
+    return result

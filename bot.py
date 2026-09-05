@@ -401,6 +401,23 @@ async def sse_events(request: Request):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
+@app.post("/api/search/demand")
+async def log_search_demand(request: Request):
+    """Log zero-result product searches to track customer demand."""
+    try:
+        body = await request.json()
+        query = (body.get("query") or "").strip()
+        if not query or len(query) < 2:
+            return {"status": "ignored"}
+        tg_id = body.get("tg_id")
+        logging.info("Product demand search with 0 results: %s (tg_id: %s)", query, tg_id)
+        if redis:
+            await redis.zincrby("ghstore_search_demands", 1, query.lower()[:32])
+        return {"status": "ok"}
+    except Exception:
+        return {"status": "ignored"}
+
+
 @app.get("/api/reviews")
 async def get_tma_reviews():
     """Return customer reviews and aggregate rating score for social proof in TMA."""
@@ -592,6 +609,7 @@ async def get_tma_user_data(tg_id: int):
                     "global_margin_percent": float(margin_cfg or 20.0),
                     "stars_to_usd_rate": float(stars_cfg or 0.01),
                     "store_announcement": announcement_cfg or "",
+                    "autorefund_enabled": (await ConfigService.get(session, "AUTOREFUND_ENABLED", default="false")).lower() in ("true", "1", "yes"),
                 }
             except Exception as e:
                 logging.error("Failed to compile admin stats: %s", e)
@@ -1462,6 +1480,103 @@ async def admin_sync_catalog(request: Request):
         "updated": updated,
         "message": f"تمت مزامنة الكتالوج بنجاح! تم إنشاء {created} وتحديث {updated} منتج."
     }
+
+
+@app.post("/api/admin/autorefund/toggle")
+async def admin_toggle_autorefund(request: Request):
+    """Toggle automated refund mode (enabled vs manual)."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not _verify_admin(admin_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    async with get_db_session() as session:
+        curr = await ConfigService.get(session, "AUTOREFUND_ENABLED", default="false")
+        new_val = "false" if (curr or "").lower() in ("true", "1", "yes") else "true"
+        await ConfigService.set(session, "AUTOREFUND_ENABLED", new_val)
+        await session_commit(session)
+    return {"status": "ok", "autorefund_enabled": new_val == "true"}
+
+
+@app.get("/api/admin/stuck-orders")
+async def admin_get_stuck_orders(tg_id: int):
+    """Return orders that are pending fulfillment or stuck requiring admin action."""
+    if not _verify_admin(tg_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    async with get_db_session() as session:
+        from models.batstore_order import BatStoreOrder
+        from models.user import User
+
+        stmt = select(BatStoreOrder).where(
+            BatStoreOrder.status.in_(["pending_fulfillment", "pending"])
+        ).order_by(BatStoreOrder.id.desc()).limit(50)
+        rows = (await session_execute(stmt, session)).scalars().all()
+
+        stuck_list = []
+        sym = config.CURRENCY.get_localized_symbol()
+        for o in rows:
+            user = await UserRepository.get_by_tgid(o.telegram_id, session)
+            product_names = []
+            for d in (o.details or []):
+                product_names.append(d.get("name") or "Product")
+
+            stuck_list.append({
+                "id": o.id,
+                "telegram_id": o.telegram_id,
+                "username": user.telegram_username if user else "",
+                "products": ", ".join(product_names) if product_names else "Order",
+                "total_sell": round(float(o.total_sell or 0.0), 2),
+                "sym": sym,
+                "status": o.status,
+                "created_at": o.created_at.strftime("%b %d, %H:%M") if o.created_at else "",
+                "customer_reference": o.customer_reference or "",
+            })
+    return {"stuck_orders": stuck_list}
+
+
+@app.post("/api/admin/stuck-orders/refund")
+async def admin_refund_stuck_order(request: Request):
+    """Admin manually refunds a stuck order, crediting user balance and notifying them."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not _verify_admin(admin_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    order_id = int(body.get("order_id") or 0)
+    if not order_id:
+        return JSONResponse({"error": "missing_order_id"}, status_code=400)
+
+    async with get_db_session() as session:
+        order = await BatStoreOrderRepository.get_by_id(order_id, session)
+        if not order:
+            return JSONResponse({"error": "order_not_found"}, status_code=404)
+        if order.status == "refunded":
+            return JSONResponse({"error": "already_refunded"}, status_code=400)
+
+        refund_amount = round(float(order.total_sell or 0.0), 2)
+        user = await UserRepository.get_by_tgid(order.telegram_id, session)
+        if user:
+            user.top_up_amount = (user.top_up_amount or 0.0) + refund_amount
+            await UserRepository.update(user, session)
+            try:
+                sym = config.CURRENCY.get_localized_symbol()
+                await bot.send_message(
+                    order.telegram_id,
+                    f"💸 <b>إشعار استرداد مالي من إدارة المتجر:</b>\n\n"
+                    f"تم استرداد مبلغ <b>${refund_amount:.2f}{sym}</b> لطلبك #{order.id} بنجاح إلى رصيدك المتاح."
+                )
+            except Exception:
+                pass
+
+        order.status = "refunded"
+        await BatStoreOrderRepository.update(order, session)
+        await session_commit(session)
+
+    return {"status": "ok", "refunded_amount": refund_amount, "order_id": order_id}
 
 
 @app.get("/api/admin/users")

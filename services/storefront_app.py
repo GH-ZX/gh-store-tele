@@ -2028,6 +2028,29 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     </div>
   </section>
 
+  <!-- DEDICATED IN-APP STUCK ORDERS & MONEY MANAGEMENT VIEW -->
+  <section id="view-admin-stuck" class="tab-view">
+    <div class="subview-header">
+      <button class="btn-back-catalog" onclick="closeAdminStuckOrdersPage()">
+        <span>→</span>
+        <span>العودة للإعدادات</span>
+      </button>
+      <span style="font-size: 13px; color: #f59e0b; font-weight: 700;">الطلبات والعمليات المعلقة</span>
+    </div>
+
+    <div class="inset-card" style="margin-top: 10px; padding: 12px; margin-bottom: 12px; background: rgba(245, 158, 11, 0.08); border-color: rgba(245, 158, 11, 0.3);">
+      <div style="font-size: 12px; font-weight: 700; color: #f59e0b; margin-bottom: 4px;">⚠️ مركز متابعة العمليات العالقة والمبالغ المعلقة</div>
+      <div style="font-size: 11px; color: var(--hint); line-height: 1.5;">
+        تظهر هنا الطلبات قيد التفعيل والمبالغ المعلقة التي تحتاج لمتابعة أو استرداد يدوي للعملاء.
+      </div>
+    </div>
+
+    <!-- Stuck Orders List Container -->
+    <div id="admin-stuck-orders-list" style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="text-align: center; padding: 30px; color: var(--hint);">جاري تحميل العمليات المعلقة...</div>
+    </div>
+  </section>
+
 
   <!-- TAB 2: PROCESSES & ACTIVITY VIEW (ORDERS & RECHARGES) -->
   <main id="view-orders" class="tab-view">
@@ -2291,6 +2314,23 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         </button>
       </div>
 
+      <!-- Auto-Refund Master Setting -->
+      <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <div style="font-size: 12px; font-weight: 700;">🔄 نظام الاسترداد التلقائي (Auto-Refund)</div>
+          <div style="font-size: 10px; color: var(--hint); margin-top: 2px;">عند التعطيل، يتم استرداد الطلبات المعلقة يدوياً فقط</div>
+        </div>
+        <button class="admin-edit-badge-btn" id="admin-autorefund-toggle-btn" onclick="submitAdminToggleAutoRefund()" style="font-size: 11px; padding: 5px 12px; color: #f59e0b;">
+          معطل (يدوي)
+        </button>
+      </div>
+
+      <!-- Stuck Orders Center Button -->
+      <div style="margin-bottom: 12px;">
+        <button class="btn-action-warning" onclick="openAdminStuckOrdersPage()" style="width: 100%; height: 44px; font-size: 13px; background: rgba(245,158,11,0.15); border: 1px solid rgba(245,158,11,0.4); color: #f59e0b; display: flex; align-items: center; justify-content: center; gap: 8px;">
+          <span>⚠️ متابعة الطلبات والعمليات المعلقة (Stuck Orders)</span>
+        </button>
+      </div>
 
 
       <!-- Quick Admin Management Navigation Drawers -->
@@ -2334,14 +2374,15 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       </button>
     </div>
 
-    <!-- Currency Picker -->
+    <!-- Currency Picker (USD & SYP Only) -->
     <div class="inset-card">
-      <div class="section-title" style="margin-top: 0;" id="label-currency-title">عملة العرض المفضلة</div>
-      <div style="display: flex; gap: 8px; flex-wrap: wrap;" id="currency-picker-chips">
-        <div class="filter-chip" onclick="selectDisplayCurrency('USD')">USD ($)</div>
-        <div class="filter-chip" onclick="selectDisplayCurrency('EUR')">EUR (€)</div>
-        <div class="filter-chip" onclick="selectDisplayCurrency('SYP')" style="display: inline-flex; align-items: center; gap: 6px;">
-          <svg class="syria-flag-svg" viewBox="0 0 30 20" width="16" height="11" style="border-radius: 2px; vertical-align: middle; display: inline-block; box-shadow: 0 0 1px rgba(0,0,0,0.5); flex-shrink: 0;" xmlns="http://www.w3.org/2000/svg">
+      <div class="section-title" style="margin-top: 0;" id="label-currency-title">عملة العرض المفضلة (Display Currency)</div>
+      <div class="theme-segmented-control" id="currency-picker-chips" style="margin-top: 6px;">
+        <div class="theme-segment-btn active" id="curr-chip-usd" onclick="selectDisplayCurrency('USD')">
+          <span>💵 الدولار (USD $)</span>
+        </div>
+        <div class="theme-segment-btn" id="curr-chip-syp" onclick="selectDisplayCurrency('SYP')">
+          <svg class="syria-flag-svg" viewBox="0 0 30 20" width="18" height="12" style="border-radius: 2px; vertical-align: middle; display: inline-block; box-shadow: 0 0 1px rgba(0,0,0,0.5); flex-shrink: 0;" xmlns="http://www.w3.org/2000/svg">
             <rect width="30" height="6.67" y="0" fill="#007A3D"/>
             <rect width="30" height="6.67" y="6.67" fill="#FFFFFF"/>
             <rect width="30" height="6.67" y="13.33" fill="#000000"/>
@@ -2349,26 +2390,26 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
             <polygon points="15,7.7 15.6,9.2 17.2,9.2 15.9,10.2 16.4,11.7 15,10.7 13.6,11.7 14.1,10.2 12.8,9.2 14.4,9.2" fill="#CE1126"/>
             <polygon points="21.5,7.7 22.1,9.2 23.7,9.2 22.4,10.2 22.9,11.7 21.5,10.7 20.1,11.7 20.6,10.2 19.3,9.2 20.9,9.2" fill="#CE1126"/>
           </svg>
-          <span>SYP (ل.س)</span>
+          <span>الليرة السورية (SYP ل.س)</span>
         </div>
-        <div class="filter-chip" onclick="selectDisplayCurrency('XTR')">Stars (⭐)</div>
       </div>
     </div>
 
-    <!-- Language Picker -->
+    <!-- Language Selector Dropdown -->
     <div class="inset-card">
       <div class="section-title" style="margin-top: 0;" id="label-lang-title">اللغة / Language</div>
-      <div style="display: flex; gap: 8px; flex-wrap: wrap;" id="language-picker-chips">
-        <div class="filter-chip active" id="lang-chip-ar" onclick="changeStoreLanguage('ar')">العربية</div>
-        <div class="filter-chip" id="lang-chip-en" onclick="changeStoreLanguage('en')">English</div>
-        <div class="filter-chip" id="lang-chip-de" onclick="changeStoreLanguage('de')">Deutsch</div>
-        <div class="filter-chip" id="lang-chip-es" onclick="changeStoreLanguage('es')">Español</div>
-        <div class="filter-chip" id="lang-chip-fr" onclick="changeStoreLanguage('fr')">Français</div>
-        <div class="filter-chip" id="lang-chip-it" onclick="changeStoreLanguage('it')">Italiano</div>
-        <div class="filter-chip" id="lang-chip-zh" onclick="changeStoreLanguage('zh')">中文</div>
+      <div style="margin-top: 6px;">
+        <select class="admin-text-input" id="language-select-dropdown" onchange="changeStoreLanguage(this.value)" style="width: 100%; height: 44px; font-size: 14px; font-weight: 700; background: var(--input-bg); border-color: var(--border); color: var(--text); border-radius: 12px; padding: 0 12px; outline: none;">
+          <option value="ar">🇸🇦 العربية (Arabic)</option>
+          <option value="en">🇬🇧 English</option>
+          <option value="de">🇩🇪 Deutsch</option>
+          <option value="es">🇪🇸 Español</option>
+          <option value="fr">🇫🇷 Français</option>
+          <option value="it">🇮🇹 Italiano</option>
+          <option value="zh">🇨🇳 中文 (Chinese)</option>
+        </select>
       </div>
     </div>
-
     <!-- Referral Program (Comprehensive Details & Breakdown) -->
     <div class="inset-card">
       <div class="section-title" style="margin-top: 0;" id="label-referral-title">برنامج الإحالة والأرباح</div>
@@ -5623,6 +5664,131 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
       }
     }
 
+    // Admin Auto-Refund Toggle & Stuck Orders Management
+    let isAutoRefundEnabled = false;
+
+    async function submitAdminToggleAutoRefund() {
+      haptic('light');
+      try {
+        const res = await fetch('/api/admin/autorefund/toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_tg_id: userId })
+        });
+        const d = await res.json();
+        if (d.status === 'ok') {
+          isAutoRefundEnabled = d.autorefund_enabled;
+          updateAutoRefundBtnUI();
+          showToast(isAutoRefundEnabled ? 'تم تفعيل نظام الاسترداد التلقائي!' : 'تم تعطيل الاسترداد التلقائي (الوضع اليدوي نشط)');
+        }
+      } catch (e) {
+        showToast('فشل تبديل إعداد الاسترداد');
+      }
+    }
+
+    function updateAutoRefundBtnUI() {
+      const btn = document.getElementById('admin-autorefund-toggle-btn');
+      if (btn) {
+        btn.innerText = isAutoRefundEnabled ? 'مفعل تلقائياً' : 'معطل (يدوي)';
+        btn.style.color = isAutoRefundEnabled ? '#10b981' : '#f59e0b';
+      }
+    }
+
+    function openAdminStuckOrdersPage() {
+      haptic('pop');
+      document.querySelectorAll('.tab-view').forEach(el => el.classList.remove('active'));
+      const view = document.getElementById('view-admin-stuck');
+      if (view) view.classList.add('active');
+      pushNav('admin_stuck', closeAdminStuckOrdersPage);
+      loadAdminStuckOrders();
+    }
+
+    function closeAdminStuckOrdersPage() {
+      haptic('light');
+      const view = document.getElementById('view-admin-stuck');
+      if (view) view.classList.remove('active');
+      const setView = document.getElementById('view-settings');
+      if (setView) setView.classList.add('active');
+      if (navStack.length > 0 && navStack[navStack.length - 1].name === 'admin_stuck') {
+        navStack.pop();
+        if (navStack.length === 0 && tg?.BackButton) tg.BackButton.hide();
+      }
+    }
+
+    async function loadAdminStuckOrders() {
+      const container = document.getElementById('admin-stuck-orders-list');
+      if (container) container.innerHTML = '<div style="text-align:center; padding:30px; color:var(--hint);">جاري فحص العمليات والطلبات العالقة...</div>';
+      try {
+        const res = await fetch(`/api/admin/stuck-orders?tg_id=${userId}`);
+        const d = await res.json();
+        const orders = d.stuck_orders || [];
+        const countBadge = document.getElementById('admin-stuck-count-badge');
+        if (countBadge) {
+          countBadge.innerText = orders.length;
+          countBadge.style.display = orders.length > 0 ? 'inline-block' : 'none';
+        }
+
+        if (!orders.length) {
+          if (container) container.innerHTML = '<div style="text-align:center; padding:40px 16px; color:var(--success); font-weight:700;">✅ ممتاز! لا توجد أي طلبات أو مبالغ معلقة حالياً.</div>';
+          return;
+        }
+
+        if (container) {
+          container.innerHTML = orders.map(o => `
+            <div class="inset-card" style="margin-bottom: 12px; padding: 14px; border-color: rgba(245,158,11,0.4);">
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                <div>
+                  <strong style="font-size: 14px; color: var(--text);">طلب #${o.id} · ${o.username ? '@' + o.username : 'User ' + o.telegram_id}</strong>
+                  <div style="font-size: 11px; color: var(--hint); font-family: monospace; margin-top: 2px;">ID: ${o.telegram_id} · ${o.created_at}</div>
+                </div>
+                <span class="pill-badge" style="background: rgba(245,158,11,0.2); color: #f59e0b; font-size: 10px;">
+                  ⏳ معلق / قيد التفعيل
+                </span>
+              </div>
+
+              <div style="font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 6px;">${o.products}</div>
+              <div style="font-size: 14px; color: var(--accent); font-weight: 800; margin-bottom: 12px;">المبلغ المعلق: $${o.total_sell.toFixed(2)} USD</div>
+
+              <div style="display: flex; gap: 8px;">
+                <button class="btn-action-primary" onclick="executeAdminRefundStuck(${o.id}, ${o.total_sell})" style="flex: 2; height: 38px; font-size: 12px; background: linear-gradient(135deg, #ef4444, #dc2626);">
+                  💸 استرداد الرصيد للعميل ($${o.total_sell.toFixed(2)})
+                </button>
+                <button class="btn-action-secondary" onclick="openAdminMessageModal(${o.telegram_id}, '${o.username || ''}')" style="flex: 1; height: 38px; font-size: 12px;">
+                  💬 مراسلة
+                </button>
+              </div>
+            </div>
+          `).join('');
+        }
+      } catch (e) {
+        if (container) container.innerHTML = '<div style="text-align:center; padding:20px; color:var(--danger);">خطأ في جلب العمليات المعلقة.</div>';
+      }
+    }
+
+    async function executeAdminRefundStuck(orderId, amount) {
+      if (!confirm(`هل أنت متأكد من رغبتك في استرداد مبلغ $${amount.toFixed(2)} لحساب العميل فورياً؟`)) return;
+      haptic('medium');
+      try {
+        const res = await fetch('/api/admin/stuck-orders/refund', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_tg_id: userId, order_id: orderId })
+        });
+        const d = await res.json();
+        if (d.status === 'ok') {
+          fireConfetti();
+          haptic('success');
+          showToast(`تم استرداد مبلغ $${d.refunded_amount.toFixed(2)} لحساب العميل بنجاح!`);
+          loadAdminStuckOrders();
+          loadUserData();
+        } else {
+          showToast(d.error || 'فشل الاسترداد');
+        }
+      } catch (e) {
+        showToast('خطأ في الاتصال بالخادم أثناء الاسترداد');
+      }
+    }
+
     // User Profile, Settings & Referral Data Loading
     async function loadUserData() {
       if (!userId) {
@@ -5677,6 +5843,10 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
               }
           } else {
             adminCenterCard.style.display = 'none';
+              if (d.admin_stats) {
+                isAutoRefundEnabled = !!d.admin_stats.autorefund_enabled;
+                updateAutoRefundBtnUI();
+              }
           }
         }
 
@@ -6017,9 +6187,12 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
 
     async function selectDisplayCurrency(code) {
       haptic('light');
-      document.querySelectorAll('#currency-picker-chips .filter-chip').forEach(el => {
-        el.classList.toggle('active', el.innerText.includes(code));
-      });
+      const btnUsd = document.getElementById('curr-chip-usd');
+      const btnSyp = document.getElementById('curr-chip-syp');
+      if (btnUsd) btnUsd.classList.toggle('active', code === 'USD');
+      if (btnSyp) btnSyp.classList.toggle('active', code === 'SYP');
+      if (userData) userData.currency_preference = code;
+      updateBalancePills();
       if (userId) {
         await fetch('/api/user/settings', {
           method: 'POST',
@@ -6034,13 +6207,16 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     async function changeStoreLanguage(code) {
       haptic('pop');
       applyLanguage(code);
+      const sel = document.getElementById('language-select-dropdown');
+      if (sel) sel.value = code;
       if (userId) {
         await fetch('/api/user/settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tg_id: userId, language: code })
         });
-        showToast(code === 'ar' ? 'تم تحديث لغة التطبيق إلى العربية!' : 'App language set to English!');
+        const langNames = { ar: 'العربية', en: 'English', de: 'Deutsch', es: 'Español', fr: 'Français', it: 'Italiano', zh: '中文' };
+        showToast(`تم تعيين لغة التطبيق إلى ${langNames[code] || code}!`);
         loadUserData();
       }
     }

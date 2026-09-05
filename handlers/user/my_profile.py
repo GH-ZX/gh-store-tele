@@ -271,10 +271,8 @@ async def pick_currency_preference(**kwargs):
 
     kb = InlineKeyboardBuilder()
     currencies = [
-        ("🇺🇸 USD ($)", "USD"),
-        ("🇪🇺 EUR (€)", "EUR"),
+        ("💵 USD ($)", "USD"),
         ("🇸🇾 SYP (ل.س)", "SYP"),
-        ("⭐ Stars (XTR)", "XTR"),
     ]
     for label, code in currencies:
         kb.button(text=label, callback_data=MyProfileCallback.create(level=9, currency=code).pack())
