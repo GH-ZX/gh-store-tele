@@ -1580,6 +1580,9 @@ const tg = window.Telegram?.WebApp;
       setText('lbl-curr-usd-opt', d.curr_usd_opt);
       setText('lbl-curr-syp-opt', d.curr_syp_opt);
       setText('admin-sup-s1-title', d.admin_sup_s1);
+      setText('admin-sup-details-link', isRtl ? 'تفاصيل ←' : 'Details →');
+      setText('admin-sup-s1-sub', isRtl ? 'رصيد المورد 1' : 'Supplier 1 Balance');
+      setText('admin-prodseller-tier', isRtl ? 'برونزية' : 'Bronze');
       setText('admin-sup-s2-title', d.admin_sup_s2);
       setText('admin-sup-sam-title', d.admin_sup_sam);
       setText('label-currency-title', d.currency_title);
@@ -1649,6 +1652,7 @@ const tg = window.Telegram?.WebApp;
       setText('lbl-filter-stock', d.filter_stock || (isRtl ? 'متوفر فقط' : 'In Stock'));
       setText('lbl-filter-instant', d.filter_instant || (isRtl ? 'تسليم فوري' : 'Instant'));
       setText('lbl-filter-lowprice', d.filter_lowprice || (isRtl ? 'الأقل سعراً' : 'Lowest Price'));
+      setText('lbl-trending', isRtl ? 'الأكثر بحثاً:' : 'Trending:');
 
       // View Toggle Labels
       setText('label-view-grid', d.view_grid || (isRtl ? 'شبكة' : 'Grid'));
@@ -5392,8 +5396,8 @@ const tg = window.Telegram?.WebApp;
                 if (batEl) batEl.innerText = `$${(sw.batstore_usd || 0.0).toFixed(2)}`;
                 if (prodEl) prodEl.innerText = `$${(sw.prodseller_usd || 0.0).toFixed(2)}`;
                 if (samUsdEl) samUsdEl.innerText = `$${(sw.sam_usd || 0.0).toFixed(2)} USD`;
-                if (samSypEl) samSypEl.innerText = `${Math.round(sw.sam_syp || 0.0).toLocaleString()} ل.س`;
-                if (totalPill) totalPill.innerText = `إجمالي: $${(sw.total_supplier_usd || 0.0).toFixed(2)}`;
+                if (samSypEl) samSypEl.innerText = `${Math.round(sw.sam_syp || 0.0).toLocaleString()} ${currentAppLanguage === 'ar' ? 'ل.س' : 'SYP'}`;
+                if (totalPill) totalPill.innerText = `${currentAppLanguage === 'ar' ? 'إجمالي:' : 'Total:'} $${(sw.total_supplier_usd || 0.0).toFixed(2)}`;
               }
               const routingSelect = document.getElementById('admin-supplier-routing-select');
               if (routingSelect && d.admin_stats?.supplier_routing_strategy) {
