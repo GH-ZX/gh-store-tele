@@ -145,3 +145,12 @@ def test_search_synonyms_matching():
 
     assert "chatgpt" in tokens
     assert "gpt" in tokens
+
+
+def test_one_time_config_definitions():
+    """Verify that essential one-time configuration keys are registered."""
+    from services.config import CONFIG_DEFINITIONS
+    assert "BATSTORE_API_KEY" in CONFIG_DEFINITIONS
+    assert "SAM_API_KEY" in CONFIG_DEFINITIONS
+    assert "SAM_RECEIVING_WALLET" in CONFIG_DEFINITIONS
+    assert CONFIG_DEFINITIONS["BATSTORE_API_KEY"]["secret"] is True

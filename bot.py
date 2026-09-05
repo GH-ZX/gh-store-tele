@@ -1579,6 +1579,56 @@ async def admin_refund_stuck_order(request: Request):
     return {"status": "ok", "refunded_amount": refund_amount, "order_id": order_id}
 
 
+@app.get("/api/admin/config/all")
+async def admin_get_all_configs(tg_id: int):
+    """Return all system configuration keys, current values, and descriptions."""
+    if not _verify_admin(tg_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    async with get_db_session() as session:
+        from services.config import CONFIG_DEFINITIONS
+        configs_list = []
+        for key, meta in CONFIG_DEFINITIONS.items():
+            val = await ConfigService.get(session, key, env_fallback=os.environ.get(key, ""))
+            is_secret = meta.get("secret", False)
+            configs_list.append({
+                "key": key,
+                "desc": meta.get("desc", ""),
+                "secret": is_secret,
+                "value": val or "",
+            })
+        custom_keys = ["STORE_LOGO_URL", "STORE_ANNOUNCEMENT", "GLOBAL_MARGIN_PERCENT", "AUTOREFUND_ENABLED", "WEBHOOK_HOST"]
+        for ck in custom_keys:
+            if not any(c["key"] == ck for c in configs_list):
+                val = await ConfigService.get(session, ck, env_fallback=os.environ.get(ck, ""))
+                configs_list.append({
+                    "key": ck,
+                    "desc": f"System setting {ck}",
+                    "secret": False,
+                    "value": val or "",
+                })
+    return {"configs": configs_list}
+
+
+@app.post("/api/admin/config/set")
+async def admin_set_config(request: Request):
+    """Update any system configuration key in PostgreSQL app_config."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not _verify_admin(admin_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    key = str(body.get("key") or "").strip()
+    value = str(body.get("value") or "").strip()
+    if not key:
+        return JSONResponse({"error": "missing_key"}, status_code=400)
+    async with get_db_session() as session:
+        await ConfigService.set(session, key, value)
+        await session_commit(session)
+    return {"status": "ok", "key": key, "value": value}
+
+
 @app.get("/api/admin/users")
 async def admin_get_users(tg_id: int, query: str = ""):
     if not _verify_admin(tg_id):

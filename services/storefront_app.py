@@ -2051,6 +2051,32 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
     </div>
   </section>
 
+  <!-- DEDICATED IN-APP ONE-TIME CONFIGURATION VIEW -->
+  <section id="view-admin-config" class="tab-view">
+    <div class="subview-header">
+      <button class="btn-back-catalog" onclick="closeAdminConfigPage()">
+        <span>→</span>
+        <span>العودة للإعدادات</span>
+      </button>
+      <span style="font-size: 13px; color: var(--accent); font-weight: 700;">إعدادات التهيئة لمرة واحدة</span>
+    </div>
+
+    <!-- Explanatory Banner -->
+    <div class="inset-card" style="margin-top: 10px; padding: 14px; margin-bottom: 12px; background: rgba(56, 189, 248, 0.08); border-color: rgba(56, 189, 248, 0.3);">
+      <div style="font-size: 13px; font-weight: 800; color: var(--accent); margin-bottom: 4px;">
+        ⚙️ إعدادات ومفاتيح الربط الأساسية (One-Time Config)
+      </div>
+      <div style="font-size: 11px; color: var(--hint); line-height: 1.5;">
+        الحقول مقفلة ومحمية تلقائياً لمنع أي تعديل بالخطأ. اضغط على أيقونة القلم <b>✏️</b> بجانب أي إعداد لفتح التعديل عليه وحفظه.
+      </div>
+    </div>
+
+    <!-- Config Items List -->
+    <div id="admin-config-items-list" style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="text-align: center; padding: 30px; color: var(--hint);">جاري تحميل الإعدادات...</div>
+    </div>
+  </section>
+
 
   <!-- TAB 2: PROCESSES & ACTIVITY VIEW (ORDERS & RECHARGES) -->
   <main id="view-orders" class="tab-view">
@@ -2346,6 +2372,12 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         </button>
         <button class="btn-action-secondary" onclick="openFullSqlAdmin()" style="height: 44px; font-size: 12px;">
           🔗 لوحة SQLAdmin الكاملة
+        </button>
+      </div>
+      <!-- Master One-Time System Config Page Button -->
+      <div style="margin-top: 8px;">
+        <button class="btn-action-primary" onclick="openAdminConfigPage()" style="width: 100%; height: 42px; font-size: 12px; background: linear-gradient(135deg, #0284c7, #2563eb); display: flex; align-items: center; justify-content: center; gap: 6px;">
+          <span>⚙️ إعدادات التهيئة ومفاتيح الربط لمرة واحدة (One-Time Setup)</span>
         </button>
       </div>
     </div>
@@ -5984,6 +6016,153 @@ STOREFRONT_HTML = r"""<!DOCTYPE html>
         topVipTag.style.display = 'inline-block';
       } else {
         topVipTag.style.display = 'none';
+      }
+    }
+
+    // One-Time Admin Config with Pen Button Edit / Lock Mechanism
+    let cachedAdminConfigs = [];
+    let activeEditingKey = null;
+
+    function openAdminConfigPage() {
+      haptic('pop');
+      document.querySelectorAll('.tab-view').forEach(el => el.classList.remove('active'));
+      const view = document.getElementById('view-admin-config');
+      if (view) view.classList.add('active');
+      pushNav('admin_config', closeAdminConfigPage);
+      loadAdminConfigs();
+    }
+
+    function closeAdminConfigPage() {
+      haptic('light');
+      activeEditingKey = null;
+      const view = document.getElementById('view-admin-config');
+      if (view) view.classList.remove('active');
+      const setView = document.getElementById('view-settings');
+      if (setView) setView.classList.add('active');
+      if (navStack.length > 0 && navStack[navStack.length - 1].name === 'admin_config') {
+        navStack.pop();
+        if (navStack.length === 0 && tg?.BackButton) tg.BackButton.hide();
+      }
+    }
+
+    async function loadAdminConfigs() {
+      const container = document.getElementById('admin-config-items-list');
+      if (container && !cachedAdminConfigs.length) {
+        container.innerHTML = '<div style="text-align:center; padding:30px; color:var(--hint);">جاري تحميل الإعدادات من الخادم...</div>';
+      }
+      try {
+        const res = await fetch(`/api/admin/config/all?tg_id=${userId}`);
+        const d = await res.json();
+        cachedAdminConfigs = d.configs || [];
+        renderAdminConfigCards();
+      } catch (e) {
+        if (container) container.innerHTML = '<div style="text-align:center; padding:20px; color:var(--danger);">خطأ في جلب الإعدادات.</div>';
+      }
+    }
+
+    function renderAdminConfigCards() {
+      const container = document.getElementById('admin-config-items-list');
+      if (!container) return;
+
+      if (!cachedAdminConfigs.length) {
+        container.innerHTML = '<div style="text-align:center; padding:30px; color:var(--hint);">لا توجد إعدادات مسجلة.</div>';
+        return;
+      }
+
+      container.innerHTML = cachedAdminConfigs.map(c => {
+        const isEditing = (activeEditingKey === c.key);
+        const inputType = c.secret && !isEditing ? 'password' : 'text';
+
+        return `
+          <div class="inset-card" style="margin-bottom: 10px; padding: 12px; border-color: ${isEditing ? 'var(--accent)' : 'var(--border)'}; transition: border-color 0.2s;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <strong style="font-family: monospace; font-size: 13px; color: var(--accent);">${c.key}</strong>
+              <span class="pill-badge" style="font-size: 10px; background: rgba(255,255,255,0.06);">
+                ${c.secret ? '🔒 سري' : '⚙️ نظام'}
+              </span>
+            </div>
+            <div style="font-size: 11px; color: var(--hint); margin-bottom: 8px; line-height: 1.4;">
+              ${c.desc || 'إعداد نظام'}
+            </div>
+
+            <!-- Input Row with Pen Button -->
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <input type="${inputType}"
+                     class="admin-text-input"
+                     id="cfg-input-${c.key}"
+                     value="${c.value || ''}"
+                     ${isEditing ? '' : 'readonly'}
+                     style="flex: 1; font-family: monospace; font-size: 13px; background: var(--input-bg); border-color: ${isEditing ? 'var(--accent)' : 'var(--border)'}; color: var(--text); opacity: ${isEditing ? '1' : '0.85'}; outline: none;"
+                     placeholder="غير محدد (فارغ)">
+
+              <div id="cfg-actions-${c.key}" style="display: flex; gap: 4px;">
+                ${isEditing ? `
+                  <button class="btn-action-primary" onclick="submitSaveConfigKey('${c.key}')" style="height: 36px; padding: 0 12px; font-size: 11px; background: #10b981;">
+                    💾 حفظ
+                  </button>
+                  <button class="circle-icon-btn" onclick="cancelConfigEditMode('${c.key}')" title="إلغاء">
+                    ✕
+                  </button>
+                ` : `
+                  <button class="circle-icon-btn" onclick="enableConfigEditMode('${c.key}')" title="تعديل الإعداد (انقر على القلم)">
+                    ✏️
+                  </button>
+                `}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function enableConfigEditMode(key) {
+      haptic('light');
+      activeEditingKey = key;
+      renderAdminConfigCards();
+      setTimeout(() => {
+        const inp = document.getElementById('cfg-input-' + key);
+        if (inp) {
+          inp.focus();
+          inp.select();
+        }
+      }, 50);
+    }
+
+    function cancelConfigEditMode(key) {
+      haptic('light');
+      activeEditingKey = null;
+      renderAdminConfigCards();
+    }
+
+    async function submitSaveConfigKey(key) {
+      const inp = document.getElementById('cfg-input-' + key);
+      const newVal = inp ? inp.value.trim() : '';
+      haptic('medium');
+
+      const actionBox = document.getElementById('cfg-actions-' + key);
+      if (actionBox) actionBox.innerHTML = '<span style="font-size:11px; color:var(--hint);">جاري الحفظ...</span>';
+
+      try {
+        const res = await fetch('/api/admin/config/set', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_tg_id: userId, key: key, value: newVal })
+        });
+        const d = await res.json();
+        if (d.status === 'ok') {
+          haptic('success');
+          showToast(`تم حفظ الإعداد ${key} بنجاح!`);
+          activeEditingKey = null;
+          const target = cachedAdminConfigs.find(c => c.key === key);
+          if (target) target.value = newVal;
+          renderAdminConfigCards();
+        } else {
+          showToast('فشل حفظ الإعداد');
+          renderAdminConfigCards();
+        }
+      } catch (e) {
+        showToast('خطأ في الاتصال بالخادم أثناء الحفظ');
+        renderAdminConfigCards();
       }
     }
 
