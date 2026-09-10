@@ -16,6 +16,7 @@ from repositories.batstore_product import BatStoreProductRepository
 from services.config import ConfigService
 from services.custom_emoji import CustomEmojiService
 from services.restock_notification import RestockNotificationService
+from services.notification import NotificationService
 from utils.telegram import clean_tg_emojis
 API_TEST_PRODUCT_ID = 2147483000
 
@@ -171,11 +172,11 @@ class BatStoreService:
         return data
 
     @staticmethod
-    async def get_cached_reseller_balance(session: AsyncSession | Session, redis_client=None) -> float:
+    async def get_cached_reseller_balance(session: AsyncSession | Session, redis_client=None, force_refresh: bool = False) -> float:
         """Fetch reseller wallet balance with 30-second Redis TTL caching to circuit-break empty balances."""
         cache_key = "ghstore:cache:reseller_balance"
         r = redis_client or BatStoreProductRepository._redis
-        if r is not None:
+        if not force_refresh and r is not None:
             try:
                 cached = await r.get(cache_key)
                 if cached is not None:
@@ -197,8 +198,14 @@ class BatStoreService:
             return bal
         except Exception as e:
             logging.warning("Failed to fetch reseller balance for circuit breaker: %s", e)
-            return 9999.0
-
+            if r is not None:
+                try:
+                    cached = await r.get(cache_key)
+                    if cached is not None:
+                        return float(cached)
+                except Exception:
+                    pass
+            return 0.0 if force_refresh else 9999.0
     @staticmethod
     async def ping_health(session: AsyncSession | Session) -> bool:
         """Fast ping to check if upstream reseller API is responsive."""
@@ -225,8 +232,23 @@ class BatStoreService:
         items = order.get("items") or []
         goods = []
         for it in items:
-            value = it.get("value") or it.get("data") or str(it)
-            goods.append(value)
+            if isinstance(it, dict):
+                value = (
+                    it.get("account_data")
+                    or it.get("value")
+                    or it.get("data")
+                    or it.get("credentials")
+                    or it.get("key")
+                    or it.get("code")
+                    or it.get("token")
+                    or it.get("account")
+                    or (f"{it['email']}:{it['password']}" if "email" in it and "password" in it else None)
+                    or (f"{it['username']}:{it['password']}" if "username" in it and "password" in it else None)
+                    or str(it)
+                )
+            else:
+                value = str(it)
+            goods.append(str(value))
         return goods
 
     @staticmethod
@@ -238,7 +260,10 @@ class BatStoreService:
         if not items:
             return False
         for it in items:
-            val = str(it.get("value") if isinstance(it, dict) else it).strip()
+            if isinstance(it, dict):
+                val = str(it.get("account_data") or it.get("value") or it.get("data") or it).strip()
+            else:
+                val = str(it).strip()
             if len(val) < 3:
                 return False
             lower = val.lower()
@@ -284,7 +309,12 @@ class BatStoreService:
         has_value = mval != 0
         if mtype == MarginType.FIXED_PRICE:
             # exact fixed sell price; require an explicit value else global
-            return round(mval, 2) if has_value else round(cost * (1 + global_percent / 100.0) + global_fixed, 2)
+            if has_value:
+                if cost > mval:
+                    logging.warning("Wholesale cost $%.2f exceeds fixed selling price $%.2f! Clamping to cost.", cost, mval)
+                    return round(cost, 2)
+                return round(mval, 2)
+            return round(cost * (1 + global_percent / 100.0) + global_fixed, 2)
         if mtype == MarginType.FIXED:
             # flat USD adder when set, else global percent
             return round(cost + mval, 2) if has_value else round(cost * (1 + global_percent / 100.0) + global_fixed, 2)
@@ -437,11 +467,13 @@ class BatStoreService:
                     margin_value=existing.margin_value,
                     category=cat,
                     sell_price_usd=sell,
+                    reseller_price_usd=getattr(existing, "reseller_price_usd", None),
+                    reseller_margin_pct=getattr(existing, "reseller_margin_pct", None),
                     hidden=True if is_price_spike else existing.hidden,
                 )
                 await BatStoreProductRepository.update(upd, session)
                 updated += 1
-        await BatStoreProductRepository.delete_absent(kept_ids, session)
+        await BatStoreProductRepository.delete_absent(kept_ids, session, supplier="batstore")
         await session_commit(session)
         for restocked_pid, restocked_name in restocked_products:
             try:

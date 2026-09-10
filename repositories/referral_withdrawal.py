@@ -1,6 +1,6 @@
 """Repository for affiliate referral withdrawal requests."""
 import datetime
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from db import session_execute, session_flush
 from models.referral_withdrawal import ReferralWithdrawal, ReferralWithdrawalDTO
@@ -59,3 +59,16 @@ class ReferralWithdrawalRepository:
             row.processed_at = datetime.datetime.now(datetime.timezone.utc)
             await session_flush(session)
         return row
+
+    @staticmethod
+    async def get_total_withdrawn_by_tgid(telegram_id: int, session: AsyncSession) -> float:
+        """Calculate total withdrawn and currently pending affiliate commission."""
+        stmt = (
+            select(func.coalesce(func.sum(ReferralWithdrawal.amount_usd), 0.0))
+            .where(
+                ReferralWithdrawal.telegram_id == telegram_id,
+                ReferralWithdrawal.status.in_(("pending", "approved", "completed"))
+            )
+        )
+        res = await session_execute(stmt, session)
+        return float(res.scalar_one() or 0.0)

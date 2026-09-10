@@ -46,7 +46,7 @@ async def sam_pick_provider(callback: CallbackQuery, callback_data: SamCallback,
                           callback_data=SamCallback.create(level=1, provider="shamcash").pack())
     if syriatel_enabled:
         kb_builder.button(text=get_text(language, BotEntity.COMMON, "sam_provider_syriatel"),
-                          callback_data=SamCallback.create(level=1, provider="syriatel").pack())
+                          callback_data=SamCallback.create(level=2, provider="syriatel", currency="SYP").pack())
     kb_builder.adjust(1)
     kb_builder.row(_back(language))
     if not shamcash_enabled and not syriatel_enabled:
@@ -60,20 +60,52 @@ async def sam_pick_provider(callback: CallbackQuery, callback_data: SamCallback,
 
 
 @sam_router.callback_query(SamCallback.filter(F.level == 1), IsUserExistFilter())
+async def sam_pick_currency(callback: CallbackQuery, callback_data: SamCallback,
+                            language: Language):
+    provider = callback_data.provider or "shamcash"
+    if provider in ("syriatel", "syriatelcash"):
+        # Syriatel Cash is strictly SYP only
+        kb_builder = InlineKeyboardBuilder()
+        kb_builder.row(InlineKeyboardButton(
+            text=get_text(language, BotEntity.COMMON, "back_button"),
+            callback_data=SamCallback.create(level=0).pack()))
+        return
+
+    kb_builder = InlineKeyboardBuilder()
+    kb_builder.button(
+        text=get_text(language, BotEntity.COMMON, "sam_currency_usd"),
+        callback_data=SamCallback.create(level=2, provider="shamcash", currency="USD").pack())
+    kb_builder.button(
+        text=get_text(language, BotEntity.COMMON, "sam_currency_syp"),
+        callback_data=SamCallback.create(level=2, provider="shamcash", currency="SYP").pack())
+    kb_builder.adjust(1)
+    kb_builder.row(InlineKeyboardButton(
+        text=get_text(language, BotEntity.COMMON, "back_button"),
+        callback_data=SamCallback.create(level=0).pack()))
+    await safe_edit_message(
+        callback,
+        get_text(language, BotEntity.COMMON, "sam_pick_currency"),
+        kb_builder.as_markup(),
+    )
+
+
+@sam_router.callback_query(SamCallback.filter(F.level == 2), IsUserExistFilter())
 async def sam_amount_prompt(callback: CallbackQuery, callback_data: SamCallback,
                             state: FSMContext, language: Language):
     await state.set_state(UserStates.sam_top_up_amount)
     provider = callback_data.provider or "shamcash"
-    currency = "SYP" if provider in ("syriatel", "syriatelcash") else "USD"
+    currency = callback_data.currency or ("SYP" if provider in ("syriatel", "syriatelcash") else "USD")
     await state.update_data(sam_provider=provider, sam_waiting_amount=True, sam_currency=currency)
     kb_builder = InlineKeyboardBuilder()
-    kb_builder.row(_back(language))
+    back_cb = SamCallback.create(level=1, provider=provider).pack() if provider == "shamcash" else SamCallback.create(level=0).pack()
+    kb_builder.row(InlineKeyboardButton(
+        text=get_text(language, BotEntity.COMMON, "back_button"),
+        callback_data=back_cb))
     await safe_edit_message(
         callback,
         get_text(language, BotEntity.COMMON, "sam_amount_prompt").format(currency=currency),
         kb_builder.as_markup(),
     )
-
 
 @sam_router.message(UserStates.sam_top_up_amount, F.text, IsUserExistFilter())
 async def sam_amount_received(message: Message, session: AsyncSession,
@@ -115,10 +147,15 @@ async def sam_amount_received(message: Message, session: AsyncSession,
     payment_url = invoice.get("paymentUrl")
     usd_amount = amount
     if currency.upper() == "SYP":
-        try:
-            usd_amount = round(amount * float(config.SAM_SYP_USD_RATE or "0.002551"), 2)
-        except ValueError:
-            usd_amount = round(amount * 0.002551, 2)
+        from services.currency_rates import CurrencyRateService
+        syp_cfg = await ConfigService.get(session, "SAM_SYP_USD_RATE", env_fallback=config.SAM_SYP_USD_RATE)
+        rate = CurrencyRateService.parse_syp_rate(syp_cfg)
+        if not rate:
+            await message.answer("⚠️ الدفع بالليرة السورية غير متاح حالياً. يرجى اختيار USD أو المحاولة لاحقاً.")
+            await state.set_state()
+            await state.update_data(sam_waiting_amount=False)
+            return
+        usd_amount = CurrencyRateService.syp_to_usd(amount, rate)
 
     if invoice_id:
         await SamPaymentRepository.create(SamPaymentDTO(

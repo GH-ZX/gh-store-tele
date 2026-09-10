@@ -111,6 +111,87 @@ class SamService:
         fallback = await ConfigService.get(session, "SAM_RECEIVING_WALLET", env_fallback=config.SAM_RECEIVING_WALLET)
         return fallback or "wallet"
 
+    @staticmethod
+    async def get_wallet_balances(session: AsyncSession | Session) -> dict[str, float]:
+        """Fetch real-time balances for all registered active wallets from SAM API.
+        Returns {'usd': total_usd, 'syp': total_syp, 'eur': total_eur}.
+        """
+        base, key = await SamService._resolve(session)
+        headers = SamService._headers(key)
+        wallets = await SamService.list_wallets(session)
+        usd_total = 0.0
+        syp_total = 0.0
+        eur_total = 0.0
+
+        async with await SamService._client() as client:
+            for w in wallets:
+                if w.get("status") not in (None, "active"):
+                    continue
+                prov = w.get("provider") or "shamcash"
+                identifier = w.get("walletAddress") or w.get("phone") or w.get("id")
+                if not identifier:
+                    continue
+                try:
+                    url = f"{base}/v1/wallets/{prov}/{identifier}/balance"
+                    resp = await client.get(url, headers=headers)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if isinstance(data, list):
+                            for item in data:
+                                curr = str(item.get("currency", "")).upper()
+                                amt = float(item.get("amount") or 0.0)
+                                if curr == "USD":
+                                    usd_total += amt
+                                elif curr == "SYP":
+                                    syp_total += amt
+                                elif curr == "EUR":
+                                    eur_total += amt
+                        elif isinstance(data, dict):
+                            usd_total += float(data.get("usd") or data.get("USD") or 0.0)
+                            syp_total += float(data.get("syp") or data.get("SYP") or 0.0)
+                            eur_total += float(data.get("eur") or data.get("EUR") or 0.0)
+                except Exception as e:
+                    logging.warning("Failed to fetch balance for wallet %s: %s", identifier, e)
+
+        return {
+            "usd": round(usd_total, 2),
+            "syp": round(syp_total, 2),
+            "eur": round(eur_total, 2),
+        }
+
+    @staticmethod
+    async def get_cached_wallet_balances(session: AsyncSession | Session, redis_client=None, force_refresh: bool = False) -> dict[str, float]:
+        """Fetch SAM wallet balances with Redis caching (30s TTL) and force_refresh support."""
+        import json
+        cache_key = "ghstore:cache:sam_wallet_balances"
+        r = redis_client
+        if r is None:
+            try:
+                from repositories.batstore_product import BatStoreProductRepository
+                r = getattr(BatStoreProductRepository, "_redis", None)
+            except Exception:
+                r = None
+
+        if not force_refresh and r is not None:
+            try:
+                cached = await r.get(cache_key)
+                if cached is not None:
+                    return json.loads(cached)
+            except Exception:
+                pass
+
+        try:
+            bals = await SamService.get_wallet_balances(session)
+            if r is not None:
+                try:
+                    await r.setex(cache_key, 30, json.dumps(bals))
+                except Exception:
+                    pass
+            return bals
+        except Exception as e:
+            logging.warning("Failed to fetch SAM wallet balances: %s", e)
+            return {"usd": 0.0, "syp": 0.0, "eur": 0.0}
+
     # ------------------------------------------------------------------ invoices
 
     @staticmethod

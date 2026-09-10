@@ -11,6 +11,7 @@ Outputs screenshots into static/ui_previews/ for visual inspection.
 import asyncio
 import os
 from pathlib import Path
+import config
 
 
 async def capture_views():
@@ -33,8 +34,9 @@ async def capture_views():
         )
         page = await context.new_page()
 
+        admin_id = config.ADMIN_ID_LIST[0] if getattr(config, "ADMIN_ID_LIST", None) else 1
         for lang in ("ar", "en"):
-            url = f"http://127.0.0.1:5000/app?tg_id=7635553403"
+            url = f"http://127.0.0.1:5000/app?tg_id={admin_id}"
             await page.goto(url, wait_until="networkidle")
             await page.evaluate(f"""() => {{
                 localStorage.setItem('ghstore_lang', '{lang}');

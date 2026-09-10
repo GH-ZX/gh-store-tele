@@ -57,6 +57,7 @@ from repositories.batstore_product import BatStoreProductRepository
 from repositories.batstore_order import BatStoreOrderRepository
 from services.config import ConfigService
 from services.batstore import BatStoreService
+from services.prodseller import ProdSellerService
 from services.referral import ReferralService
 from services.sam import SamService, SamAPIError
 from services.media import MediaService
@@ -111,13 +112,13 @@ async def _sync_all_supplier_catalogs() -> None:
     except Exception as e:  # noqa: BLE001
         logging.error("Supplier catalog sync failed (continuing): %s", e)
 
-_polling_task: asyncio.Task | None = None
-_sync_loop_task: asyncio.Task | None = None
-_balance_monitor_task: asyncio.Task | None = None
-_digest_task: asyncio.Task | None = None
-_recovery_task: asyncio.Task | None = None
-_rates_task: asyncio.Task | None = None
-_backup_task: asyncio.Task | None = None
+_background_tasks: set[asyncio.Task] = set()
+
+def _create_task(coro) -> asyncio.Task:
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return task
 async def _startup() -> None:
     global _polling_task
     await create_db_and_tables()
@@ -125,8 +126,8 @@ async def _startup() -> None:
         await ConfigService.seed_defaults(session)
         await ConfigService.seed_from_env(session)
     if config.BATSTORE_SYNC_ENABLED or getattr(config, "PRODSELLER_SYNC_ENABLED", True):
-        asyncio.create_task(_sync_all_supplier_catalogs())
-    asyncio.create_task(_set_webhook_with_retry())
+        _create_task(_sync_all_supplier_catalogs())
+    _create_task(_set_webhook_with_retry())
     try:
         tma_host = (config.WEBHOOK_HOST or "").strip().rstrip('/')
         if tma_host and tma_host.startswith("https://"):
@@ -167,18 +168,27 @@ async def _startup() -> None:
     except Exception as e:
         logging.warning("Could not set bot commands: %s", e)
     from services.order_polling import poll_pending_orders, periodic_catalog_sync, periodic_balance_monitor
-    _polling_task = asyncio.create_task(poll_pending_orders())
-    _sync_loop_task = asyncio.create_task(periodic_catalog_sync())
-    _balance_monitor_task = asyncio.create_task(periodic_balance_monitor())
+    _create_task(poll_pending_orders())
+    _create_task(periodic_catalog_sync())
+    _create_task(periodic_balance_monitor())
     from services.financial_digest import daily_digest_cron
-    _digest_task = asyncio.create_task(daily_digest_cron())
-    CartRecoveryService.set_redis(redis)
-    _recovery_task = asyncio.create_task(cart_recovery_cron())
+    _create_task(daily_digest_cron())
     from services.backup_service import periodic_backup_cron
-    _backup_task = asyncio.create_task(periodic_backup_cron())
+    _create_task(periodic_backup_cron())
     from services.currency_rates import currency_rates_cron, CurrencyRateService
-    _rates_task = asyncio.create_task(currency_rates_cron())
-    asyncio.create_task(CurrencyRateService.update_rates())
+    _create_task(currency_rates_cron())
+    from services.telegram_auth import refresh_known_bot_tokens
+    _create_task(refresh_known_bot_tokens())
+    async def _refresh_bot_tokens_cron() -> None:
+        while True:
+            await asyncio.sleep(300)
+            await refresh_known_bot_tokens()
+    _create_task(_refresh_bot_tokens_cron())
+    try:
+        me = await bot.get_me()
+        logging.info("Telegram TOKEN live: @%s (id=%s)", getattr(me, "username", "?"), getattr(me, "id", "?"))
+    except Exception as e:
+        logging.critical("Telegram TOKEN rejected by Telegram API (%s). Mini App initData will 401 until .env TOKEN matches @BotFather for the serving bot!", e)
     static = Path("static")
     if static.exists() is False:
         static.mkdir()
@@ -188,8 +198,19 @@ async def _startup() -> None:
         photo_id_list = []
         for admin_id in config.ADMIN_ID_LIST:
             try:
+                fallback_url = ""
+                try:
+                    async with get_db_session() as _s:
+                        from services.storefront_images import get_store_images as _gsi
+                        _imgs = await _gsi(_s)
+                        fallback_url = (_imgs.get("product_placeholder") or "").strip()
+                except Exception:
+                    fallback_url = ""
+                host = (config.WEBHOOK_HOST or "").strip().rstrip("/")
+                if fallback_url.startswith("/") and host:
+                    fallback_url = f"{host}{fallback_url}"
                 msg = await bot.send_photo(chat_id=admin_id,
-                                           photo=URLInputFile(url="https://img.freepik.com/premium-vector/no-photo-available-vector-icon-default-image-symbol-picture-coming-soon-web-site-mobile-app_87543-18055.jpg",
+                                           photo=URLInputFile(url=fallback_url or f"{host}/static/img/product-placeholder.svg",
                                                               filename="no_image.png"))
                 bot_photo_id = msg.photo[-1].file_id
                 photo_id_list.append(bot_photo_id)
@@ -228,10 +249,9 @@ async def _startup() -> None:
 
 
 async def _shutdown() -> None:
-    global _polling_task, _sync_loop_task, _balance_monitor_task, _digest_task, _recovery_task, _rates_task
     logging.warning('Shutting down..')
-    for t in (_polling_task, _sync_loop_task, _balance_monitor_task, _digest_task, _recovery_task, _rates_task):
-        if t and not t.done():
+    for t in list(_background_tasks):
+        if not t.done():
             t.cancel()
             try:
                 await t
@@ -241,6 +261,7 @@ async def _shutdown() -> None:
     await dp.storage.close()
     await bot.session.close()
     await BatStoreService.close_client()
+    await ProdSellerService.close_client()
     await SamService.close_client()
     logging.warning('Bye!')
 
@@ -296,6 +317,12 @@ admin.add_model_view(StorefrontCategoryAdmin)
 from models.referral_withdrawal import ReferralWithdrawalAdmin
 admin.add_model_view(ReferralWithdrawalAdmin)
 admin.add_model_view(PromotionalBannerAdmin)
+from models.gift_voucher import GiftVoucherAdmin
+admin.add_model_view(GiftVoucherAdmin)
+from models.admin_audit_log import AdminAuditLogAdmin
+admin.add_model_view(AdminAuditLogAdmin)
+from models.price_audit import ProductPriceAuditAdmin
+admin.add_model_view(ProductPriceAuditAdmin)
 app.include_router(processing_router)
 from fastapi.staticfiles import StaticFiles
 _static_dir = Path(__file__).resolve().parent / "static"
@@ -362,8 +389,10 @@ async def tma_storefront():
 
 @app.post(config.WEBHOOK_PATH)
 async def webhook(request: Request):
-    secret_token = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
-    if secret_token != config.WEBHOOK_SECRET_TOKEN:
+    import secrets
+    secret_token = request.headers.get("X-Telegram-Bot-Api-Secret-Token") or ""
+    expected = config.WEBHOOK_SECRET_TOKEN or ""
+    if not expected or not secrets.compare_digest(secret_token, expected):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
     try:

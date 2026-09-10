@@ -151,11 +151,11 @@ class NotificationService:
         for admin_id in ADMIN_ID_LIST:
             try:
                 if isinstance(message, str):
-                    async def _send(current_markup):
-                        return await bot.send_message(admin_id, f"<b>{message}</b>", reply_markup=current_markup)
+                    async def _send(current_markup, aid=admin_id):
+                        return await bot.send_message(aid, f"<b>{message}</b>", reply_markup=current_markup)
                 else:
-                    async def _send(current_markup):
-                        return await bot.send_document(admin_id, message, reply_markup=current_markup)
+                    async def _send(current_markup, aid=admin_id):
+                        return await bot.send_document(aid, message, reply_markup=current_markup)
                 await NotificationService._execute_with_privacy_fallback(
                     operation_name="send_to_admins",
                     execute=_send,
@@ -377,9 +377,14 @@ class NotificationService:
 
     @staticmethod
     async def answer_media(message: Message,
-                           media: InputMediaPhoto | InputMediaVideo | InputMediaAnimation,
+                           media: InputMediaPhoto | InputMediaVideo | InputMediaAnimation | str,
                            reply_markup: InlineKeyboardMarkup | None = None) -> Message:
-        if isinstance(media, InputMediaPhoto):
+        if isinstance(media, str):
+            async def _answer(current_markup):
+                return await message.answer(text=media,
+                                            parse_mode="HTML",
+                                            reply_markup=current_markup)
+        elif isinstance(media, InputMediaPhoto):
             async def _answer(current_markup):
                 return await message.answer_photo(photo=media.media,
                                                   caption=media.caption,
@@ -389,11 +394,16 @@ class NotificationService:
                 return await message.answer_video(video=media.media,
                                                   caption=media.caption,
                                                   reply_markup=current_markup)
-        else:
+        elif isinstance(media, InputMediaAnimation):
             async def _answer(current_markup):
                 return await message.answer_animation(animation=media.media,
                                                       caption=media.caption,
                                                       reply_markup=current_markup)
+        else:
+            async def _answer(current_markup):
+                return await message.answer(text=str(media),
+                                            parse_mode="HTML",
+                                            reply_markup=current_markup)
         return await NotificationService._execute_with_privacy_fallback(
             operation_name="answer_media",
             execute=_answer,

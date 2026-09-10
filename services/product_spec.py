@@ -114,10 +114,10 @@ class ProductSpecParser:
             duration_ar = "مدى الحياة"
             duration_en = "Lifetime"
         else:
-            m_dur = re.search(r"\b(\d+)\s*(months?|m|yrs?|years?|days?|d)\b", name_no_tokens, re.IGNORECASE)
+            m_dur = re.search(r"\b(\d+)\s*[-]?\s*(months?|mos?|m|yrs?|years?|days?|d)\b", name_no_tokens, re.IGNORECASE)
             if m_dur:
                 val, unit = int(m_dur.group(1)), m_dur.group(2).lower()
-                if unit in ("m", "month", "months"):
+                if unit in ("m", "mo", "mos", "month", "months"):
                     if val == 1:
                         duration_ar = "شهر واحد"
                         duration_en = "1 Month"

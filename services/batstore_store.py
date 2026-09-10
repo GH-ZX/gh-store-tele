@@ -89,6 +89,17 @@ class BatStoreStoreService:
         return caption, kb_builder
 
     @staticmethod
+    def _effective_price(product, user) -> float:
+        if user and getattr(user, "is_reseller", False):
+            from services.sale_pricing import compute_reseller_price
+            return compute_reseller_price(
+                cost=product.cost_usd,
+                retail_price=product.sell_price_usd,
+                reseller_price_usd=getattr(product, "reseller_price_usd", None),
+                reseller_margin_pct=getattr(product, "reseller_margin_pct", None),
+            )
+        return float(product.sell_price_usd or 0.0)
+
     async def detail(callback: CallbackQuery,
                      callback_data: BatStoreCallback,
                      state: FSMContext,
@@ -126,7 +137,7 @@ class BatStoreStoreService:
         caption = get_text(language, BotEntity.USER, "batstore_detail").format(
             name=display_name,
             description=clean_tg_emojis(product.description),
-            price=f"{product.sell_price_usd:.2f}" if product.sell_price_usd is not None else "-",
+            price=f"{BatStoreStoreService._effective_price(product, user):.2f}" if product.sell_price_usd is not None else "-",
             sym=sym,
             delivery=delivery,
             stock=f"🔴 0 {get_text(language, BotEntity.USER, 'batstore_out_of_stock')}\n\n{get_text(language, BotEntity.USER, 'restock_auto_subscribed_notice')}" if is_oos else (product.stock if product.stock is not None else 0),
@@ -153,7 +164,8 @@ class BatStoreStoreService:
                 ).pack()
             )
         else:
-            max_qty = BatStoreStoreService._max_qty(product, balance)
+            effective_unit = BatStoreStoreService._effective_price(product, user)
+            max_qty = BatStoreStoreService._max_qty(product, balance, effective_unit)
             for qty in range(1, min(10, max_qty) + 1):
                 kb_builder.button(
                     text=f"{qty}",
@@ -164,16 +176,16 @@ class BatStoreStoreService:
         return caption, kb_builder
 
     @staticmethod
-    def _max_qty(product: BatStoreProduct, balance: float) -> int:
+    def _max_qty(product: BatStoreProduct, balance: float, unit_price: float | None = None) -> int:
         if product.delivery_type == "stock":
             stock = product.stock or 0
             if stock <= 0:
                 return 0
         elif not (product.stock and product.stock > 0):
-            # supplier/activation with no stock info -> allow some
             pass
-        if product.sell_price_usd and product.sell_price_usd > 0 and balance > 0:
-            return max(1, int(balance // product.sell_price_usd))
+        pr = unit_price if unit_price is not None else (product.sell_price_usd or 0.0)
+        if pr > 0 and balance > 0:
+            return max(1, int(balance // pr))
         return 99
 
     @staticmethod
@@ -194,11 +206,16 @@ class BatStoreStoreService:
         from services.user import get_vip_tier_info
         from services.sale_pricing import price_lines
         tier_label, discount_pct = get_vip_tier_info(getattr(user, "consume_records", 0.0), getattr(user, "custom_discount_pct", None))
+        kb_builder = InlineKeyboardBuilder()
         try:
+            effective_pr = BatStoreStoreService._effective_price(product, user)
             (total_dec,), _ = price_lines(
-                [(product.sell_price_usd, product.cost_usd, callback_data.quantity, 0)],
+                [(effective_pr, product.cost_usd, callback_data.quantity, 0)],
                 discount_pct=discount_pct)
         except ValueError:
+            kb_builder.button(text=get_text(language, BotEntity.COMMON, "back_button"),
+                              callback_data=BatStoreCallback.create(level=1,
+                                                                    product_id=product.product_id).pack())
             return get_text(language, BotEntity.USER, "batstore_not_found"), kb_builder
         total = float(total_dec)
         discount_note = ""
@@ -217,7 +234,6 @@ class BatStoreStoreService:
             balance=f"{balance}",
         ) + discount_note
 
-        kb_builder = InlineKeyboardBuilder()
         kb_builder.button(text=get_text(language, BotEntity.COMMON, "buy_now"),
                           callback_data=BatStoreCallback.create(level=3,
                                                                 product_id=product.product_id,
@@ -249,8 +265,9 @@ class BatStoreStoreService:
         from services.sale_pricing import price_lines as _price_lines
         tier_label, discount_pct = _vip_info(getattr(user, "consume_records", 0.0))
         try:
+            effective_pr = BatStoreStoreService._effective_price(product, user)
             (total_dec,), _ = _price_lines(
-                [(product.sell_price_usd, product.cost_usd, qty, 0)],
+                [(effective_pr, product.cost_usd, qty, 0)],
                 discount_pct=discount_pct)
         except ValueError:
             return get_text(language, BotEntity.USER, "batstore_not_found"), kb_builder
@@ -273,10 +290,17 @@ class BatStoreStoreService:
         await session_commit(session)
 
         customer_reference = f"ghstore-{callback.from_user.id}-{uuid.uuid4().hex[:8]}"
+        from services.multi_supplier import MultiSupplierService
         try:
-            quote = await BatStoreService.quote(session, product.product_id, qty)
+            placed_result = await MultiSupplierService.place_order_with_failover(
+                session, product, qty,
+                customer_reference=customer_reference,
+                idempotency_key=customer_reference,
+            )
+            external_ref = placed_result.get("external_order_ref")
+            goods_list = placed_result.get("goods") or []
         except Exception as e:
-            logging.error("BatStore quote failed: %s", e)
+            logging.error("Multi-supplier place_order failed for product #%s: %s", product.product_id, e)
             await UserRepository.refund_balance(callback.from_user.id, total, session)
             await session_commit(session)
             return get_text(language, BotEntity.USER, "batstore_failed"), kb_builder
@@ -289,25 +313,12 @@ class BatStoreStoreService:
             "cost_usd": product.cost_usd,
             "sell_usd": total,
             "delivery_type": product.delivery_type,
+            "delivery_goods": goods_list,
+            "warranty_days": getattr(product, "warranty_days", 0) or 0,
         }]
-        external_ref = None
-        try:
-            placed = await BatStoreService.place_order(
-                session, product.product_id, qty,
-                customer_reference=customer_reference,
-                idempotency_key=customer_reference,
-            )
-            external_ref = placed.get("order", {}).get("id") or placed.get("order_id")
-        except Exception as e:
-            logging.error("BatStore place_order failed: %s", e)
-            await UserRepository.refund_balance(callback.from_user.id, total, session)
-            await session_commit(session)
-            return get_text(language, BotEntity.USER, "batstore_failed"), kb_builder
-        order_status = "completed"
-        if product.delivery_type in ("activation",):
-            order_status = "pending_fulfillment"
 
-        await BatStoreOrderRepository.create(BatStoreOrderDTO(
+        order_status = "completed" if goods_list else "pending_fulfillment"
+        order = await BatStoreOrderRepository.create(BatStoreOrderDTO(
             telegram_id=callback.from_user.id,
             total_sell=total,
             status=order_status,
@@ -315,22 +326,22 @@ class BatStoreStoreService:
             customer_reference=customer_reference,
             details=order_payload["details"],
         ), session)
+
+        try:
+            from repositories.cartItem import CartItemRepository
+            await CartItemRepository.clear_cart_by_user_id(user.id, session)
+        except Exception as ex_c:
+            logging.debug("Could not clear DB cart: %s", ex_c)
         await session_commit(session)
 
         await state.update_data({CART_KEY: {}})
 
         delivery_info = ""
-        if product.delivery_type in ("stock", "supplier_api"):
-            goods = placed.get("order", {}) or {}
-            items = goods.get("items") or []
-            if items:
-                goods_list = "\n".join(f"• <code>{it.get('value') or it.get('data') or it}</code>" for it in items[:20])
-                delivery_info = f"📦 <b>Your goods:</b>\n{goods_list}\n\n<i>(Tap any key above to copy)</i>"
-            else:
-                delivery_info = get_text(language, BotEntity.USER, "batstore_activation_pending")
+        if goods_list:
+            goods_str = "\n".join(f"• <code>{g}</code>" for g in goods_list[:20])
+            delivery_info = f"📦 <b>Your goods:</b>\n{goods_str}\n\n<i>(Tap any key above to copy)</i>"
         else:
             delivery_info = get_text(language, BotEntity.USER, "batstore_activation_pending")
-
         caption = get_text(language, BotEntity.USER, "batstore_success").format(
             items=f"{qty} × {product.name} = {total}{sym}",
             delivery_info=delivery_info,

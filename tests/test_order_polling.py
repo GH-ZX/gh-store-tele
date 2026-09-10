@@ -29,13 +29,12 @@ class TestRefundAndNotify:
         with patch("repositories.user.UserRepository") as MockRepo, \
              patch("services.order_polling.NotificationService") as MockNotif:
             MockRepo.get_by_tgid = AsyncMock(return_value=user)
-            MockRepo.update = AsyncMock()
+            MockRepo.refund_balance = AsyncMock()
             MockNotif.send_to_user = AsyncMock()
 
             await _refund_and_notify(order, mock_session)
 
-        assert user.consume_records == pytest.approx(4.5)
-        MockRepo.update.assert_awaited_once_with(user, mock_session)
+        MockRepo.refund_balance.assert_awaited_once_with(123, 5.5, mock_session)
         MockNotif.send_to_user.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -55,13 +54,12 @@ class TestRefundAndNotify:
         with patch("repositories.user.UserRepository") as MockRepo, \
              patch("services.order_polling.NotificationService") as MockNotif:
             MockRepo.get_by_tgid = AsyncMock(return_value=user)
-            MockRepo.update = AsyncMock()
+            MockRepo.refund_balance = AsyncMock()
             MockNotif.send_to_user = AsyncMock()
 
             await _refund_and_notify(order, mock_session)
 
-        assert user.consume_records == 0.0
-
+        MockRepo.refund_balance.assert_awaited_once_with(456, 5.5, mock_session)
     @pytest.mark.asyncio
     async def test_handles_missing_user(self):
         order = SimpleNamespace(

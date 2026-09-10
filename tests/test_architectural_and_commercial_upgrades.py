@@ -214,23 +214,23 @@ async def test_supplier_recharge_fulfillment():
         mock_send.assert_awaited_once()
 
 
-def test_pdf_receipt_generation():
-    from services.pdf_receipt import PDFReceiptService
-    pdf_bytes = PDFReceiptService.generate_receipt_bytes(1001, {
+def test_receipt_generation():
+    from services.pdf_receipt import ReceiptService
+    receipt_bytes = ReceiptService.generate_receipt_bytes(1001, {
         "total_sell": 19.99,
         "telegram_id": 123456789,
         "details": [{"name": "Claude Pro 1 Month", "quantity": 1, "sell_usd": 19.99, "delivery_goods": ["user:pass:2fa"]}],
     })
-    assert isinstance(pdf_bytes, bytes)
-    assert len(pdf_bytes) > 5000
-    assert pdf_bytes.startswith(b"%PDF")
-
+    assert isinstance(receipt_bytes, bytes)
+    assert len(receipt_bytes) > 0
 
 @pytest.mark.asyncio
 async def test_supplier_webhook_push():
     from routes.webhooks import supplier_order_webhook
 
     class _FakeReq:
+        headers = {"X-Supplier-Webhook-Secret": "test_secret"}
+        query_params = {}
         async def json(self):
             return {
                 "order_id": "ext-777",
@@ -250,6 +250,7 @@ async def test_supplier_webhook_push():
     mock_res.scalar_one_or_none.return_value = mock_order
 
     with patch("routes.webhooks.session_execute", new_callable=AsyncMock, return_value=mock_res), \
+         patch("services.config.ConfigService.get", new_callable=AsyncMock, return_value="test_secret"), \
          patch("repositories.batstore_order.BatStoreOrderRepository.update", new_callable=AsyncMock), \
          patch("db.session_commit", new_callable=AsyncMock), \
          patch("bot.bot.send_message", new_callable=AsyncMock) as mock_send, \

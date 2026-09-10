@@ -93,3 +93,43 @@ def externally_paid(order) -> bool:
     if isinstance(order, dict):
         details = order.get("details")
     return any(isinstance(d, dict) and d.get("payment_method") == "external" for d in (details or []))
+
+def compute_reseller_price(
+    cost: float | Decimal,
+    retail_price: float | Decimal,
+    reseller_price_usd: float | Decimal | None = None,
+    reseller_margin_pct: float | Decimal | None = None,
+    global_reseller_margin_pct: float | Decimal = 8.0
+) -> float:
+    """Compute effective reseller price for a product.
+    Priority:
+      1. Explicit fixed reseller_price_usd if set > 0.
+      2. Custom per-product reseller_margin_pct markup over wholesale cost if set > 0.
+      3. Global reseller margin percent markup over wholesale cost (default 8%).
+    Guards:
+      - Never sell below wholesale cost.
+      - Reseller price cannot exceed retail price (unless retail is 0).
+    """
+    try:
+        cost_val = float(cost or 0.0)
+    except (ValueError, TypeError):
+        cost_val = 0.0
+    try:
+        retail_val = float(retail_price or 0.0)
+    except (ValueError, TypeError):
+        retail_val = 0.0
+
+    if reseller_price_usd is not None and float(reseller_price_usd) > 0:
+        price = float(reseller_price_usd)
+    elif reseller_margin_pct is not None and float(reseller_margin_pct) > 0:
+        price = cost_val * (1.0 + float(reseller_margin_pct) / 100.0)
+    else:
+        pct = float(global_reseller_margin_pct or 8.0)
+        price = cost_val * (1.0 + pct / 100.0)
+
+    price = round(price, 2)
+    if retail_val > 0 and price > retail_val:
+        price = round(retail_val, 2)
+    if cost_val > 0 and price < cost_val:
+        price = round(cost_val, 2)
+    return price

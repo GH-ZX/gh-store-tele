@@ -1,7 +1,10 @@
 """External Payment & Secondary Bot Webhook Endpoints."""
 import logging
 
+import os
+import hmac
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 import config
 from db import get_db_session, session_commit, session_execute
@@ -26,11 +29,17 @@ def get_mirror_bot(token: str):
 @router.post("/webhook/bot/{bot_token}")
 async def mirror_bot_webhook(bot_token: str, request: Request):
     """Route updates for secondary/mirror clone bots through the primary Aiogram dispatcher."""
+    import secrets
     from bot import dp
     from services.multibot import MultibotService
 
     if not await MultibotService.has_token(bot_token):
         raise HTTPException(status_code=403, detail="Unregistered bot token")
+    expected_mirror = (config.WEBHOOK_SECRET_TOKEN or "").strip()
+    if expected_mirror:
+        got = request.headers.get("X-Telegram-Bot-Api-Secret-Token") or ""
+        if not secrets.compare_digest(got, expected_mirror):
+            raise HTTPException(status_code=401, detail="Unauthorized")
 
     try:
         mirror_bot = get_mirror_bot(bot_token)
@@ -61,8 +70,7 @@ async def sam_webhook(request: Request):
     if not invoice_id:
         return {"status": "ok"}
 
-    # Idempotency Lock: Deduplicate concurrent gateway retries
-    lock = redis.lock(f"lock:webhook:sam:{invoice_id}", timeout=30)
+    lock = redis.lock(f"lock:sam:invoice:{invoice_id}", timeout=30)
     acquired = await lock.acquire(blocking=False)
     if not acquired:
         return {"status": "ok", "message": "already_processing"}
@@ -76,7 +84,6 @@ async def sam_webhook(request: Request):
                     return {"status": "ok"}
 
                 if event == "invoice.paid" and payment.event != "invoice.paid":
-                    # Cryptographic / Upstream Verification: prevent spoofed fake webhook calls
                     from services.sam import SamService
                     try:
                         upstream_info = await SamService.get_invoice(session, invoice_id)
@@ -89,6 +96,9 @@ async def sam_webhook(request: Request):
                         logging.warning("Could not verify SAM webhook upstream for %s: %s", invoice_id, verify_err)
                         return {"status": "upstream_check_failed"}
 
+                    claimed = await SamPaymentRepository.mark_event_if_not_paid(invoice_id, "invoice.paid", txn_ref, session)
+                    if not claimed:
+                        return {"status": "ok", "message": "already_paid"}
                     user = await UserRepository.get_by_tgid(payment.telegram_id, session)
                     if user is not None:
                         await ReferralService.apply_deposit_referral(payment.usd_amount, user, session)
@@ -101,15 +111,17 @@ async def sam_webhook(request: Request):
                             logging.error("Failed to notify SAM payer %s: %s", payment.telegram_id, e)
                     else:
                         logging.error("SAM payer user not found: %s", payment.telegram_id)
+                        await session_commit(session)
                     await NotificationService.send_to_admins(
                         f"💰 SAM invoice paid: {invoice_id} · tg:{payment.telegram_id} · "
                         f"{payment.usd_amount:.2f}$ · {txn_ref}", None)
                 elif event == "invoice.expired":
+                    if payment.event == "invoice.paid":
+                        return {"status": "ok", "message": "already_paid"}
                     await NotificationService.send_to_admins(
                         f"⏰ SAM invoice expired: {invoice_id} · tg:{payment.telegram_id}", None)
-
-                await SamPaymentRepository.mark_event(invoice_id, event, txn_ref, session)
-                await session_commit(session)
+                    await SamPaymentRepository.mark_event(invoice_id, event, txn_ref, session)
+                    await session_commit(session)
             except Exception as e:
                 logging.error("SAM webhook processing error: %s", e, exc_info=True)
     finally:
@@ -123,100 +135,118 @@ async def sam_webhook(request: Request):
 
 @router.post("/api/supplier/webhook/{supplier}")
 async def supplier_order_webhook(supplier: str, request: Request):
-    """Instant upstream webhook push receiver (BatStore / ProdSeller).
-
-    Receives push events when async activation orders complete or fail upstream,
-    fulfilling the order and delivering credentials instantly without polling lag.
-    """
+    """Instant upstream webhook push receiver (BatStore / ProdSeller)."""
     from bot import bot
-    try:
-        body = await request.json()
-    except Exception:
-        return {"status": "ignored"}
-
-    order_ref = str(body.get("order_id") or body.get("id") or body.get("external_id") or "").strip()
-    status_str = str(body.get("status") or "").lower()
-
-    if not order_ref:
-        return {"status": "missing_ref"}
+    req_headers = getattr(request, "headers", {}) or {}
+    req_query = getattr(request, "query_params", {}) or {}
+    secret_header = (
+        req_headers.get("X-Supplier-Webhook-Secret")
+        or req_headers.get("X-Webhook-Secret")
+        or req_query.get("secret")
+        or req_query.get("token")
+        or ""
+    ).strip()
 
     async with get_db_session() as session:
-        from models.batstore_order import BatStoreOrder
-        from repositories.batstore_order import BatStoreOrderRepository
-        from sqlalchemy import select
+        from services.config import ConfigService
+        expected_secret = (await ConfigService.get(
+            session, "SUPPLIER_WEBHOOK_SECRET",
+            env_fallback=os.environ.get("SUPPLIER_WEBHOOK_SECRET", "")
+        ) or "").strip()
+        if not expected_secret or not secret_header or not hmac.compare_digest(secret_header, expected_secret):
+            logging.warning("Unauthorized supplier webhook attempt for supplier=%s", supplier)
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
 
-        stmt = select(BatStoreOrder).where(
-            (BatStoreOrder.external_order_ref == order_ref) |
-            (BatStoreOrder.customer_reference == order_ref)
-        )
-        order = (await session_execute(stmt, session)).scalar_one_or_none()
-        if not order:
-            logging.info("Supplier webhook for unknown order_ref=%s", order_ref)
-            return {"status": "not_found"}
+        try:
+            body = await request.json()
+        except Exception:
+            return {"status": "ignored"}
 
-        if order.status == "completed":
-            return {"status": "already_completed"}
+        order_ref = str(body.get("order_id") or body.get("id") or body.get("external_id") or "").strip()
+        status_str = str(body.get("status") or "").lower()
+        if not order_ref:
+            return {"status": "missing_ref"}
 
-        if status_str in ("completed", "success", "delivered", "active"):
-            items_list = body.get("items") or body.get("order", {}).get("items") or []
-            goods = [it.get("value") or it.get("data") or str(it) for it in items_list] if items_list else []
-            if not goods and body.get("data"):
-                goods = [str(body.get("data"))]
-
-            details = order.details or []
-            for item in details:
-                if goods:
-                    item["delivery_goods"] = goods
-            order.status = "completed"
-            order.details = details
-            await BatStoreOrderRepository.update(order, session)
-            await session_commit(session)
-
-            goods_lines = "\n".join(f"• <code>{g}</code>" for g in goods) if goods else "تم تفعيل الخدمة بنجاح."
-            first_name = details[0].get("name") if details else "المنتج"
+        from bot import redis as _r
+        order_lock = _r.lock(f"lock:webhook:supplier:{supplier}:{order_ref}"[:200], timeout=30) if _r else None
+        if order_lock is not None:
             try:
-                msg = (
-                    f"🎉 <b>تم اكتمال وتفعيل طلبك #{order.id} بنجاح!</b>\n\n"
-                    f"• <b>المنتج:</b> {first_name}\n\n"
-                    f"📦 <b>بيانات التفعيل والتسليم:</b>\n{goods_lines}\n\n"
-                    f"<i>(انقر على البيانات أعلاه للنسخ المباشر)</i>\n\n"
-                    f"شكراً لصبرك وتسوقك مع GH Store! نتمنى لك تجربة ممتعة ✨"
-                )
-                await bot.send_message(chat_id=order.telegram_id, text=msg, parse_mode="HTML")
-            except Exception as e:
-                logging.warning("Could not send webhook fulfillment DM to %s: %s", order.telegram_id, e)
+                if not await order_lock.acquire(blocking=False):
+                    return {"status": "already_processing"}
+            except Exception:
+                order_lock = None
+        try:
+            from models.batstore_order import BatStoreOrder
+            from repositories.batstore_order import BatStoreOrderRepository
+            from sqlalchemy import select
+            stmt = select(BatStoreOrder).where(
+                (BatStoreOrder.external_order_ref == order_ref) |
+                (BatStoreOrder.customer_reference == order_ref)
+            )
+            order = (await session_execute(stmt, session)).scalar_one_or_none()
+            if not order:
+                logging.info("Supplier webhook for unknown order_ref=%s", order_ref)
+                return {"status": "not_found"}
+            if order.status in ("completed", "failed", "cancelled", "refunded"):
+                return {"status": f"already_{order.status}"}
 
-            try:
-                from services.pdf_receipt import PDFReceiptService
-                date_str = order.created_at.strftime("%Y-%m-%d %H:%M:%S UTC") if getattr(order, "created_at", None) else None
-                await PDFReceiptService.dispatch_pdf_receipt(
-                    order_id=order.id,
-                    telegram_id=order.telegram_id,
-                    order_data={"details": order.details, "total_sell": order.total_sell, "created_at": date_str, "goods": goods},
-                    bot=bot
-                )
-            except Exception as e:
-                logging.debug("Could not dispatch PDF receipt: %s", e)
-
-            return {"status": "completed", "order_id": order.id}
-
-        elif status_str in ("failed", "cancelled", "rejected"):
-            from services.sale_pricing import externally_paid
-            if not externally_paid(order):
-                user = await UserRepository.get_by_tgid(order.telegram_id, session)
-                if user:
-                    user.top_up_amount = (user.top_up_amount or 0.0) + (order.total_sell or 0.0)
-                    await UserRepository.update(user, session)
+            if status_str in ("completed", "success", "delivered", "active"):
+                items_list = body.get("items") or body.get("order", {}).get("items") or []
+                goods = [it.get("value") or it.get("data") or str(it) for it in items_list] if items_list else []
+                if not goods and body.get("data"):
+                    goods = [str(body.get("data"))]
+                details = order.details or []
+                for item in details:
+                    if goods:
+                        item["delivery_goods"] = goods
+                order.status = "completed"
+                order.details = details
+                await BatStoreOrderRepository.update(order, session)
+                await session_commit(session)
+                goods_lines = "\n".join(f"• <code>{g}</code>" for g in goods) if goods else "تم تفعيل الخدمة بنجاح."
+                first_name = details[0].get("name") if details else "المنتج"
+                try:
+                    msg = (
+                        f"🎉 <b>تم اكتمال وتفعيل طلبك #{order.id} بنجاح!</b>\n\n"
+                        f"• <b>المنتج:</b> {first_name}\n\n"
+                        f"📦 <b>بيانات التفعيل والتسليم:</b>\n{goods_lines}\n\n"
+                        f"<i>(انقر على البيانات أعلاه للنسخ المباشر)</i>\n\n"
+                        f"شكراً لصبرك وتسوقك مع GH Store! نتمنى لك تجربة ممتعة ✨"
+                    )
+                    await bot.send_message(chat_id=order.telegram_id, text=msg, parse_mode="HTML")
+                except Exception as e:
+                    logging.warning("Could not send webhook fulfillment DM to %s: %s", order.telegram_id, e)
+                try:
+                    from services.pdf_receipt import PDFReceiptService
+                    date_str = order.created_at.strftime("%Y-%m-%d %H:%M:%S UTC") if getattr(order, "created_at", None) else None
+                    await PDFReceiptService.dispatch_pdf_receipt(
+                        order_id=order.id,
+                        telegram_id=order.telegram_id,
+                        order_data={"details": order.details, "total_sell": order.total_sell, "created_at": date_str, "goods": goods},
+                        bot=bot
+                    )
+                except Exception as e:
+                    logging.debug("Could not dispatch PDF receipt: %s", e)
+                return {"status": "completed", "order_id": order.id}
+            elif status_str in ("failed", "cancelled", "rejected"):
+                from services.sale_pricing import externally_paid
+                await BatStoreOrderRepository.update_status(order.id, "failed", None, session)
+                if not externally_paid(order):
+                    refund_amt = float(order.total_sell or 0.0)
+                    await UserRepository.refund_balance(order.telegram_id, refund_amt, session)
                     try:
                         await bot.send_message(
                             chat_id=order.telegram_id,
-                            text=f"❌ تعذر تفعيل طلبك #{order.id} من قبل المورد. تمت إعادة مبلغ ${order.total_sell:.2f} إلى رصيدك المتاح."
+                            text=f"❌ تعذر تفعيل طلبك #{order.id} من قبل المورد. تمت إعادة مبلغ ${refund_amt:.2f} إلى رصيدك المتاح."
                         )
                     except Exception:
                         pass
-            order.status = "failed"
-            await BatStoreOrderRepository.update(order, session)
-            await session_commit(session)
-            return {"status": "failed", "order_id": order.id}
-
+                await session_commit(session)
+                return {"status": "failed", "order_id": order.id}
+        finally:
+            if order_lock is not None:
+                try:
+                    await order_lock.release()
+                except Exception:
+                    pass
     return {"status": "ignored"}

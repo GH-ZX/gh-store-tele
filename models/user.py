@@ -28,6 +28,7 @@ class User(Base):
     referred_at = Column(DateTime(timezone=True), nullable=True)
     currency_preference = Column(String(8), default="USD", nullable=False)
     custom_discount_pct = Column(Float, nullable=True, default=None)
+    is_reseller = Column(Boolean, default=False, nullable=False, index=True)
     received_referral_bonuses = relationship(
         "ReferralBonus",
         foreign_keys="ReferralBonus.referral_user_id",
@@ -87,6 +88,7 @@ class UserDTO(BaseModel):
     referred_at: datetime | None = None
     currency_preference: str = "USD"
     custom_discount_pct: float | None = None
+    is_reseller: bool = False
 
     @staticmethod
     def get_chart_text(language: Language) -> tuple[str, str]:

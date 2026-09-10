@@ -136,13 +136,5 @@ class CartRecoveryService:
 
 
 async def cart_recovery_cron():
-    """Background task checking abandoned carts every 3 hours."""
-    while True:
-        await asyncio.sleep(10800)  # every 3 hours
-        try:
-            async with get_db_session() as session:
-                count = await CartRecoveryService.run_recovery_check(session)
-            if count > 0:
-                logging.info("Sent cart abandonment nudges to %s users", count)
-        except Exception as e:
-            logging.warning("Cart recovery check failed: %s", e)
+    """Background task checking abandoned carts (disabled per user request)."""
+    return

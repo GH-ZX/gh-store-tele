@@ -8,7 +8,7 @@ import time
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse, Response
 from sqlalchemy import func, select
 
 import config
@@ -19,7 +19,13 @@ from repositories.batstore_product import BatStoreProductRepository
 from repositories.user import UserRepository
 from services.config import ConfigService
 from services.notification import NotificationService
-from services.telegram_auth import extract_and_verify_telegram_user
+from routes.common import is_admin_id, normalize_delivery_good
+from services.telegram_auth import (
+    extract_and_verify_telegram_user,
+    generate_session_token,
+    verify_session_token,
+    validate_telegram_init_data_multi,
+)
 from utils.telegram import clean_tg_emojis
 
 router = APIRouter(tags=["catalog"])
@@ -64,16 +70,21 @@ async def get_tma_catalog():
     async with get_db_session() as session:
         from repositories.storefront_category import StorefrontCategoryRepository
         from services.product_spec import ProductSpecParser
+        from services.storefront_images import get_store_images, resolve_category_image, resolve_product_image
 
+        store_images = await get_store_images(session)
         cats_db = await StorefrontCategoryRepository.get_all_visible(session)
         cats_list = []
+        cat_image_by_name: dict[str, str] = {}
         for c in cats_db:
+            resolved_cover = resolve_category_image(c.name, c.image_url, store_images)
+            cat_image_by_name[c.name] = resolved_cover
             cats_list.append({
                 "id": c.id,
                 "name": c.name,
                 "name_ar": c.name_ar,
                 "name_en": c.name_en,
-                "image_url": c.image_url,
+                "image_url": resolved_cover,
                 "icon": c.icon or "📦",
                 "preview_ar": c.preview_ar,
                 "preview_en": c.preview_en,
@@ -82,20 +93,35 @@ async def get_tma_catalog():
 
         if not cats_list:
             raw_cats = await BatStoreProductRepository.get_categories(session)
-            cats_list = [{"id": i, "name": c, "name_ar": c, "name_en": c, "icon": "📦", "image_url": ""} for i, c in enumerate(raw_cats, 1)]
+            for i, c in enumerate(raw_cats, 1):
+                fallback_cover = resolve_category_image(c, "", store_images)
+                cat_image_by_name[c] = fallback_cover
+                cats_list.append({"id": i, "name": c, "name_ar": c, "name_en": c, "icon": "📦", "image_url": fallback_cover})
 
+        from services.sale_pricing import compute_reseller_price
+        global_reseller_margin = float(await ConfigService.get(session, "GLOBAL_RESELLER_MARGIN_PERCENT", default="8.0") or 8.0)
         products = await BatStoreProductRepository.get_visible(session)
         sym = config.CURRENCY.get_localized_symbol()
         data = []
         for p in products:
             specs = ProductSpecParser.parse(p.name)
             clean_title = p.custom_name or specs["clean_name"] or p.name
+            cat_name = p.category or "Other"
             data.append({
                 "id": p.product_id,
                 "name": p.name,
                 "clean_name": clean_title,
-                "category": p.category or "Other",
+                "category": cat_name,
                 "price": p.sell_price_usd,
+                "reseller_price": compute_reseller_price(
+                    cost=p.cost_usd,
+                    retail_price=p.sell_price_usd,
+                    reseller_price_usd=getattr(p, "reseller_price_usd", None),
+                    reseller_margin_pct=getattr(p, "reseller_margin_pct", None),
+                    global_reseller_margin_pct=global_reseller_margin
+                ),
+                "reseller_price_usd": getattr(p, "reseller_price_usd", None),
+                "reseller_margin_pct": getattr(p, "reseller_margin_pct", None),
                 "cost_usd": round(float(p.cost_usd or 0.0), 2),
                 "sym": sym,
                 "description": clean_tg_emojis(p.description),
@@ -108,12 +134,14 @@ async def get_tma_catalog():
                 "type_en": specs["type_en"],
                 "emoji": p.emoji or "⚡",
                 "custom_emoji_id": p.custom_emoji_id,
+                "image_url": getattr(p, "image_url", None) or "",
+                "display_image": resolve_product_image(getattr(p, "image_url", None), cat_name, cat_image_by_name.get(cat_name, ""), store_images),
                 "stock": p.stock,
                 "delivery_type": p.delivery_type or "stock",
                 "supplier": getattr(p, "supplier", "batstore") or "batstore",
                 "server_badge": getattr(p, "server_badge", "سيرفر 1 (BatStore)") or "سيرفر 1 (BatStore)",
             })
-        store_logo_url = await ConfigService.get(session, "STORE_LOGO_URL", env_fallback=os.environ.get("STORE_LOGO_URL", ""))
+        store_logo_url = store_images.get("logo", "")
         flash_enabled = (await ConfigService.get(session, "FLASH_SALE_ENABLED", default="false")).lower() in ("true", "1", "yes")
         flash_pct = float(await ConfigService.get(session, "FLASH_SALE_PERCENT", default="15") or 15)
         flash_end = int(await ConfigService.get(session, "FLASH_SALE_END_TIMESTAMP", default="0") or 0)
@@ -135,7 +163,7 @@ async def get_tma_catalog():
             "subtitle_en": b.subtitle_en,
             "badge_ar": b.badge_ar,
             "badge_en": b.badge_en,
-            "image_url": b.image_url,
+            "image_url": (b.image_url or "").strip() or store_images.get("hero", ""),
             "target_category": b.target_category,
             "product_id": b.product_id,
         } for b in banners_db]
@@ -144,6 +172,7 @@ async def get_tma_catalog():
             "categories": cats_list,
             "products": data,
             "store_logo_url": store_logo_url or "",
+            "store_images": store_images,
             "flash_sale": flash_sale,
             "banners": banners_list,
         }
@@ -338,7 +367,7 @@ async def tma_submit_review(request: Request):
 
 
 @router.get("/api/user-data")
-async def get_tma_user_data(tg_id: int, request: Request):
+async def get_tma_user_data(request: Request, tg_id: int | None = None):
     from bot import bot
     try:
         tg_id = extract_and_verify_telegram_user(request, tg_id)
@@ -364,9 +393,9 @@ async def get_tma_user_data(tg_id: int, request: Request):
         tier_label, discount_pct = get_vip_tier_info(user.consume_records, getattr(user, "custom_discount_pct", None))
         balance = round((user.top_up_amount or 0.0) - (user.consume_records or 0.0), 2)
         curr_pref = getattr(user, "currency_preference", "USD") or "USD"
-        syp_cfg = await ConfigService.get(session, "SAM_SYP_USD_RATE", env_fallback=os.environ.get("SAM_SYP_USD_RATE"))
-        syp_val = float(syp_cfg or 0.002551)
-        syp_market = int(round(1.0 / syp_val)) if syp_val < 1.0 else int(round(syp_val))
+        from services.currency_rates import CurrencyRateService
+        syp_cfg = await ConfigService.get(session, "SAM_SYP_USD_RATE", env_fallback=config.SAM_SYP_USD_RATE)
+        syp_market = CurrencyRateService.parse_syp_rate(syp_cfg) or 0
 
         orders_db = await BatStoreOrderRepository.get_by_telegram_id(tg_id, session, limit=15)
         orders_data = []
@@ -379,7 +408,9 @@ async def get_tma_user_data(tg_id: int, request: Request):
                 product_names.append(d.get("name") or "Product")
                 warranty_days = max(warranty_days, d.get("warranty_days") or 0)
                 for g in d.get("delivery_goods", []):
-                    goods_list.append(str(g))
+                    clean_g = normalize_delivery_good(g)
+                    if clean_g:
+                        goods_list.append(clean_g)
 
             orders_data.append({
                 "id": o.id,
@@ -422,7 +453,7 @@ async def get_tma_user_data(tg_id: int, request: Request):
                     "amount_usd": sp.usd_amount,
                     "invoice_amount": getattr(sp, "amount", 0.0),
                     "currency": sp.currency,
-                    "status": "completed" if (sp.event == "invoice.paid" or is_admin_app) else "pending",
+                    "status": "completed" if (sp.event == "invoice.paid" or is_admin_app) else ("rejected" if sp.event == "invoice.expired" else "pending"),
                     "payment_url": sp.payment_url,
                     "created_at": sp.created_at.strftime("%b %d, %H:%M") if sp.created_at else "",
                     "timestamp": sp.created_at.timestamp() if sp.created_at else 0,
@@ -501,17 +532,12 @@ async def get_tma_user_data(tg_id: int, request: Request):
             try:
                 photos = await bot.get_user_profile_photos(user.telegram_id, limit=1)
                 if photos.total_count > 0:
-                    file_id = photos.photos[0][-1].file_id
-                    file_obj = await bot.get_file(file_id)
-                    photo_url = f"https://api.telegram.org/file/bot{config.TOKEN}/{file_obj.file_path}"
+                    photo_url = f"/api/user/avatar/{user.telegram_id}"
             except Exception as e:
                 logging.debug("Could not fetch profile photo: %s", e)
             _USER_PHOTO_CACHE[user.telegram_id] = (photo_url, now_ts + 3600.0)
 
-        is_admin = bool(
-            user.telegram_id in config.ADMIN_ID_LIST
-            or (user.telegram_username and user.telegram_username.lower() == "ahmedghx")
-        )
+        is_admin = bool(user.telegram_id in config.ADMIN_ID_LIST)
         admin_stats = None
         if is_admin:
             now_w = time.time()
@@ -538,9 +564,9 @@ async def get_tma_user_data(tg_id: int, request: Request):
                     stmt_bal = select(func.coalesce(func.sum(func.coalesce(User.top_up_amount, 0.0) - func.coalesce(User.consume_records, 0.0)), 0.0))
                     tot_bal = (await session_execute(stmt_bal, session)).scalar_one()
 
-                    syp_cfg = await ConfigService.get(session, "SAM_SYP_USD_RATE", env_fallback=os.environ.get("SAM_SYP_USD_RATE"))
-                    syp_val = float(syp_cfg or 0.002551)
-                    syp_market = int(round(1.0 / syp_val)) if syp_val < 1.0 else int(round(syp_val))
+                    from services.currency_rates import CurrencyRateService
+                    syp_cfg = await ConfigService.get(session, "SAM_SYP_USD_RATE", env_fallback=config.SAM_SYP_USD_RATE)
+                    syp_market = CurrencyRateService.parse_syp_rate(syp_cfg) or 0
                     ref_cfg = await ConfigService.get(session, "REFERRAL_MARGIN_COMMISSION_PERCENT", default="0.2")
                     ref_val = float(ref_cfg or 0.2)
                     margin_cfg = await ConfigService.get(session, "MARGIN_PERCENT", default="20")
@@ -550,15 +576,38 @@ async def get_tma_user_data(tg_id: int, request: Request):
                     if force_refresh or _SUPPLIER_WALLETS_CACHE["data"] is None or now_w >= _SUPPLIER_WALLETS_CACHE["expire_time"]:
                         from services.batstore import BatStoreService
                         from services.prodseller import ProdSellerService
-                        bat_bal = await BatStoreService.get_cached_reseller_balance(session)
-                        prod_bal = await ProdSellerService.get_cached_balance(session)
-                        total_supp = round(bat_bal + prod_bal, 2)
+                        from services.sam import SamService
+                        bat_bal = await BatStoreService.get_cached_reseller_balance(session, force_refresh=force_refresh)
+                        prod_bal = await ProdSellerService.get_cached_balance(session, force_refresh=force_refresh)
+
+                        sam_bals = await SamService.get_cached_wallet_balances(session, force_refresh=force_refresh)
+                        sam_usd = float(sam_bals.get("usd") or 0.0)
+                        sam_syp = float(sam_bals.get("syp") or 0.0)
+
+                        if sam_usd == 0.0 and sam_syp == 0.0:
+                            from models.sam_payment import SamPayment
+                            stmt_sam_paid = select(
+                                func.coalesce(func.sum(SamPayment.usd_amount), 0.0),
+                                func.coalesce(func.sum(SamPayment.amount), 0.0),
+                            ).where(SamPayment.event == "invoice.paid")
+                            sam_res = (await session_execute(stmt_sam_paid, session)).first() or (0.0, 0.0)
+                            sam_usd = round(float(sam_res[0]), 2)
+
+                            stmt_sam_syp = select(func.coalesce(func.sum(SamPayment.amount), 0.0)).where(
+                                SamPayment.event == "invoice.paid", SamPayment.currency == "SYP"
+                            )
+                            sam_syp_paid = (await session_execute(stmt_sam_syp, session)).scalar() or 0.0
+                            sam_syp = round(float(sam_syp_paid)) if sam_syp_paid > 0 else int(round(sam_usd * syp_market))
+
+                        total_supp = round(bat_bal + prod_bal + sam_usd, 2)
                         _SUPPLIER_WALLETS_CACHE["data"] = {
                             "batstore_usd": bat_bal,
                             "prodseller_usd": prod_bal,
+                            "sam_usd": sam_usd,
+                            "sam_syp": sam_syp,
                             "total_supplier_usd": total_supp,
                         }
-                        _SUPPLIER_WALLETS_CACHE["expire_time"] = now_w + 300.0
+                        _SUPPLIER_WALLETS_CACHE["expire_time"] = now_w + (15.0 if force_refresh else 120.0)
                     supp_wallets = _SUPPLIER_WALLETS_CACHE["data"]
 
                     autorefund_mode = await ConfigService.get(session, "AUTOREFUND_FAILED_ORDERS", default="true")
@@ -567,8 +616,9 @@ async def get_tma_user_data(tg_id: int, request: Request):
                     admin_stats = {
                         "total_revenue": round(float(tot_rev or 0.0), 2),
                         "total_cost": tot_cost,
-                        "total_profit": tot_profit,
-                        "total_orders": int(tot_ord or 0),
+                        "global_margin_percent": float(margin_cfg or 20.0),
+                        "global_reseller_margin_percent": float(await ConfigService.get(session, "GLOBAL_RESELLER_MARGIN_PERCENT", default="8.0") or 8.0),
+                        "stars_to_usd_rate": float(stars_cfg or 0.01),
                         "total_users": int(tot_usr or 0),
                         "total_user_balances": round(float(tot_bal or 0.0), 2),
                         "syp_usd_rate": syp_market,
@@ -584,31 +634,159 @@ async def get_tma_user_data(tg_id: int, request: Request):
                     _ADMIN_STATS_CACHE["expire_time"] = now_w + 60.0
                 except Exception as e:
                     logging.error("Failed to compile admin stats: %s", e)
+        from services.storefront_images import get_store_images as _gsi
+        _store_images = await _gsi(session)
         return {
             "telegram_id": user.telegram_id,
             "username": user.telegram_username or "",
+            "bot_username": bot_username or "gh_store1_bot",
+            "referral_code": user.referral_code or "",
             "language": getattr(user.language, "value", user.language) if getattr(user, "language", None) else "ar",
             "photo_url": photo_url,
             "balance": balance,
             "currency_preference": curr_pref,
+            "syp_rate": syp_market,
             "formatted_balance": format_currency_display(balance, curr_pref, syp_market),
             "vip_tier": tier_label,
             "vip_discount": discount_pct,
             "total_spent": round(user.consume_records or 0.0, 2),
-            "referral_code": user.referral_code or "",
-            "bot_username": bot_username or "GHStoreBot",
+            "is_admin": is_admin,
+            "is_reseller": bool(getattr(user, "is_reseller", False)),
+            "admin_stats": admin_stats,
             "referrals_count": referrals_count,
             "referrals_total_earned": round(float(referrals_total_earned or 0.0), 2),
             "referrals_breakdown": referrals_breakdown,
             "referral_commission_rate": 0.2,
-            "is_admin": is_admin,
-            "admin_stats": admin_stats,
             "orders": orders_data,
             "recharges": recharges_data,
             "store_announcement": await ConfigService.get(session, "STORE_ANNOUNCEMENT", env_fallback=""),
             "store_trending_tags": await ConfigService.get(session, "STORE_TRENDING_TAGS", env_fallback=""),
+            "support_link": await ConfigService.get(session, "SUPPORT_LINK", default="https://t.me/ahmedghx") or "https://t.me/ahmedghx",
+            "support_username": await ConfigService.get(session, "SUPPORT_USERNAME", default="ahmedghx") or "ahmedghx",
+            "store_images": _store_images,
         }
 
+@router.get("/api/order/detail")
+async def get_tma_order_detail(order_id: int, request: Request, tg_id: int | None = None):
+    """Retrieve full authoritative order details for customer or admin."""
+    try:
+        verified_tg_id = extract_and_verify_telegram_user(request, tg_id)
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
+
+    is_admin = is_admin_id(verified_tg_id)
+
+    async with get_db_session() as session:
+        order = await BatStoreOrderRepository.get_by_id(order_id, session)
+        if not order:
+            return JSONResponse({"error": "order_not_found"}, status_code=404)
+
+        if not is_admin and order.telegram_id != verified_tg_id:
+            return JSONResponse({"error": "unauthorized"}, status_code=403)
+
+        user = await UserRepository.get_by_tgid(order.telegram_id, session)
+        username = getattr(user, "username", None) or ""
+
+        product_names = []
+        cost_total = 0.0
+        warranty_days = 0
+        goods_list = []
+        for d in (order.details or []):
+            product_names.append(d.get("name") or "Product")
+            cost_total += float(d.get("cost_usd") or 0.0) * int(d.get("quantity") or 1)
+            warranty_days = max(warranty_days, d.get("warranty_days") or 0)
+            for g in d.get("delivery_goods", []):
+                clean_g = normalize_delivery_good(g)
+                if clean_g:
+                    goods_list.append(clean_g)
+
+        sym = config.CURRENCY.get_localized_symbol()
+        total_sell = float(order.total_sell or 0.0)
+
+        return {
+            "status": "ok",
+            "order": {
+                "id": order.id,
+                "telegram_id": order.telegram_id,
+                "username": username,
+                "status": order.status,
+                "total": total_sell,
+                "cost_usd": round(cost_total, 2),
+                "profit_usd": round(total_sell - cost_total, 2),
+                "sym": sym,
+                "products": ", ".join(product_names) if product_names else "Order",
+                "goods": goods_list,
+                "warranty_days": warranty_days,
+                "warranty_claimed": getattr(order, "warranty_claimed", False),
+                "created_at": order.created_at.strftime("%b %d, %Y · %H:%M") if order.created_at else "",
+                "timestamp": order.created_at.timestamp() if order.created_at else 0,
+                "customer_reference": order.customer_reference or "",
+                "external_order_ref": order.external_order_ref or "",
+                "details": order.details or [],
+                "is_admin_viewer": is_admin,
+            }
+        }
+
+
+@router.post("/api/auth/session")
+async def create_auth_session(request: Request):
+    """Issue or exchange a cryptographic session token from Telegram WebApp initData or signed launch token."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    init_data = (
+        request.headers.get("X-Telegram-Init-Data")
+        or body.get("init_data")
+        or request.query_params.get("init_data")
+        or ""
+    ).strip()
+
+    auth_token = (
+        request.headers.get("X-Session-Token")
+        or body.get("auth_token")
+        or body.get("token")
+        or request.query_params.get("auth_token")
+        or ""
+    ).strip()
+
+    # 1. Cryptographic Telegram WebApp initData validation (primary inside Telegram)
+    if init_data:
+        try:
+            validated = validate_telegram_init_data_multi(init_data, max_age_seconds=0)
+            tg_user = validated.get("user", {})
+            tg_id = int(tg_user.get("id") or 0)
+            if not tg_id:
+                return JSONResponse({"error": "invalid_user_in_init_data"}, status_code=401)
+
+            token = generate_session_token(tg_id, expiry_seconds=86400 * 365)
+            return {
+                "status": "ok",
+                "token": token,
+                "tg_id": tg_id,
+                "user": tg_user,
+            }
+        except ValueError as e:
+            logging.debug("InitData validation failed: %s", e)
+            return JSONResponse({"error": f"invalid_init_data: {e}"}, status_code=401)
+
+    # 2. Signed launch token validation (from bot launch button)
+    if auth_token:
+        verified_tg_id = verify_session_token(auth_token)
+        if verified_tg_id:
+            fresh_token = generate_session_token(verified_tg_id, expiry_seconds=86400 * 365)
+            return {
+                "status": "ok",
+                "token": fresh_token,
+                "tg_id": verified_tg_id,
+            }
+        return JSONResponse({"error": "invalid_or_expired_auth_token"}, status_code=401)
+
+    return JSONResponse(
+        {"error": "unauthorized", "message": "Valid Telegram WebApp initData or launch token required"},
+        status_code=401,
+    )
 
 @router.post("/api/user/settings")
 async def update_tma_user_settings(request: Request):
@@ -752,3 +930,31 @@ async def prepare_share_message(request: Request):
         except Exception as e:
             logging.error("Failed to save prepared inline message: %s", e)
             return JSONResponse({"error": "failed_to_prepare", "detail": str(e)}, status_code=500)
+
+@router.get("/api/user/avatar/{telegram_id}")
+async def get_user_avatar(telegram_id: int):
+    """Proxy Telegram user profile avatar without exposing bot token to client."""
+    from bot import bot
+    now_ts = time.time()
+    cache_key = f"bytes_{telegram_id}"
+    cached = _USER_PHOTO_CACHE.get(cache_key)
+    if cached and cached[1] > now_ts:
+        return Response(content=cached[0], media_type="image/jpeg", headers={"Cache-Control": "public, max-age=3600"})
+
+    try:
+        photos = await bot.get_user_profile_photos(telegram_id, limit=1)
+        if photos.total_count > 0:
+            file_id = photos.photos[0][-1].file_id
+            file_obj = await bot.get_file(file_id)
+            if file_obj.file_path:
+                file_url = f"https://api.telegram.org/file/bot{config.TOKEN}/{file_obj.file_path}"
+                import httpx
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    resp = await client.get(file_url)
+                    if resp.status_code == 200:
+                        _USER_PHOTO_CACHE[cache_key] = (resp.content, now_ts + 3600.0)
+                        return Response(content=resp.content, media_type=resp.headers.get("content-type", "image/jpeg"), headers={"Cache-Control": "public, max-age=3600"})
+    except Exception as e:
+        logging.debug("Could not fetch user avatar: %s", e)
+
+    raise HTTPException(status_code=404, detail="Avatar not found")

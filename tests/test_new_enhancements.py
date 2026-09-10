@@ -80,7 +80,10 @@ def test_extract_and_verify_user_id(monkeypatch):
     assert exc.value.status_code == 403
 
 
-def test_extract_fallback_without_header():
+def test_extract_fallback_without_header(monkeypatch):
+    import config
+    from enums.runtime_environment import RuntimeEnvironment
+    monkeypatch.setattr(config, "RUNTIME_ENVIRONMENT", RuntimeEnvironment.DEV)
     req = _FakeRequest()
     assert extract_and_verify_telegram_user(req, 12345) == 12345
     with pytest.raises(HTTPException) as exc:
@@ -197,17 +200,109 @@ def test_extract_prod_strict_auth(monkeypatch):
     from enums.runtime_environment import RuntimeEnvironment
     monkeypatch.setattr(config, "RUNTIME_ENVIRONMENT", RuntimeEnvironment.PROD)
     monkeypatch.setattr(config, "TOKEN", "test_prod_token")
-
     req = _FakeRequest()
-    # Fallback to claimed_tg_id when provided
     assert extract_and_verify_telegram_user(req, 12345) == 12345
 
     # Without claimed_tg_id and without header, throws 401
     with pytest.raises(HTTPException) as exc:
         extract_and_verify_telegram_user(req, None)
     assert exc.value.status_code == 401
-
     # Valid initData succeeds
     valid_data = _make_init_data({"id": 12345}, "test_prod_token")
     req_good = _FakeRequest(headers={"X-Telegram-Init-Data": valid_data})
     assert extract_and_verify_telegram_user(req_good, 12345) == 12345
+
+
+@pytest.mark.asyncio
+async def test_referral_withdrawal_repository_methods():
+    from repositories.referral_withdrawal import ReferralWithdrawalRepository
+    assert hasattr(ReferralWithdrawalRepository, "get_total_withdrawn_by_tgid")
+
+
+@pytest.mark.asyncio
+async def test_user_repository_credit_balance_exists():
+    from repositories.user import UserRepository
+    assert hasattr(UserRepository, "credit_balance")
+
+
+def test_item_repository_get_by_buy_id_query_validity():
+    import db
+    from models.deposit import Deposit
+    from sqlalchemy.orm import configure_mappers
+    configure_mappers()
+    from repositories.item import ItemRepository
+    from models.buyItem import BuyItem
+    from models.item import Item
+    from sqlalchemy import select, any_
+    # Ensure statement can be compiled without AttributeError
+    stmt = (
+        select(Item)
+        .join(BuyItem, Item.id == any_(BuyItem.item_ids))
+        .where(BuyItem.buy_id == 1)
+    )
+    compiled = str(stmt.compile())
+    assert "buyItem" in compiled
+
+
+def test_batstore_service_imports_notification_service():
+    import services.batstore
+    assert hasattr(services.batstore, "NotificationService")
+
+
+def test_dynamic_syp_rate_conversion():
+    from services.currency_rates import CurrencyRateService
+    from services.user import format_currency_display
+
+    # Admin types 133 (meaning 1 USD = 133 SYP)
+    rate = CurrencyRateService.parse_syp_rate("133")
+    assert rate == 133.0
+
+    # 133 SYP paid should convert to exactly 1.00 USD
+    usd_val = CurrencyRateService.syp_to_usd(133, rate)
+    assert usd_val == 1.00
+
+    # 266 SYP paid should convert to exactly 2.00 USD
+    usd_val_2 = CurrencyRateService.syp_to_usd(266, rate)
+    assert usd_val_2 == 2.00
+
+    # 2.00 USD product price in SYP should convert to 266 SYP
+    syp_val = CurrencyRateService.usd_to_syp(2.0, rate)
+    assert syp_val == 266
+
+    # Test format_currency_display with dynamic 133 rate
+    assert "266" in format_currency_display(2.0, "SYP", syp_rate=rate)
+
+    # Ensure SYP rate in service is dynamic and never 0 or 0.0
+    CurrencyRateService.set_rate("SYP", None)
+    assert CurrencyRateService._rates["SYP"] is None
+    CurrencyRateService.set_rate("SYP", rate)
+    assert CurrencyRateService.get_rate("SYP") == 133.0
+
+    import pytest as _pt
+    with _pt.raises(ValueError, match="syp_rate_unavailable"):
+        CurrencyRateService.syp_to_usd(100, None)
+    with _pt.raises(ValueError, match="syp_rate_unavailable"):
+        CurrencyRateService.usd_to_syp(10.0, 0)
+
+
+def test_storefront_image_resolution_is_db_driven():
+    from services.storefront_images import (
+        resolve_category_image,
+        resolve_product_image,
+        DEFAULT_CATEGORY_IMAGES,
+        LOCAL_PRODUCT_PLACEHOLDER,
+    )
+    # DB value always wins
+    assert resolve_category_image("AI & Chatbots", "https://admin-set.example/cover.png", {}) == "https://admin-set.example/cover.png"
+    assert resolve_product_image("https://admin-set.example/p.png", "Other", "", {}) == "https://admin-set.example/p.png"
+    # Empty DB value -> local per-category art, never a remote hardcoded URL
+    cover = resolve_category_image("AI & Chatbots", "", {})
+    assert cover == DEFAULT_CATEGORY_IMAGES["AI & Chatbots"]
+    assert cover.startswith("/static/")
+    # Unknown category + empty -> placeholder, Admin override respected
+    assert resolve_category_image("Nope", "", {}) == "/static/img/cat-other.svg"
+    assert resolve_category_image("Nope", "", {"category_placeholder": "https://admin.example/c.png"}) == "https://admin.example/c.png"
+    # Product falls back through category then placeholder
+    assert resolve_product_image("", "AI & Chatbots", "", {}) == DEFAULT_CATEGORY_IMAGES["AI & Chatbots"]
+    assert resolve_product_image("", "Nope", "", {}) == LOCAL_PRODUCT_PLACEHOLDER
+    assert resolve_product_image("", "Nope", "", {"product_placeholder": "https://admin.example/p.png"}) == "https://admin.example/p.png"

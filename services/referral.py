@@ -92,11 +92,10 @@ class ReferralService:
 
             if referrer_bonus > 0:
                 referrer_user_dto = await UserRepository.get_user_entity(user_dto.referred_by_user_id, session)
-                referrer_user_dto.top_up_amount += referrer_bonus
-                await UserRepository.update(referrer_user_dto, session)
+                if referrer_user_dto:
+                    await UserRepository.credit_balance(referrer_user_dto.telegram_id, float(referrer_bonus or 0.0), session)
 
-        user_dto.top_up_amount += payment_dto.fiatAmount + referral_bonus
-        await UserRepository.update(user_dto, session)
+        await UserRepository.credit_balance(user_dto.telegram_id, float(payment_dto.fiatAmount or 0.0) + float(referral_bonus or 0.0), session)
         referral_bonus_dto = ReferralBonusDTO(
             referral_user_id=user_dto.id,
             referral_user_dto=user_dto,
@@ -134,11 +133,9 @@ class ReferralService:
             if referrer_bonus > 0:
                 referrer_user_dto = await UserRepository.get_user_entity(user_dto.referred_by_user_id, session)
                 if referrer_user_dto:
-                    referrer_user_dto.top_up_amount = (referrer_user_dto.top_up_amount or 0.0) + referrer_bonus
-                    await UserRepository.update(referrer_user_dto, session)
+                    await UserRepository.credit_balance(referrer_user_dto.telegram_id, referrer_bonus, session)
 
-        user_dto.top_up_amount = (user_dto.top_up_amount or 0.0) + fiat_amount + referral_bonus
-        await UserRepository.update(user_dto, session)
+        await UserRepository.credit_balance(user_dto.telegram_id, float(fiat_amount or 0.0) + float(referral_bonus or 0.0), session)
 
         if referrer_user_dto and (referral_bonus > 0 or referrer_bonus > 0):
             referral_bonus_dto = ReferralBonusDTO(

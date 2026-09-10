@@ -47,6 +47,18 @@ async def admin(**kwargs):
     language: Language = kwargs.get("language")
     await state.clear()
     kb_builder = InlineKeyboardBuilder()
+    import config
+    tma_host = (config.WEBHOOK_HOST or "").strip().rstrip('/')
+    admin_tg_id = message.from_user.id if message.from_user else 0
+    if tma_host:
+        from services.telegram_auth import generate_session_token
+        from aiogram.types import WebAppInfo
+        auth_tok = generate_session_token(admin_tg_id)
+        tma_url = f"{tma_host}/app?tg_id={admin_tg_id}&auth_token={auth_tok}&startapp=admin_radar"
+        kb_builder.button(text="📡 رادار العمليات المباشر (Mini App)" if language == Language.AR else "📡 Live Radar (Mini App)",
+                          web_app=WebAppInfo(url=tma_url))
+        kb_builder.button(text="⚙️ لوحة SQLAdmin الكاملة" if language == Language.AR else "⚙️ Full SQLAdmin Web Panel",
+                          url=f"{tma_host}/admin")
     kb_builder.button(text=get_text(language, BotEntity.ADMIN, "announcements"),
                       callback_data=AnnouncementCallback.create(level=0))
     kb_builder.button(text=get_text(language, BotEntity.ADMIN, "inventory_management"),
@@ -71,7 +83,10 @@ async def admin(**kwargs):
                                                                     user_role=UserRole.ADMIN))
     kb_builder.button(text=get_text(language, BotEntity.ADMIN, "reseller_management"),
                       callback_data=ResellerManagementCallback.create(level=0))
-    kb_builder.adjust(2)
+    if tma_host:
+        kb_builder.adjust(1, 1, 2)
+    else:
+        kb_builder.adjust(2)
     msg_text = get_text(language, BotEntity.ADMIN, "menu")
     if isinstance(message, Message):
         await message.answer(msg_text,

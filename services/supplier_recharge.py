@@ -110,9 +110,9 @@ class SupplierRechargeService:
 
             try:
                 if supplier == "prodseller":
-                    placed = await ProdSellerService.place_order(session, pid, qty)
-                    items_list = placed.get("order", {}).get("items") or placed.get("items") or []
-                    goods = [it.get("value") or it.get("data") or str(it) for it in items_list] if items_list else []
+                    mongo_id = getattr(prod, "reseller_key_override", None) or str(pid)
+                    placed = await ProdSellerService.place_order(session, mongo_id, qty)
+                    goods = ProdSellerService.extract_delivery_goods(placed)
                 else:
                     placed = await BatStoreService.place_order(
                         session, pid, qty,

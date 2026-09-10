@@ -1,7 +1,11 @@
 from aiogram import Router, F
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+import config
+from db import session_commit
+from repositories.user import UserRepository
 from sqlalchemy.ext.asyncio import AsyncSession
 from callbacks import MyProfileCallback
 from enums.bot_entity import BotEntity
@@ -34,8 +38,23 @@ async def my_profile(**kwargs):
     language: Language = kwargs.get("language")
     await state.clear()
     media, kb_builder = await UserService.get_my_profile_buttons(message.from_user.id, session, language)
+    import config
+    tma_host = (config.WEBHOOK_HOST or "").strip().rstrip('/')
+    uid = message.from_user.id if message.from_user else 0
+    if tma_host and uid:
+        from services.telegram_auth import generate_session_token
+        from aiogram.types import WebAppInfo, InlineKeyboardButton
+        auth_tok = generate_session_token(uid)
+        tma_url = f"{tma_host}/app?tg_id={uid}&auth_token={auth_tok}"
+        kb_builder.row(InlineKeyboardButton(
+            text="🛍️ فتح المتجر وحسابي (Mini App)" if language == Language.AR else "🛍️ Open Store & Profile (Mini App)",
+            web_app=WebAppInfo(url=tma_url)
+        ))
     if isinstance(message, Message):
-        await NotificationService.answer_media(message, media, kb_builder.as_markup())
+        if isinstance(media, str):
+            await message.answer(text=media, reply_markup=kb_builder.as_markup(), parse_mode="HTML")
+        else:
+            await NotificationService.answer_media(message, media, kb_builder.as_markup())
     elif isinstance(message, CallbackQuery):
         callback = message
         await safe_edit_message(callback, media, kb_builder.as_markup())

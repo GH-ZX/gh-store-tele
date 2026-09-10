@@ -29,6 +29,18 @@ async def show_cart(**kwargs):
     language: Language = kwargs.get("language")
     await state.clear()
     media, kb_builder = await CartService.create_buttons(message.from_user.id, callback_data, session, language)
+    import config
+    tma_host = (config.WEBHOOK_HOST or "").strip().rstrip('/')
+    uid = message.from_user.id if message.from_user else 0
+    if tma_host and uid:
+        from services.telegram_auth import generate_session_token
+        from aiogram.types import WebAppInfo, InlineKeyboardButton
+        auth_tok = generate_session_token(uid)
+        tma_url = f"{tma_host}/app?tg_id={uid}&auth_token={auth_tok}&startapp=cart"
+        kb_builder.row(InlineKeyboardButton(
+            text="🛍️ فتح السلة وإتمام الطلب في المتجر السريع" if language == Language.AR else "🛍️ Open Cart in Store WebApp",
+            web_app=WebAppInfo(url=tma_url)
+        ))
     if isinstance(message, Message):
         await NotificationService.answer_media(message, media, kb_builder.as_markup())
     elif isinstance(message, CallbackQuery):
@@ -73,7 +85,7 @@ async def set_coupon(**kwargs):
     language: Language = kwargs.get("language")
     msg, kb_builder = await CartService.set_coupon(callback_data, state, language)
     await safe_edit_message(callback, msg, kb_builder.as_markup())
-    await state.update_data(msg_id=message.message_id, chat_id=message.chat.id)
+    await state.update_data(msg_id=callback.message.message_id, chat_id=callback.message.chat.id)
 
 
 async def set_shipping_address(**kwargs):
@@ -82,7 +94,7 @@ async def set_shipping_address(**kwargs):
     language: Language = kwargs.get("language")
     msg, kb_builder = await CartService.set_shipping_address(state, language)
     await safe_edit_message(callback, msg, kb_builder.as_markup())
-    await state.update_data(msg_id=message.message_id, chat_id=message.chat.id)
+    await state.update_data(msg_id=callback.message.message_id, chat_id=callback.message.chat.id)
 
 
 async def pick_shipping_option(**kwargs):

@@ -2,7 +2,7 @@ import asyncio
 import logging
 
 import config
-from db import get_db_session, session_commit
+from db import get_db_session, session_commit, session_execute
 from repositories.batstore_order import BatStoreOrderRepository
 from services.batstore import BatStoreService
 from services.notification import NotificationService
@@ -26,55 +26,73 @@ async def poll_pending_orders():
             async with get_db_session() as session:
                 await drain_retry_order_queue(session)
                 pending = await BatStoreOrderRepository.get_pending(session)
-                for order in pending:
-                    if not order.external_order_ref:
-                        continue
-                    try:
-                        order_id = int(order.external_order_ref)
-                        _order_attempts[order.id] += 1
-                        if _order_attempts[order.id] > _MAX_ATTEMPTS:
-                            logging.warning("Order %s exceeded max polling attempts (%s)", order.id, _MAX_ATTEMPTS)
-                            await BatStoreOrderRepository.update_status(
-                                order.id, "requires_manual_review", None, session)
-                            await session_commit(session)
-                            await NotificationService.send_to_admins(
-                                f"⚠️ BatStore order #{order.id} (tg:{order.telegram_id}) exceeded max polling attempts ({_MAX_ATTEMPTS}). "
-                                f"Status set to requires_manual_review. Upstream ID: {order.external_order_ref}",
-                                None
+
+            for order in pending:
+                if not order.external_order_ref:
+                    continue
+                ref_str = str(order.external_order_ref).strip()
+                is_numeric = ref_str.isdigit()
+                order_id = int(ref_str) if is_numeric else ref_str
+
+                _order_attempts[order.id] += 1
+                if _order_attempts[order.id] > _MAX_ATTEMPTS:
+                    logging.warning("Order %s exceeded max polling attempts (%s)", order.id, _MAX_ATTEMPTS)
+                    async with get_db_session() as session:
+                        await BatStoreOrderRepository.update_status(
+                            order.id, "requires_manual_review", None, session)
+                        await session_commit(session)
+                    await NotificationService.send_to_admins(
+                        f"⚠️ Order #{order.id} (tg:{order.telegram_id}) exceeded max polling attempts ({_MAX_ATTEMPTS}). "
+                        f"Status set to requires_manual_review. Upstream ID: {order.external_order_ref}",
+                        None
+                    )
+                    _order_attempts.pop(order.id, None)
+                    continue
+
+                try:
+                    if is_numeric:
+                        async with get_db_session() as session:
+                            order_data = await asyncio.wait_for(
+                                BatStoreService.get_order(session, int(order_id)),
+                                timeout=15.0
                             )
-                            _order_attempts.pop(order.id, None)
-                            continue
-
-                        order_data = await asyncio.wait_for(
-                            BatStoreService.get_order(session, order_id),
-                            timeout=15.0
-                        )
-                    except asyncio.TimeoutError:
-                        logging.warning("Timeout checking order %s after 15s", order.id)
-                        continue
-                    except Exception as e:
-                        logging.warning("Failed to check order %s: %s", order.id, e)
-                        continue
-                    reseller_status = BatStoreService.get_order_reseller_status(order_data)
-
-                    if reseller_status == "completed":
+                        reseller_status = BatStoreService.get_order_reseller_status(order_data)
                         goods = BatStoreService.extract_delivery_goods(order_data)
+                    else:
+                        from services.prodseller import ProdSellerService
+                        async with get_db_session() as session:
+                            order_data = await asyncio.wait_for(
+                                ProdSellerService.get_order(session, str(order_id)),
+                                timeout=15.0
+                            )
+                        reseller_status = ProdSellerService.get_order_reseller_status(order_data)
+                        goods = ProdSellerService.extract_delivery_goods(order_data)
+                except asyncio.TimeoutError:
+                    logging.warning("Timeout checking order %s after 15s", order.id)
+                    continue
+                except Exception as e:
+                    logging.warning("Failed to check order %s: %s", order.id, e)
+                    continue
+
+                if reseller_status == "completed":
+                    async with get_db_session() as session:
                         await BatStoreOrderRepository.update_status(
                             order.id, "completed", goods, session)
                         await session_commit(session)
-                        _order_attempts.pop(order.id, None)
-                        await _notify_order_complete(order, goods)
+                    _order_attempts.pop(order.id, None)
+                    await _notify_order_complete(order, goods)
 
-                    elif reseller_status == "failed":
+                elif reseller_status == "failed":
+                    async with get_db_session() as session:
                         await BatStoreOrderRepository.update_status(
                             order.id, "failed", None, session)
                         await session_commit(session)
-                        _order_attempts.pop(order.id, None)
+                    _order_attempts.pop(order.id, None)
+                    async with get_db_session() as session:
                         await _refund_and_notify(order, session)
 
         except Exception as e:
             logging.error("poll_pending_orders error: %s", e)
-
         await asyncio.sleep(_POLL_INTERVAL)
 
 
@@ -113,8 +131,7 @@ async def _refund_and_notify(order, session):
     if externally_paid(order):
         logging.info("Order %s was paid externally; marking failed without wallet credit", order.id)
     else:
-        user.consume_records = max(0, (user.consume_records or 0) - refund_amount)
-        await UserRepository.update(user, session)
+        await UserRepository.refund_balance(order.telegram_id, refund_amount, session)
         await session_commit(session)
 
     text = (
@@ -148,33 +165,50 @@ _low_balance_alerted = False
 
 
 async def check_reseller_balance(session) -> float | None:
-    """Check reseller balance, alert once if below threshold ($5.00), return balance."""
+    """Check reseller balances across all suppliers (BatStore and ProdSeller), alert once if below threshold."""
     global _low_balance_alerted
-    me_data = await BatStoreService.me(session)
-    raw_bal = me_data.get("wallet_balance")
-    if raw_bal is None:
-        raw_bal = me_data.get("wallet", {}).get("balance", 0.0)
+    bal_bat = None
     try:
-        bal = float(raw_bal)
-        if bal < 5.0:
+        me_data = await BatStoreService.me(session)
+        raw_bal = me_data.get("wallet_balance")
+        if raw_bal is None:
+            raw_bal = me_data.get("wallet", {}).get("balance", 0.0)
+        bal_bat = float(raw_bal)
+        if bal_bat < 5.0:
             if not _low_balance_alerted:
                 await NotificationService.send_error_to_admins(
-                    "low_reseller_balance",
-                    f"⚠️ <b>Low Reseller Wallet Balance!</b>\n\n"
-                    f"• Current Balance: <b>${bal:.2f}</b>\n"
+                    "low_reseller_balance_batstore",
+                    f"⚠️ <b>Low Reseller Balance — سيرفر 1 (BatStore)</b>\n\n"
+                    f"• Current Balance: <b>${bal_bat:.2f}</b>\n"
                     f"• Alert Threshold: $5.00\n\n"
-                    "<i>Please top up your BatStore/VenteBot reseller wallet to prevent customer orders from failing.</i>",
+                    "<i>Please top up your BatStore reseller wallet.</i>",
                     None,
                     window_seconds=86400,
                 )
                 _low_balance_alerted = True
         else:
-            # Reset trigger once the account is topped up above $5.00
             _low_balance_alerted = False
-        return bal
-    except (ValueError, TypeError):
-        return None
+    except Exception as e:
+        logging.debug("Could not check BatStore balance: %s", e)
 
+    try:
+        from services.prodseller import ProdSellerService
+        ps_data = await ProdSellerService.get_balance(session)
+        bal_ps = float(ps_data.get("balance") or 0.0)
+        if bal_ps < 5.0:
+            await NotificationService.send_error_to_admins(
+                "low_reseller_balance_prodseller",
+                f"⚠️ <b>Low Reseller Balance — سيرفر 2 (ProdSeller)</b>\n\n"
+                f"• Current Balance: <b>${bal_ps:.2f} USDT</b>\n"
+                f"• Alert Threshold: $5.00\n\n"
+                "<i>Please top up your ProdSeller reseller wallet.</i>",
+                None,
+                window_seconds=86400,
+            )
+    except Exception as e:
+        logging.debug("Could not check ProdSeller balance: %s", e)
+
+    return bal_bat
 
 async def drain_retry_order_queue(session):
     """Process any queued retry orders from Redis during upstream recovery."""
@@ -211,6 +245,11 @@ async def drain_retry_order_queue(session):
                     await _notify_order_complete(order, goods_list)
         except Exception as e:
             logging.warning("Failed retry for queued order: %s", e)
+            if raw:
+                try:
+                    await r.rpush("ghstore:retry_order_queue", raw)
+                except Exception:
+                    pass
             break
 
 
@@ -240,6 +279,7 @@ async def check_warranty_expiries(session):
                 continue
             created_utc = o.created_at.replace(tzinfo=datetime.timezone.utc) if o.created_at.tzinfo is None else o.created_at
             expiry = created_utc + datetime.timedelta(days=warranty_days)
+            remaining_secs = (expiry - now).total_seconds()
             if 86400 <= remaining_secs <= 259200:
                 nudge_key = f"ghstore:warranty_nudge:{o.id}"
                 if r is not None and await r.get(nudge_key):

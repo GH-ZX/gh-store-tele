@@ -96,7 +96,12 @@ class BuyItemRepository:
         return calculate_max_page(maximum_page)
 
     @staticmethod
-    async def get_by_id(buyItem_id: int, session: AsyncSession) -> BuyItemDTO:
+    async def get_by_id(buyItem_id: int | None, session: AsyncSession) -> BuyItemDTO | None:
+        if not buyItem_id:
+            return None
         stmt = select(BuyItem).where(BuyItem.id == buyItem_id)
-        buyItem = await session_execute(stmt, session)
-        return BuyItemDTO.model_validate(buyItem.scalar_one(), from_attributes=True)
+        result = await session_execute(stmt, session)
+        row = result.scalar_one_or_none()
+        if not row:
+            return None
+        return BuyItemDTO.model_validate(row, from_attributes=True)

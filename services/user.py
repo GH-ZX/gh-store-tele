@@ -41,11 +41,12 @@ def format_currency_display(amount_usd: float, currency_code: str = "USD", syp_r
         eur_amt = amount_usd * 0.92
         return f"€{eur_amt:.2f}"
     elif code == "SYP":
-        rate = float(syp_rate) if syp_rate else (1.0 / float(config.SAM_SYP_USD_RATE or 0.002551))
-        if 0 < rate < 1.0:
-            rate = 1.0 / rate
-        syp_amt = round(amount_usd * rate)
-        return f"{int(syp_amt):,} ل.س"
+        from services.currency_rates import CurrencyRateService
+        rate = float(syp_rate) if syp_rate else (CurrencyRateService.parse_syp_rate(config.SAM_SYP_USD_RATE) or 0.0)
+        if rate > 0:
+            syp_amt = CurrencyRateService.usd_to_syp(amount_usd, rate)
+            return f"{syp_amt:,} ل.س"
+        return f"${amount_usd:.2f}"
     elif code == "XTR":
         stars_rate = float(config.GHSTORE_STARS_TO_USD or 0.01)
         stars = int(amount_usd / stars_rate) if stars_rate > 0 else int(amount_usd * 100)

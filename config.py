@@ -23,7 +23,7 @@ WEBAPP_PORT = int(os.environ.get("WEBAPP_PORT", "5000"))
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 TOKEN = os.environ.get("TOKEN")
 ADMIN_ID_LIST = [int(admin_id.strip()) for admin_id in (os.environ.get("ADMIN_ID_LIST") or "").split(',') if admin_id.strip().isdigit()]
-SUPPORT_LINK = os.environ.get("SUPPORT_LINK")
+SUPPORT_LINK = os.environ.get("SUPPORT_LINK") or "https://t.me/ahmedghx"
 ANNOUNCEMENT_CHANNEL_ID = os.environ.get("ANNOUNCEMENT_CHANNEL_ID")
 # POSTGRESQL
 DB_USER = os.environ.get("POSTGRES_USER", "postgres")
@@ -70,7 +70,7 @@ BATSTORE_API_URL = os.environ.get("BATSTORE_API_URL")
 BATSTORE_API_KEY = os.environ.get("BATSTORE_API_KEY")
 BATSTORE_SYNC_ENABLED = os.environ.get("BATSTORE_SYNC_ENABLED", "true") == 'true'
 BATSTORE_WEBHOOK_URL = os.environ.get("BATSTORE_WEBHOOK_URL")
-PRODSELLER_API_KEY = os.environ.get("PRODSELLER_API_KEY", "psk_c663c10d4af1e615f62e0c5dc5a36915aee83c71c43590a1")
+PRODSELLER_API_KEY = os.environ.get("PRODSELLER_API_KEY")
 PRODSELLER_SYNC_ENABLED = os.environ.get("PRODSELLER_SYNC_ENABLED", "true").lower() == "true"
 SUPPLIER_ROUTING_STRATEGY = os.environ.get("SUPPLIER_ROUTING_STRATEGY", "auto_cheapest")
 SAM_API_BASE = os.environ.get("SAM_API_BASE")
@@ -89,7 +89,7 @@ def get_sam_webhook_url() -> str | None:
         return f"{host}/samwebhook"
     return f"https://{host}/samwebhook"
 SAM_CURRENCY = os.environ.get("SAM_CURRENCY", "USD")
-SAM_SYP_USD_RATE = os.environ.get("SAM_SYP_USD_RATE", "0.002551")
+SAM_SYP_USD_RATE = os.environ.get("SAM_SYP_USD_RATE", "")
 MARGIN_PERCENT = os.environ.get("MARGIN_PERCENT", "0")
 MARGIN_FIXED = os.environ.get("MARGIN_FIXED", "0")
 DEFAULT_MARGIN_TYPE = os.environ.get("DEFAULT_MARGIN_TYPE", "percent")

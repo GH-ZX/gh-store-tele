@@ -41,3 +41,20 @@ class SamPaymentRepository:
                 .values(event=event, transaction_ref=transaction_ref))
         await session.execute(stmt)
         await session.flush()
+
+    @staticmethod
+    async def mark_event_if_not_paid(invoice_id: str,
+                                     event: str,
+                                     transaction_ref: str | None,
+                                     session: AsyncSession | Session) -> bool:
+        """Atomically transition to paid only if not already paid. Returns True if claimed."""
+        stmt = (update(SamPayment)
+                .where(SamPayment.invoice_id == invoice_id, SamPayment.event != "invoice.paid")
+                .values(event=event, transaction_ref=transaction_ref)
+                .returning(SamPayment.id))
+        res = await session.execute(stmt)
+        await session.flush()
+        try:
+            return res.scalar_one_or_none() is not None
+        except Exception:
+            return True

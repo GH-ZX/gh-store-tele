@@ -48,6 +48,12 @@ class CartItemRepository:
                 cart_items.scalars().all()]
 
     @staticmethod
+    async def clear_cart_by_user_id(user_id: int, session: AsyncSession | Session) -> None:
+        """Empty all cart items for a given user in PostgreSQL database."""
+        stmt = delete(CartItem).where(CartItem.cart_id.in_(select(Cart.id).where(Cart.user_id == user_id)))
+        await session_execute(stmt, session)
+
+    @staticmethod
     async def remove_from_cart(cart_item_id: int, session: AsyncSession | Session):
         stmt = delete(CartItem).where(CartItem.id == cart_item_id)
         await session_execute(stmt, session)

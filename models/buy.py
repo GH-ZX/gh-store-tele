@@ -10,6 +10,10 @@ from enums.bot_entity import BotEntity
 from enums.buy_status import BuyStatus
 from enums.language import Language
 from models.base import Base
+from models.coupon import Coupon
+from models.shipping_option import ShippingOption
+from models.user import User
+from models.buyItem import BuyItem
 from utils.utils import get_text
 
 

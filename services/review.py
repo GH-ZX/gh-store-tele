@@ -264,20 +264,38 @@ class ReviewService:
         reviews = await ReviewRepository.get_reviews_paginated(callback_data.page, session)
         kb_builder = InlineKeyboardBuilder()
         for review in reviews:
-            buyItem_dto = await BuyItemRepository.get_by_id(review.buyItem_id, session)
-            item_dto = await ItemRepository.get_by_id(buyItem_dto.item_ids[0], session)
-            subcategory_dto = await SubcategoryRepository.get_by_id(item_dto.subcategory_id, session)
+            prod_title = "طلب رقمي" if language == Language.AR else "Digital Order"
+            price_val = 0.0
+            if getattr(review, "batstore_order_id", None):
+                from repositories.batstore_order import BatStoreOrderRepository
+                b_order = await BatStoreOrderRepository.get_by_id(review.batstore_order_id, session)
+                if b_order:
+                    price_val = float(b_order.total_sell or 0.0)
+                    if b_order.details:
+                        names = [d.get("name") for d in b_order.details if d.get("name")]
+                        if names:
+                            prod_title = names[0]
+            elif getattr(review, "buyItem_id", None):
+                buyItem_dto = await BuyItemRepository.get_by_id(review.buyItem_id, session)
+                if buyItem_dto and buyItem_dto.item_ids:
+                    item_dto = await ItemRepository.get_by_id(buyItem_dto.item_ids[0], session)
+                    if item_dto:
+                        price_val = len(buyItem_dto.item_ids) * item_dto.price
+                        subcategory_dto = await SubcategoryRepository.get_by_id(item_dto.subcategory_id, session)
+                        if subcategory_dto:
+                            prod_title = subcategory_dto.name
+
+            stars_str = (review.rating or 5) * "⭐️"
+            btn_text = f"{stars_str} {prod_title}"
+            if price_val > 0:
+                btn_text += f" (${price_val:.2f})"
             kb_builder.button(
-                text=get_text(language, BotEntity.USER, "review_button").format(
-                    subcategory_name=subcategory_dto.name,
-                    price=len(buyItem_dto.item_ids) * item_dto.price,
-                    currency_sym=config.CURRENCY.get_localized_symbol()
-                ),
+                text=btn_text[:50],
                 callback_data=callback_data.model_copy(update={
                     "level": callback_data.level + 1,
                     "review_id": review.id,
-                    "buy_id": buyItem_dto.buy_id,
-                    "buyItem_id": review.buyItem_id,
+                    "buy_id": getattr(review, "batstore_order_id", None) or 0,
+                    "buyItem_id": review.buyItem_id or 0,
                     "page": callback_data.page
                 })
             )
@@ -300,21 +318,47 @@ class ReviewService:
                                  session: AsyncSession,
                                  language: Language) -> tuple[InputMediaPhoto, InlineKeyboardBuilder]:
         review = await ReviewRepository.get_by_id(callback_data.review_id, session)
-        buyItem_dto = await BuyItemRepository.get_by_id(review.buyItem_id, session)
-        item_dto = await ItemRepository.get_by_id(buyItem_dto.item_ids[0], session)
-        category_dto = await CategoryRepository.get_by_id(item_dto.category_id, session)
-        subcategory_dto = await SubcategoryRepository.get_by_id(item_dto.subcategory_id, session)
+        prod_title = "منتج رقمي (Digital Product)" if language == Language.AR else "Digital Product"
+        price_str = ""
+        buyer_tgid = None
+
+        if getattr(review, "batstore_order_id", None):
+            from repositories.batstore_order import BatStoreOrderRepository
+            b_order = await BatStoreOrderRepository.get_by_id(review.batstore_order_id, session)
+            if b_order:
+                price_str = f"${float(b_order.total_sell or 0.0):.2f}"
+                buyer_tgid = b_order.telegram_id
+                if b_order.details:
+                    names = [d.get("name") for d in b_order.details if d.get("name")]
+                    if names:
+                        prod_title = names[0]
+        elif getattr(review, "buyItem_id", None):
+            buyItem_dto = await BuyItemRepository.get_by_id(review.buyItem_id, session)
+            if buyItem_dto and buyItem_dto.item_ids:
+                item_dto = await ItemRepository.get_by_id(buyItem_dto.item_ids[0], session)
+                if item_dto:
+                    price_str = f"{len(buyItem_dto.item_ids) * item_dto.price}{config.CURRENCY.get_localized_symbol()}"
+                    subcategory_dto = await SubcategoryRepository.get_by_id(item_dto.subcategory_id, session)
+                    if subcategory_dto:
+                        prod_title = subcategory_dto.name
+                if buyItem_dto.buy_id:
+                    buy_dto = await BuyRepository.get_by_id(buyItem_dto.buy_id, session)
+                    if buy_dto:
+                        buyer_tgid = buy_dto.buyer_id
+
         kb_builder = InlineKeyboardBuilder()
         review_text = review.text or get_text(language, BotEntity.USER, "review_text_is_not_provided")
-        msg_text = (get_text(language, BotEntity.COMMON, "review_single")
-                    .format(item_type=item_dto.item_type.get_localized(language),
-                            category_name=category_dto.name,
-                            subcategory_name=subcategory_dto.name,
-                            currency_sym=config.CURRENCY.get_localized_symbol(),
-                            price=len(buyItem_dto.item_ids) * item_dto.price,
-                            rating_stars=review.rating * "⭐️",
-                            review_text=review_text
-                            ))
+        stars_str = (review.rating or 5) * "⭐️"
+        created_str = review.create_datetime.strftime("%Y-%m-%d") if review.create_datetime else ""
+        is_ar = (language == Language.AR)
+        msg_text = (
+            f"⭐ <b>{ 'تقييم العميل' if is_ar else 'Customer Review' }</b>\n\n"
+            f"🛍️ <b>{ 'المنتج:' if is_ar else 'Product:' }</b> {prod_title}\n"
+            f"🎖️ <b>{ 'التقييم:' if is_ar else 'Rating:' }</b> {stars_str} ({review.rating}/5)\n"
+            + (f"💰 <b>{ 'السعر:' if is_ar else 'Price:' }</b> {price_str}\n" if price_str else "")
+            + (f"📅 <b>{ 'التاريخ:' if is_ar else 'Date:' }</b> {created_str}\n" if created_str else "")
+            + f"\n💬 <b>{ 'التعليق:' if is_ar else 'Feedback:' }</b>\n<i>\"{review_text}\"</i>"
+        )
         if callback_data.user_role == UserRole.ADMIN:
             kb_builder.button(
                 text=get_text(language, BotEntity.ADMIN, "remove_review_text"),
@@ -326,9 +370,10 @@ class ReviewService:
                 callback_data=callback_data.model_copy(update={"level": callback_data.level + 2,
                                                                "confirmation": False})
             )
-            buy_dto = await BuyRepository.get_by_id(buyItem_dto.buy_id, session)
-            user_dto = await UserRepository.get_user_entity(buy_dto.buyer_id, session)
-            await NotificationService.add_user_button(kb_builder, user_dto, get_text(language, BotEntity.COMMON, "user"))
+            if buyer_tgid:
+                user_dto = await UserRepository.get_user_entity(buyer_tgid, session)
+                if user_dto:
+                    await NotificationService.add_user_button(kb_builder, user_dto, get_text(language, BotEntity.COMMON, "user"))
         kb_builder.adjust(1)
         back_button = InlineKeyboardButton(
             text=get_text(language, BotEntity.COMMON, "back_button"),

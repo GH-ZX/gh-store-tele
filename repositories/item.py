@@ -1,4 +1,4 @@
-from sqlalchemy import select, func, update, delete, and_, or_
+from sqlalchemy import select, func, update, delete, and_, or_, any_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -81,7 +81,7 @@ class ItemRepository:
     async def get_by_buy_id(buy_id: int, session: AsyncSession) -> list[ItemDTO]:
         stmt = (
             select(Item)
-            .join(BuyItem, BuyItem.item_id == Item.id)
+            .join(BuyItem, Item.id == any_(BuyItem.item_ids))
             .where(BuyItem.buy_id == buy_id)
         )
         result = await session_execute(stmt, session)

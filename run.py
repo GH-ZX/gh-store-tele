@@ -32,6 +32,7 @@ from handlers.user.sam import sam_router
 from handlers.user.search import search_router
 from handlers.user.my_profile import my_profile_router
 from repositories.button_media import ButtonMediaRepository
+from repositories.user import UserRepository
 from services.media import MediaService
 from services.notification import NotificationService
 from services.review import ReviewService
@@ -45,58 +46,101 @@ main_router = Router()
 @main_router.message(CommandStart())
 @main_router.message(Command("help"))
 async def start(message: Message, command: CommandObject, session: AsyncSession, language: Language):
-    all_categories_button = types.KeyboardButton(text=get_text(language, BotEntity.USER, "all_categories"))
-    my_profile_button = types.KeyboardButton(text=get_text(language, BotEntity.USER, "my_profile"))
-    faq_button = types.KeyboardButton(text=get_text(language, BotEntity.USER, "faq"))
-    help_button = types.KeyboardButton(text=get_text(language, BotEntity.USER, "help"))
-    admin_menu_button = types.KeyboardButton(text=get_text(language, BotEntity.ADMIN, "menu"))
-    reviews_button = types.KeyboardButton(text=get_text(language, BotEntity.USER, "reviews"))
-    cart_button = types.KeyboardButton(text=get_text(language, BotEntity.USER, "cart"))
     telegram_id = message.from_user.id
     await UserService.create_if_not_exist(UserDTO(
         telegram_username=message.from_user.username,
         telegram_id=telegram_id,
         language=language
-    ), command.args, session)
+    ), command.args if command else None, session)
+
+    user = await UserRepository.get_by_tgid(telegram_id, session)
+    balance = round((user.top_up_amount or 0.0) - (user.consume_records or 0.0), 2) if user else 0.0
+    from services.user import get_vip_tier_info
+    tier_label, discount_pct = get_vip_tier_info(user.consume_records if user else 0, getattr(user, "custom_discount_pct", None) if user else None)
+    is_admin = telegram_id in config.ADMIN_ID_LIST
 
     tma_host = (config.WEBHOOK_HOST or "").strip().rstrip('/')
-    keyboard = []
-    if tma_host and tma_host.startswith("https://"):
-        tma_url = f"{tma_host}/app?tg_id={telegram_id}"
-        keyboard.append([types.KeyboardButton(text="🛍️ Open Store WebApp", web_app=types.WebAppInfo(url=tma_url))])
+    from services.telegram_auth import generate_session_token
+    auth_token = generate_session_token(telegram_id)
+    tma_url = f"{tma_host}/app?tg_id={telegram_id}&auth_token={auth_token}" if tma_host else ""
+
+    is_ar = (language == Language.AR)
+
+    # 1. Update Telegram Client Menu Button to MiniApp
+    if tma_url:
         try:
-            menu_btn_text = "🛍️ المتجر" if language == Language.AR else "🛍️ Shop"
+            menu_btn_text = "🛍️ المتجر" if is_ar else "🛍️ Shop"
             await message.bot.set_chat_menu_button(
                 chat_id=telegram_id,
                 menu_button=types.MenuButtonWebApp(text=menu_btn_text, web_app=types.WebAppInfo(url=tma_url))
             )
         except Exception:
             pass
-    keyboard.extend([
-        [all_categories_button, my_profile_button],
-        [faq_button, help_button],
-        [reviews_button, cart_button]
-    ])
-    if telegram_id in config.ADMIN_ID_LIST:
-        keyboard.append([admin_menu_button])
-    start_markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2, keyboard=keyboard)
-    bot_photo_id = get_bot_photo_id()
 
-    # Inline launcher button directly under the photo
+    # 2. Build Welcome Text
+    user_name = message.from_user.first_name or message.from_user.username or ("العميل" if is_ar else "Customer")
+    if is_ar:
+        welcome_caption = (
+            f"👋 أهلاً بك <b>{user_name}</b> في متجر <b>GH Store</b> المعتمد!\n\n"
+            f"💎 <b>رتبتك:</b> {tier_label}\n"
+            f"💰 <b>الرصيد المتاح:</b> <code>${balance:.2f} USD</code>\n\n"
+            f"🛍️ يمكنك تصفح المنتجات الرقمية، شحن الرصيد، ومتابعة طلباتك فورياً عبر المتجر السريع أدناه:"
+        )
+        btn_shop = "🛍️ فتح المتجر والتسوق"
+        btn_wallet = "💳 شحن الرصيد"
+        btn_orders = "📦 طلباتي وعملياتي"
+        btn_support = "💬 الدعم الفني"
+        btn_reviews = "⭐ تقييمات العملاء"
+        btn_admin = "👑 لوحة المشرف"
+    else:
+        welcome_caption = (
+            f"👋 Welcome <b>{user_name}</b> to <b>GH Store</b>!\n\n"
+            f"💎 <b>Your Rank:</b> {tier_label}\n"
+            f"💰 <b>Available Balance:</b> <code>${balance:.2f} USD</code>\n\n"
+            f"🛍️ Explore our full digital catalog, manage your balance, and track orders directly in the WebApp below:"
+        )
+        btn_shop = "🛍️ Open Store WebApp"
+        btn_wallet = "💳 Top Up Balance"
+        btn_orders = "📦 My Orders"
+        btn_support = "💬 Customer Support"
+        btn_reviews = "⭐ Reviews"
+        btn_admin = "👑 Admin Panel"
+
+    # 3. Inline Launcher Markup (under photo)
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     inline_kb = InlineKeyboardBuilder()
-    if tma_host and tma_host.startswith("https://"):
-        tma_url = f"{tma_host}/app?tg_id={telegram_id}"
-        inline_kb.button(text="🛍️ Launch Store WebApp", web_app=types.WebAppInfo(url=tma_url))
-    inline_kb.button(text="🔍 Search Products", callback_data="trigger_search")
-    inline_kb.adjust(1)
+    if tma_url:
+        inline_kb.button(text=btn_shop, web_app=types.WebAppInfo(url=tma_url))
+        inline_kb.button(text=btn_wallet, web_app=types.WebAppInfo(url=f"{tma_url}&startapp=wallet"))
+        inline_kb.button(text=btn_orders, web_app=types.WebAppInfo(url=f"{tma_url}&startapp=orders"))
+        if is_admin:
+            inline_kb.button(text=btn_admin, web_app=types.WebAppInfo(url=f"{tma_url}&startapp=admin_radar"))
+        inline_kb.adjust(1, 2)
 
-    await message.answer_photo(photo=bot_photo_id,
-                               caption=get_text(language, BotEntity.COMMON, "start_message"),
-                               reply_markup=inline_kb.as_markup())
-    # Also update persistent reply keyboard
-    await message.answer("👇 Use the menu below or tap <b>Store</b> to explore products:", reply_markup=start_markup)
+    # 4. Persistent Bottom Reply Keyboard
+    keyboard = []
+    if tma_url:
+        keyboard.append([types.KeyboardButton(text=btn_shop, web_app=types.WebAppInfo(url=tma_url))])
+        keyboard.append([
+            types.KeyboardButton(text=btn_wallet, web_app=types.WebAppInfo(url=f"{tma_url}&startapp=wallet")),
+            types.KeyboardButton(text=btn_orders, web_app=types.WebAppInfo(url=f"{tma_url}&startapp=orders"))
+        ])
+    keyboard.append([
+        types.KeyboardButton(text=btn_reviews),
+        types.KeyboardButton(text=btn_support)
+    ])
+    if is_admin and tma_url:
+        keyboard.append([types.KeyboardButton(text=btn_admin, web_app=types.WebAppInfo(url=f"{tma_url}&startapp=admin_radar"))])
 
+    start_markup = types.ReplyKeyboardMarkup(resize_keyboard=True, keyboard=keyboard)
+    bot_photo_id = get_bot_photo_id()
+
+    try:
+        await message.answer_photo(photo=bot_photo_id, caption=welcome_caption, reply_markup=inline_kb.as_markup(), parse_mode="HTML")
+    except Exception:
+        await message.answer(welcome_caption, reply_markup=inline_kb.as_markup(), parse_mode="HTML")
+
+    await message.answer("👇 " + ("استخدم القائمة أدناه أو اضغط على المتجر للبدء:" if is_ar else "Use the menu below or tap Store to start:"), reply_markup=start_markup)
 
 @main_router.callback_query(F.data == "trigger_search", IsUserExistFilter())
 async def trigger_search_cb(callback: types.CallbackQuery, state: FSMContext):
@@ -181,21 +225,61 @@ async def handle_web_app_data(message: Message, session: AsyncSession, language:
 
 @main_router.message(F.text.in_(KeyboardButton.get_localized_set(KeyboardButton.FAQ)), IsUserExistFilter())
 async def faq(message: Message, session: AsyncSession, language: Language):
+    from services.config import ConfigService
+    cfg_key = "FAQ_TEXT_AR" if language == Language.AR else "FAQ_TEXT_EN"
+    fallback_text = get_text(language, BotEntity.USER, "faq_string")
+    faq_text = await ConfigService.get(session, cfg_key, default=fallback_text) or fallback_text
+
+    support_link = await ConfigService.get(session, "SUPPORT_LINK", default="https://t.me/ahmedghx") or "https://t.me/ahmedghx"
+    support_user = await ConfigService.get(session, "SUPPORT_USERNAME", default="ahmedghx") or "ahmedghx"
+
+    kb_builder = InlineKeyboardBuilder()
+    tma_host = (config.WEBHOOK_HOST or "").strip().rstrip('/')
+    if tma_host:
+        from services.telegram_auth import generate_session_token
+        from aiogram.types import WebAppInfo
+        auth_tok = generate_session_token(message.from_user.id)
+        kb_builder.button(text="🛍️ تصفح وشراء المنتجات (Mini App)" if language == Language.AR else "🛍️ Open Store WebApp",
+                          web_app=WebAppInfo(url=f"{tma_host}/app?tg_id={message.from_user.id}&auth_token={auth_tok}"))
+    kb_builder.button(text=f"💬 خدمة العملاء (@{support_user})" if language == Language.AR else f"💬 Support Contact (@{support_user})",
+                      url=support_link)
+    kb_builder.adjust(1)
     button_media = await ButtonMediaRepository.get_by_button(KeyboardButton.FAQ, session)
-    media = MediaService.convert_to_media(button_media.media_id,
-                                          caption=get_text(language, BotEntity.USER, "faq_string"))
-    await NotificationService.answer_media(message, media)
+    media = MediaService.convert_to_media(button_media.media_id, caption=faq_text) if button_media and button_media.media_id else None
+    if media:
+        await NotificationService.answer_media(message, media, kb_builder.as_markup())
+    else:
+        await message.answer(faq_text, parse_mode="HTML", reply_markup=kb_builder.as_markup())
 
 
 @main_router.message(F.text.in_(KeyboardButton.get_localized_set(KeyboardButton.HELP)), IsUserExistFilter())
 async def support(message: Message, session: AsyncSession, language: Language):
-    kb_builder = InlineKeyboardBuilder()
-    kb_builder.button(text=get_text(language, BotEntity.USER, "help_button"), url=SUPPORT_LINK)
-    button_media = await ButtonMediaRepository.get_by_button(KeyboardButton.HELP, session)
-    media = MediaService.convert_to_media(button_media.media_id,
-                                          caption=get_text(language, BotEntity.USER, "help_string"))
-    await NotificationService.answer_media(message, media, kb_builder.as_markup())
+    from services.config import ConfigService
+    cfg_key = "HELP_TEXT_AR" if language == Language.AR else "HELP_TEXT_EN"
+    fallback_text = get_text(language, BotEntity.USER, "help_string")
+    help_text = await ConfigService.get(session, cfg_key, default=fallback_text) or fallback_text
 
+    support_link = await ConfigService.get(session, "SUPPORT_LINK", default="https://t.me/ahmedghx") or "https://t.me/ahmedghx"
+    support_user = await ConfigService.get(session, "SUPPORT_USERNAME", default="ahmedghx") or "ahmedghx"
+
+    kb_builder = InlineKeyboardBuilder()
+    kb_builder.button(text=f"💬 مراسلة الدعم الفني (@{support_user})" if language == Language.AR else f"💬 Contact Support (@{support_user})",
+                      url=support_link)
+    tma_host = (config.WEBHOOK_HOST or "").strip().rstrip('/')
+    if tma_host:
+        from services.telegram_auth import generate_session_token
+        from aiogram.types import WebAppInfo
+        auth_tok = generate_session_token(message.from_user.id)
+        kb_builder.button(text="🛍️ فتح المتجر السريع" if language == Language.AR else "🛍️ Open Store",
+                          web_app=WebAppInfo(url=f"{tma_host}/app?tg_id={message.from_user.id}&auth_token={auth_tok}"))
+    kb_builder.adjust(1)
+
+    button_media = await ButtonMediaRepository.get_by_button(KeyboardButton.HELP, session)
+    media = MediaService.convert_to_media(button_media.media_id, caption=help_text) if button_media and button_media.media_id else None
+    if media:
+        await NotificationService.answer_media(message, media, kb_builder.as_markup())
+    else:
+        await message.answer(help_text, parse_mode="HTML", reply_markup=kb_builder.as_markup())
 
 @main_router.message(F.text.in_(KeyboardButton.get_localized_set(KeyboardButton.REVIEWS)), IsUserExistFilter())
 async def reviews(message: Message, session: AsyncSession, language: Language):

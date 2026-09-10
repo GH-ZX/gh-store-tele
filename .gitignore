@@ -12,3 +12,5 @@ static/no_image.jpeg
 .venv/
 .pytest_cache/
 .uv/
+backups/
+.omp/

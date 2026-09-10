@@ -40,18 +40,23 @@ class MultiSupplierService:
         bat_created, bat_updated = await BatStoreService.sync_catalog(session)
         prod_created, prod_updated = await ProdSellerService.sync_catalog(session)
 
-        # Tag server badges on all active products
-        all_products = await BatStoreProductRepository.get_all(session)
-        for p in all_products:
-            if getattr(p, "supplier", "batstore") == "prodseller":
-                p.server_badge = "سيرفر 2 (ProdSeller)"
-            else:
-                p.supplier = "batstore"
-                p.server_badge = "سيرفر 1 (BatStore)"
-            await BatStoreProductRepository.update(p, session)
-
+        from models.batstore_product import BatStoreProduct
+        from sqlalchemy import update as _sa_update
+        from db import session_execute
+        await session_execute(
+            _sa_update(BatStoreProduct).where(BatStoreProduct.supplier == "prodseller").values(server_badge="سيرفر 2 (ProdSeller)"),
+            session
+        )
+        await session_execute(
+            _sa_update(BatStoreProduct).where((BatStoreProduct.supplier == None) | (BatStoreProduct.supplier != "prodseller")).values(supplier="batstore", server_badge="سيرفر 1 (BatStore)"),
+            session
+        )
+        await BatStoreProductRepository.invalidate_cache()
         from db import session_commit
         await session_commit(session)
+
+        from sqlalchemy import func, select as _sa_select
+        total_count = (await session_execute(_sa_select(func.count(BatStoreProduct.id)), session)).scalar() or 0
 
         try:
             from services.margin_watcher import MarginWatcherService
@@ -62,7 +67,7 @@ class MultiSupplierService:
         return {
             "batstore": {"created": bat_created, "updated": bat_updated},
             "prodseller": {"created": prod_created, "updated": prod_updated},
-            "total_products": len(all_products),
+            "total_products": total_count,
         }
 
     @staticmethod
@@ -105,8 +110,9 @@ class MultiSupplierService:
             except ProdSellerOutOfStockError as e:
                 logging.warning("ProdSeller out of stock for %s, checking BatStore failover: %s", product.name, e)
                 # Attempt failover to BatStore if matching product exists
+                alt_name = getattr(product, "custom_name", None) or product.name
                 alternate = await BatStoreProductRepository.find_alternate_in_stock(
-                    product.clean_name or product.name, "batstore", session
+                    alt_name, "batstore", session
                 )
                 if alternate:
                     logging.info("Auto-failover: Routing to BatStore product #%s", alternate.product_id)
@@ -145,8 +151,9 @@ class MultiSupplierService:
         except BatStoreOutOfStockError as e:
             logging.warning("BatStore out of stock for #%s, checking ProdSeller failover: %s", product.product_id, e)
             # Attempt failover to ProdSeller if matching product exists
+            alt_name = getattr(product, "custom_name", None) or product.name
             alternate = await BatStoreProductRepository.find_alternate_in_stock(
-                product.clean_name or product.name, "prodseller", session
+                alt_name, "prodseller", session
             )
             if alternate and alternate.reseller_key_override:
                 logging.info("Auto-failover: Routing to ProdSeller product %s", alternate.reseller_key_override)

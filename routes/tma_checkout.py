@@ -1,4 +1,5 @@
 """TMA Orders, Checkout, Cart, Quotes, and Support Ticket API Routes."""
+import asyncio
 import json
 import logging
 import time
@@ -22,6 +23,44 @@ from services.user import get_vip_tier_info
 
 router = APIRouter(tags=["checkout"])
 
+
+async def _send_order_delivery_receipt_telegram(telegram_id: int, order_id: int, product_name: str, total_paid: float, goods_list: list):
+    """Send real-time Telegram receipt and keys directly to user chat on MiniApp purchase."""
+    from bot import bot
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+    from routes.common import normalize_delivery_good
+    from services.telegram_auth import generate_session_token
+
+    try:
+        tma_host = (config.WEBHOOK_HOST or "").strip().rstrip('/')
+        auth_tok = generate_session_token(telegram_id)
+        ord_url = f"{tma_host}/app?tg_id={telegram_id}&auth_token={auth_tok}&startapp=ord_{order_id}"
+
+        keys_text = ""
+        if goods_list:
+            clean_keys = [normalize_delivery_good(g) for g in goods_list[:4]]
+            clean_keys = [k for k in clean_keys if k]
+            if clean_keys:
+                keys_text = "\n".join(f"<code>{k}</code>" for k in clean_keys)
+
+        msg = (
+            f"🎉 <b>تم تأكيد واستلام طلبك بنجاح! | Order Confirmed</b>\n\n"
+            f"📦 <b>رقم الطلب:</b> #{order_id}\n"
+            f"🛍️ <b>المنتج:</b> {product_name}\n"
+            f"💰 <b>المبلغ:</b> ${total_paid:.2f} USD\n"
+        )
+        if keys_text:
+            msg += f"\n🔑 <b>بيانات التفعيل / الاستلام:</b>\n{keys_text}\n"
+
+        msg += "\n💡 <i>يمكنك متابعة تفاصيل وضمان هذا الطلب دائماً عبر زر المتجر أدناه.</i>"
+
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔍 تفاصيل الطلب والإيصال", web_app=WebAppInfo(url=ord_url))]
+        ])
+
+        await bot.send_message(chat_id=telegram_id, text=msg, parse_mode="HTML", reply_markup=kb)
+    except Exception as e:
+        logging.debug("Could not push Telegram order delivery receipt to %s: %s", telegram_id, e)
 
 @router.post("/api/buy")
 async def tma_instant_buy(request: Request):
@@ -72,8 +111,22 @@ async def tma_instant_buy(request: Request):
                 if coupon and coupon.is_active:
                     if not (coupon.usage_limit and coupon.usage_count >= coupon.usage_limit):
                         coupon_type, coupon_value = coupon.type, float(coupon.value or 0.0)
+            is_reseller = bool(user and getattr(user, "is_reseller", False))
+            from services.sale_pricing import compute_reseller_price
+            if is_reseller:
+                from services.config import ConfigService
+                g_reseller_m = float(await ConfigService.get(session, "GLOBAL_RESELLER_MARGIN_PERCENT", default="8.0") or 8.0)
+                unit_price = compute_reseller_price(
+                    cost=product.cost_usd,
+                    retail_price=product.sell_price_usd,
+                    reseller_price_usd=getattr(product, "reseller_price_usd", None),
+                    reseller_margin_pct=getattr(product, "reseller_margin_pct", None),
+                    global_reseller_margin_pct=g_reseller_m
+                )
+            else:
+                unit_price = product.sell_price_usd
 
-            line_inputs = [(product.sell_price_usd, product.cost_usd, quantity,
+            line_inputs = [(unit_price, product.cost_usd, quantity,
                             BatStoreService.get_volume_discount(quantity))]
             try:
                 line_totals, _ = price_lines(
@@ -86,11 +139,12 @@ async def tma_instant_buy(request: Request):
                 raise
             total = round(float(line_totals[0]), 2)
 
+            coupon_id_to_burn = None
             if coupon_code and coupon_type is not None:
-                from repositories.coupon import CouponRepository
-                coupon = await CouponRepository.get_by_code(coupon_code, session)
-                if coupon and coupon.is_active:
-                    await CouponRepository.increment_usage(coupon.id, session)
+                from repositories.coupon import CouponRepository as _CR
+                _c = await _CR.get_by_code(coupon_code, session)
+                if _c and _c.is_active:
+                    coupon_id_to_burn = _c.id
 
             debited = await UserRepository.try_debit_balance(user.telegram_id, total, session)
             if not debited:
@@ -101,6 +155,12 @@ async def tma_instant_buy(request: Request):
                     "available": available,
                     "shortage": round(total - available, 2)
                 }, status_code=400)
+            if coupon_id_to_burn is not None:
+                from repositories.coupon import CouponRepository
+                claimed_coupon = await CouponRepository.increment_usage(coupon_id_to_burn, session)
+                if not claimed_coupon:
+                    await session.rollback() if hasattr(session, "rollback") else None
+                    return JSONResponse({"error": "coupon_limit_reached"}, status_code=400)
             await session_commit(session)
 
             cust_ref = f"tma-{user.telegram_id}-{uuid.uuid4().hex[:8]}"
@@ -151,6 +211,14 @@ async def tma_instant_buy(request: Request):
                 }],
             )
             order = await BatStoreOrderRepository.create(order_dto, session)
+            try:
+                from repositories.cartItem import CartItemRepository
+                await CartItemRepository.clear_cart_by_user_id(user.id, session)
+                from bot import redis
+                if redis:
+                    await redis.delete(f"ghstore:tma_cart:{user.telegram_id}")
+            except Exception as ex_cart:
+                logging.debug("Cart clear error on instant buy: %s", ex_cart)
             await session_commit(session)
 
             if needs_recharge:
@@ -178,7 +246,7 @@ async def tma_instant_buy(request: Request):
                         ref_rate = float(ref_rate_cfg or 0.2) / 100.0
                         commission = round(margin_profit * ref_rate, 3)
                         if commission > 0.001:
-                            await UserRepository.refund_balance(referrer.telegram_id, commission, session)
+                            await UserRepository.credit_balance(referrer.telegram_id, commission, session)
                             from models.referral import ReferralBonusDTO
                             from repositories.referral import ReferralRepository
                             await ReferralRepository.create(ReferralBonusDTO(
@@ -199,6 +267,13 @@ async def tma_instant_buy(request: Request):
                 except Exception as e:
                     logging.error("Failed to process referral margin commission: %s", e)
 
+            asyncio.create_task(_send_order_delivery_receipt_telegram(
+                telegram_id=user.telegram_id,
+                order_id=order.id,
+                product_name=product.name,
+                total_paid=total,
+                goods_list=goods_list
+            ))
             return {
                 "status": "success",
                 "order_id": order.id,
@@ -258,8 +333,22 @@ async def tma_cart_checkout(request: Request):
                 prod = await BatStoreProductRepository.get_by_product_id(pid, session)
                 if not prod or prod.hidden:
                     return JSONResponse({"error": f"Product #{pid} is unavailable"}, status_code=400)
-                cart_products.append({"product": prod, "quantity": qty})
-                price_inputs.append((prod.sell_price_usd, prod.cost_usd, qty,
+                is_reseller = bool(user and getattr(user, "is_reseller", False))
+                from services.sale_pricing import compute_reseller_price
+                if is_reseller:
+                    from services.config import ConfigService
+                    g_reseller_m = float(await ConfigService.get(session, "GLOBAL_RESELLER_MARGIN_PERCENT", default="8.0") or 8.0)
+                    unit_price = compute_reseller_price(
+                        cost=prod.cost_usd,
+                        retail_price=prod.sell_price_usd,
+                        reseller_price_usd=getattr(prod, "reseller_price_usd", None),
+                        reseller_margin_pct=getattr(prod, "reseller_margin_pct", None),
+                        global_reseller_margin_pct=g_reseller_m
+                    )
+                else:
+                    unit_price = prod.sell_price_usd
+                cart_products.append({"product": prod, "quantity": qty, "unit_price": unit_price})
+                price_inputs.append((unit_price, prod.cost_usd, qty,
                                     BatStoreService.get_volume_discount(qty)))
 
             tier_label, discount_pct = get_vip_tier_info(getattr(user, "consume_records", 0.0), getattr(user, "custom_discount_pct", None))
@@ -302,10 +391,11 @@ async def tma_cart_checkout(request: Request):
 
             all_goods = []
             order_details = []
+            failed_refund_total = 0.0
             for cp in cart_products:
                 prod = cp["product"]
                 qty = cp["quantity"]
-                cust_ref = f"cart-{user.telegram_id}-{uuid.uuid4().hex[:8]}"
+                cust_ref = f"cart-{user.telegram_id}-{prod.product_id}-{uuid.uuid4().hex[:6]}"
                 goods_list = []
                 try:
                     from services.multi_supplier import MultiSupplierService
@@ -318,6 +408,7 @@ async def tma_cart_checkout(request: Request):
                     all_goods.extend(goods_list)
                 except Exception as e:
                     logging.error("Failed to place item #%s in cart checkout: %s", prod.product_id, e)
+                    failed_refund_total += float(cp["line_total"])
 
                 order_details.append({
                     "product_id": prod.product_id,
@@ -330,20 +421,36 @@ async def tma_cart_checkout(request: Request):
                     "warranty_days": prod.warranty_days or 0
                 })
 
+            if failed_refund_total > 0.0:
+                await UserRepository.refund_balance(user.telegram_id, failed_refund_total, session)
+                logging.info("Auto-refunded %.2f to user %s for failed cart items", failed_refund_total, user.telegram_id)
+
+            final_status = "completed" if all_goods else ("refunded" if failed_refund_total >= total else "partially_completed")
             order = await BatStoreOrderRepository.create(BatStoreOrderDTO(
                 telegram_id=user.telegram_id,
                 total_sell=total,
-                status="completed",
+                status=final_status,
                 customer_reference=f"cart-{uuid.uuid4().hex[:10]}",
                 details=order_details
             ), session)
             await session_commit(session)
-
             try:
+                from repositories.cartItem import CartItemRepository
+                await CartItemRepository.clear_cart_by_user_id(user.id, session)
                 await redis.delete(f"ghstore:tma_cart:{user.telegram_id}")
-            except Exception:
-                pass
-
+                await session_commit(session)
+            except Exception as ex_cart:
+                logging.debug("Cart clear error on cart checkout: %s", ex_cart)
+            cart_desc = ", ".join(it.get("name") or "Product" for it in cart_products[:2])
+            if len(cart_products) > 2:
+                cart_desc += f" (+{len(cart_products) - 2})"
+            asyncio.create_task(_send_order_delivery_receipt_telegram(
+                telegram_id=user.telegram_id,
+                order_id=order.id,
+                product_name=f"{len(cart_products)} منتجات: {cart_desc}",
+                total_paid=total,
+                goods_list=all_goods
+            ))
             sym = config.CURRENCY.get_localized_symbol()
             return {
                 "status": "success",
@@ -427,7 +534,21 @@ async def tma_price_quote(request: Request):
             prod = await BatStoreProductRepository.get_by_product_id(pid, session)
             if not prod or prod.hidden:
                 return JSONResponse({"error": f"Product #{pid} is unavailable"}, status_code=400)
-            price_inputs.append((prod.sell_price_usd, prod.cost_usd, qty,
+            is_reseller = bool(user and getattr(user, "is_reseller", False))
+            from services.sale_pricing import compute_reseller_price
+            if is_reseller:
+                from services.config import ConfigService
+                g_reseller_m = float(await ConfigService.get(session, "GLOBAL_RESELLER_MARGIN_PERCENT", default="8.0") or 8.0)
+                unit_price = compute_reseller_price(
+                    cost=prod.cost_usd,
+                    retail_price=prod.sell_price_usd,
+                    reseller_price_usd=getattr(prod, "reseller_price_usd", None),
+                    reseller_margin_pct=getattr(prod, "reseller_margin_pct", None),
+                    global_reseller_margin_pct=g_reseller_m
+                )
+            else:
+                unit_price = prod.sell_price_usd
+            price_inputs.append((unit_price, prod.cost_usd, qty,
                                 BatStoreService.get_volume_discount(qty)))
             quote_meta.append({"product_id": pid, "quantity": qty})
         coupon_code = (body.get("coupon_code") or "").strip()
@@ -500,8 +621,10 @@ async def tma_claim_warranty(request: Request):
         body = await request.json()
     except Exception:
         return JSONResponse({"error": "invalid_json"}, status_code=400)
-
-    tg_id = int(body.get("tg_id") or 0)
+    try:
+        tg_id = extract_and_verify_telegram_user(request, int(body.get("tg_id") or 0))
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
     order_id = int(body.get("order_id") or 0)
 
     async with get_db_session() as session:
@@ -608,36 +731,3 @@ async def submit_support_ticket(request: Request):
         await NotificationService.send_to_admins(ticket_card, None)
     return {"status": "success", "ticket_id": ticket_id}
 
-
-@router.get("/api/orders/{order_id}/receipt.pdf")
-async def get_order_receipt_pdf(order_id: int, request: Request, tg_id: int | None = None):
-    """Serve official vector-rendered PDF invoice for customer orders."""
-    from fastapi import Response
-    try:
-        user_id = extract_and_verify_telegram_user(request, tg_id)
-    except Exception:
-        user_id = tg_id
-
-    async with get_db_session() as session:
-        order = await BatStoreOrderRepository.get_by_id(order_id, session)
-        if not order:
-            return JSONResponse({"error": "order_not_found"}, status_code=404)
-
-        from services.pdf_receipt import PDFReceiptService
-        date_str = order.created_at.strftime("%Y-%m-%d %H:%M:%S UTC") if getattr(order, "created_at", None) else None
-        pdf_bytes = PDFReceiptService.generate_receipt_bytes(order.id, {
-            "telegram_id": order.telegram_id,
-            "total_sell": order.total_sell,
-            "created_at": date_str,
-            "details": order.details or [],
-        })
-
-    filename = f"GHStore_Receipt_Order_{order_id}.pdf"
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={
-            "Content-Disposition": f"attachment; filename=\"{filename}\"",
-            "Cache-Control": "public, max-age=86400",
-        }
-    )

@@ -46,8 +46,7 @@ def main() -> int:
         # Check if docker is used or local pg_dump
         pg_dump_cmd = ["pg_dump", "-h", db_host, "-p", str(db_port), "-U", db_user, db_name]
         if not shutil.which("pg_dump"):
-            # Fallback to docker exec if pg_dump not on host
-            pg_dump_cmd = ["docker", "exec", "GHstore-postgres", "pg_dump", "-U", db_user, db_name]
+            pg_dump_cmd = ["docker", "exec", "-e", f"PGPASSWORD={db_pass}", "GHstore-postgres", "pg_dump", "-U", db_user, db_name]
 
         dump_proc = subprocess.Popen(pg_dump_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
         gzip_proc = subprocess.Popen(["gzip"], stdin=dump_proc.stdout, stdout=open(dest_path, "wb"))

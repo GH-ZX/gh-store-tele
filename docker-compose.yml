@@ -1,22 +1,31 @@
+name: ghstore
+
 services:
   bot:
     build:
       context: .
-    container_name: 'GHstore'
+    container_name: 'gh-store-tele-docker'
     env_file:
       - .env
     ports:
       - "127.0.0.1:5000:5000" # ${WEBAPP_PORT}:${WEBAPP_PORT}
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     volumes:
       - ./i18n:/bot/i18n
-    command: [ "python", "-u", "run.py" ]
     restart: always
     networks:
       - ghstore
-
+    extra_hosts:
+      - "bot:127.0.0.1"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
   redis:
     image: redis:latest
     container_name: GHstore-redis
@@ -33,6 +42,16 @@ services:
     restart: always
     networks:
       - ghstore
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
 
   postgres:
     container_name: "GHstore-postgres"
@@ -46,24 +65,16 @@ services:
     restart: always
     networks:
       - ghstore
-
-  # Cloudflare Tunnel: exposes the bot (port 5000) to the internet at gh-store.me.
-  # In the Cloudflare dashboard, set the public hostname gh-store.me to point at
-  # service: http://bot:5000 (docker-internal DNS on the ghstore network).
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: GHstore-tunnel
-    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
-    environment:
-      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
-    depends_on:
-      - bot
-    restart: always
-    networks:
-      - ghstore
-
-# Inbound HTTPS to the bot is provided by this Cloudflare Tunnel (cloudflared),
-# mapping gh-store.me -> http://bot:5000. No Caddy/bare ports 80-443 required.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres}"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
 
 volumes:
   redis_data:

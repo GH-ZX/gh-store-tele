@@ -52,6 +52,18 @@ async def all_types(**kwargs):
         callback_data = AllCategoriesCallback.create(1)
     new_data = callback_data.model_copy(update={"level": 1, "item_type": None})
     media, kb_builder = await CategoryService.get_buttons(new_data, state, session, language)
+    import config
+    tma_host = (config.WEBHOOK_HOST or "").strip().rstrip('/')
+    uid = message.from_user.id if message.from_user else 0
+    if tma_host and uid:
+        from services.telegram_auth import generate_session_token
+        from aiogram.types import WebAppInfo, InlineKeyboardButton
+        auth_tok = generate_session_token(uid)
+        tma_url = f"{tma_host}/app?tg_id={uid}&auth_token={auth_tok}"
+        kb_builder.row(InlineKeyboardButton(
+            text="🛍️ تصفح وشراء المنتجات عبر المتجر السريع" if language == Language.AR else "🛍️ Explore Products in Mini App",
+            web_app=WebAppInfo(url=tma_url)
+        ))
     caption = media.caption if hasattr(media, 'caption') else str(media)
     if isinstance(message, Message):
         await message.answer(text=caption, reply_markup=kb_builder.as_markup())

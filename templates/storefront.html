@@ -4,13 +4,32 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>GH Store</title>
+  <meta name="ghstore-build" content="__BUILD_TAG__">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/storefront/app.css">
 </head>
 <body>
   <canvas id="confetti-canvas"></canvas>
   <div class="toast-pill" id="toast">تم النسخ!</div>
 
+  <!-- UNAUTHORIZED EXTERNAL BROWSER ACCESS GUARD -->
+  <div id="unauthorized-guard-overlay" style="display: none; position: fixed; inset: 0; background: var(--bg); z-index: 9999999; flex-direction: column; align-items: center; justify-content: center; padding: 24px; text-align: center;">
+    <div style="width: 76px; height: 76px; border-radius: 50%; background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.35); display: flex; align-items: center; justify-content: center; font-size: 36px; margin-bottom: 18px;">
+      🔒
+    </div>
+    <h2 style="font-size: 20px; font-weight: 800; margin-bottom: 8px; color: var(--text);" id="guard-title">
+      فتح المتجر من تيليجرام فقط
+    </h2>
+    <p style="font-size: 13px; color: var(--hint); line-height: 1.6; max-width: 330px; margin-bottom: 24px;" id="guard-desc">
+      لحماية خصوصية حسابك وأمان رصيدك، تم تشفير المتجر ولا يمكن الوصول إليه عبر رابط متصفح خارجي أو رقم ID مجرد. يرجى الدخول من داخل تطبيق تيليجرام عبر البوت الرسمي.
+    </p>
+    <a href="https://t.me/gh_store1_bot" class="btn-action-primary" style="display: inline-flex; align-items: center; justify-content: center; text-decoration: none; max-width: 290px; width: 100%; height: 48px; font-size: 14px; font-weight: 800;" id="guard-btn">
+      فتح البوت الرسمي @gh_store1_bot
+    </a>
+  </div>
   <!-- ADMIN PRODUCT EDITOR MODAL SHEET -->
   <div class="admin-modal-overlay" id="admin-product-modal">
     <div class="admin-modal-sheet">
@@ -29,13 +48,17 @@
       </div>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
         <div class="admin-input-row">
-          <label class="admin-input-label">سعر البيع بالدولار</label>
+          <label class="admin-input-label">سعر التجزئة ($ USD)</label>
           <input type="number" step="any" class="admin-text-input" id="admin-edit-prod-price">
         </div>
         <div class="admin-input-row">
-          <label class="admin-input-label">المخزون (اتركه فارغاً للتسليم الآلي)</label>
-          <input type="number" class="admin-text-input" id="admin-edit-prod-stock" placeholder="فارغ = آلي">
+          <label class="admin-input-label">سعر الموزع ($ USD) - اختياري</label>
+          <input type="number" step="any" class="admin-text-input" id="admin-edit-prod-reseller-price" placeholder="فارغ = حسب النسبة %">
         </div>
+      </div>
+      <div class="admin-input-row">
+        <label class="admin-input-label">المخزون (اتركه فارغاً للتسليم الآلي)</label>
+        <input type="number" class="admin-text-input" id="admin-edit-prod-stock" placeholder="فارغ = آلي">
       </div>
       <div style="display: flex; align-items: center; justify-content: space-between; margin: 10px 0 16px 0; background: var(--input-bg); padding: 10px 14px; border-radius: 10px;">
         <span style="font-size: 13px; font-weight: 700;">إخفاء المنتج من المتجر</span>
@@ -401,11 +424,8 @@
       <div id="receipt-modal-body" style="max-height: 65vh; overflow-y: auto;">
         <!-- Live Rendered Document Content -->
       </div>
-      <div style="display: flex; gap: 8px; margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px;">
-        <button class="btn-action-primary" id="btn-download-pdf-modal" onclick="downloadCurrentModalPdf()" style="flex: 2; height: 46px; font-size: 13px;">
-          <span id="btn-download-pdf-label">⬇️ تنزيل ملف PDF</span>
-        </button>
-        <button class="btn-action-secondary" onclick="closeReceiptPreviewModal()" style="flex: 1; height: 46px; font-size: 13px;">
+      <div style="margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px;">
+        <button class="btn-action-primary" onclick="closeReceiptPreviewModal()" style="width: 100%; height: 46px; font-size: 14px;">
           <span id="btn-close-receipt-modal-label">إغلاق</span>
         </button>
       </div>
@@ -451,7 +471,7 @@
     <div class="header-right-actions">
       <div class="header-balance-pill" onclick="switchTab('wallet')" title="المحفظة">
         <span class="bal-pill-amount" id="top-balance-str">$0.00</span>
-        <span class="bal-pill-plus">➕</span>
+        <span class="bal-pill-plus" id="top-balance-plus">➕</span>
       </div>
       <div class="header-user-badge" onclick="switchTab('settings')" title="الإعدادات">
         <div id="top-avatar-box">
@@ -577,13 +597,12 @@
         </button>
         <button class="circle-icon-btn" onclick="shareCurrentProduct()" title="مشاركة">↗️</button>
       </div>
+      <img id="prod-hero-img" class="prod-hero-img" src="/static/img/product-placeholder.svg" alt="" loading="lazy" style="display:none;" onerror="this.style.display='none'">
       <h2 class="hero-name" id="prod-hero-name">اسم المنتج</h2>
       <div class="hero-cat" id="prod-hero-cat">حساب رقمي</div>
-    </div>
 
     <!-- Structured Spec Badges in Product Detail -->
     <div class="badges-flex" id="detail-badges-box">
-      <div class="pill-badge" id="prod-server-badge" style="display: none; background: rgba(99,102,241,0.15); color: #818cf8; font-weight: 700;"></div>
       <div class="pill-badge" id="prod-delivery-badge">تسليم تلقائي</div>
       <div class="pill-badge" id="prod-stock-badge">متوفر</div>
       <div class="pill-badge" id="prod-dur-badge" style="display: none;"></div>
@@ -755,6 +774,19 @@
           ⚠️ أرسل <b>USDT</b> حصراً عبر شبكة <b>BNB Smart Chain (BEP20)</b> لتفادي فقدان الأموال.
         </div>
       </div>
+      <!-- ShamCash / Syriatel Cash Manual Transaction Reference Box -->
+      <div id="invoice-sam-txn-box" style="display: none; background: var(--input-bg); border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-bottom: 16px;">
+        <div style="font-size: 11px; font-weight: 700; color: var(--accent); margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
+          <span id="invoice-sam-txn-title">رقم عملية التحويل (#nnnnn)</span>
+          <span style="font-size: 10px; color: var(--hint);">اختياري للتأكيد الفوري</span>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <input type="text" id="invoice-sam-txn-input" placeholder="#123456 أو رقم الإشعار" style="flex: 1; height: 40px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 0 12px; color: var(--text); font-size: 13px; font-family: monospace; outline: none;">
+        </div>
+        <div style="font-size: 11px; color: var(--hint); margin-top: 6px; line-height: 1.4;" id="invoice-sam-txn-hint">
+          إذا قمت بالتحويل من تطبيق شام كاش، أدخل رقم العملية هنا لتسريع التحقق.
+        </div>
+      </div>
 
       <!-- Instructions Note -->
       <div style="font-size: 12px; color: var(--hint); line-height: 1.6; margin-bottom: 18px;" id="invoice-instructions-text">
@@ -811,6 +843,17 @@
         </span>
       </div>
 
+      <!-- Admin Customer Identifier Box (Visible for Admins) -->
+      <div id="order-detail-user-box" style="display: none; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 10px; padding: 8px 12px; margin-bottom: 12px; font-size: 12px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-weight: 800; color: var(--accent);" id="order-detail-user-name">👤 @username</span>
+            <span style="font-family: monospace; font-size: 11px; color: var(--hint);" id="order-detail-user-id">ID: 000000</span>
+          </div>
+          <button id="order-detail-copy-user-btn" class="btn-copy-mini" onclick="copyFromBtn(this)">نسخ ID</button>
+        </div>
+      </div>
+
       <div style="font-size: 15px; font-weight: 800; color: var(--text); margin-bottom: 8px;" id="order-detail-products-title">اسم المنتج</div>
 
       <div style="display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); padding: 10px 14px; border-radius: 12px; margin-bottom: 14px; border: 1px solid var(--border);">
@@ -818,6 +861,13 @@
         <span style="font-size: 16px; font-weight: 800; color: var(--accent);" id="order-detail-total-amount">$0.00 USD</span>
       </div>
 
+      <!-- Admin Financials (Wholesale Cost & Gross Profit - Visible for Admins) -->
+      <div id="order-detail-admin-financials" style="display: none; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 10px; padding: 8px 12px; margin-bottom: 14px; font-size: 12px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span>تكلفة المورد: <strong id="order-detail-cost-val" style="color: var(--warning);">$0.00</strong></span>
+          <span>صافي الربح: <strong id="order-detail-profit-val" style="color: var(--success);">$0.00</strong></span>
+        </div>
+      </div>
       <!-- Timeline Stepper in Order Detail View -->
       <div class="order-stepper-track" style="margin: 18px 0;">
         <div class="order-stepper-line">
@@ -846,14 +896,24 @@
         <div id="order-detail-credentials-box"></div>
       </div>
 
-      <!-- Action Buttons -->
-      <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 16px; border-top: 1px solid var(--border); padding-top: 14px;">
+      <!-- Admin Order Management Actions (Visible for Admins) -->
+      <div id="order-detail-admin-actions" style="display: none; margin-top: 16px; border-top: 1px solid var(--border); padding-top: 14px;">
+        <div style="font-size: 11px; font-weight: 700; color: var(--hint); margin-bottom: 8px;" id="order-detail-admin-actions-title">إدارة المشرف للطلب:</div>
         <div style="display: flex; gap: 8px;">
-          <button class="btn-action-primary" id="order-detail-btn-preview" onclick="showOrderReceiptModal(currentOrderDetailId)" style="flex: 1; height: 44px; font-size: 12px;">
-            <span id="order-detail-btn-preview-label">🧾 معاينة الإيصال المعتمد</span>
+          <button class="btn-action-primary" id="btn-admin-order-complete" onclick="submitAdminOrderStatus(currentOrderDetailId, 'completed')" style="flex: 1; height: 40px; font-size: 12px; background: linear-gradient(135deg, #10b981, #059669); font-weight: 800;">
+            <span>✅ تأكيد التسليم</span>
           </button>
-          <button class="btn-action-secondary" id="order-detail-btn-pdf" onclick="downloadCurrentOrderDetailPdf()" style="flex: 1; height: 44px; font-size: 12px;">
-            <span id="order-detail-btn-pdf-label">⬇️ تنزيل ملف PDF</span>
+          <button class="btn-action-secondary" id="btn-admin-order-refund" onclick="submitAdminOrderStatus(currentOrderDetailId, 'refunded')" style="flex: 1; height: 40px; font-size: 12px; font-weight: 700; color: var(--danger); border-color: rgba(239, 68, 68, 0.4);">
+            <span>↩️ استرداد الرصيد</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Customer Action Buttons (Visible for Customers) -->
+      <div id="order-detail-customer-actions" style="display: flex; flex-direction: column; gap: 8px; margin-top: 16px; border-top: 1px solid var(--border); padding-top: 14px;">
+        <div>
+          <button class="btn-action-primary" id="order-detail-btn-preview" onclick="showOrderReceiptModal(currentOrderDetailId)" style="width: 100%; height: 44px; font-size: 13px;">
+            <span id="order-detail-btn-preview-label">🧾 معاينة تفاصيل الإيصال</span>
           </button>
         </div>
         <div style="display: flex; gap: 8px;">
@@ -889,6 +949,7 @@
         <div class="filter-chip active" id="admin-ufilter-all" onclick="setAdminUserFilter('all')">الكل</div>
         <div class="filter-chip" id="admin-ufilter-balance" onclick="setAdminUserFilter('balance')">لديهم رصيد</div>
         <div class="filter-chip" id="admin-ufilter-vip" onclick="setAdminUserFilter('vip')">VIP فقط</div>
+        <div class="filter-chip" id="admin-ufilter-reseller" onclick="setAdminUserFilter('reseller')">🏷️ الموزعون</div>
         <div class="filter-chip" id="admin-ufilter-banned" onclick="setAdminUserFilter('banned')">المحظورون فقط</div>
       </div>
     </div>
@@ -996,7 +1057,7 @@
         <div style="background: var(--input-bg); border-radius: 10px; padding: 10px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
           <div>
             <div style="font-size: 10px; color: var(--hint);" id="sup-card-bat-avail-lbl">الرصيد المتاح:</div>
-            <div style="font-size: 16px; font-weight: 800; color: var(--accent);" id="sup-card-bat-bal">$0.08 USD</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--accent);" id="sup-card-bat-bal">$0.00 USD</div>
           </div>
           <button class="btn-action-secondary" onclick="testBatStoreKeyLive()" id="btn-test-batstore" style="height: 34px; padding: 0 12px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;">
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
@@ -1047,7 +1108,7 @@
         <div style="background: var(--input-bg); border-radius: 10px; padding: 10px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
           <div>
             <div style="font-size: 10px; color: var(--hint);" id="sup-card-prod-avail-lbl">الرصيد المتاح:</div>
-            <div style="font-size: 16px; font-weight: 800; color: #10b981;" id="sup-card-prod-bal">$13.18 USDT</div>
+            <div style="font-size: 16px; font-weight: 800; color: #10b981;" id="sup-card-prod-bal">$0.00 USDT</div>
             <div style="font-size: 9px; color: var(--hint);" id="sup-card-prod-tier">عضوية: برونزية</div>
           </div>
           <button class="btn-action-secondary" onclick="testProdSellerKeyLiveInSuppliersPage()" id="btn-test-prodseller" style="height: 34px; padding: 0 12px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;">
@@ -1139,83 +1200,84 @@
     <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 10px; margin-bottom: 20px;">
       <!-- Card 1: Currencies & Exchange Rates -->
       <div class="inset-card" style="padding: 14px;">
-        <div style="font-size: 13px; font-weight: 800; color: var(--accent); margin-bottom: 10px;" id="sec-hdr-currencies">العملات وأسعار الصرف</div>
+        <div style="font-size: 13px; font-weight: 800; color: var(--accent); margin-bottom: 12px;" id="sec-hdr-currencies">العملات وأسعار الصرف</div>
         
         <div style="margin-bottom: 12px;">
-          <div style="font-size: 11px; font-weight: 700; margin-bottom: 4px;" id="admin-syp-rate-title">سعر صرف الليرة السورية مقابل الدولار</div>
-          <div style="font-size: 10px; color: var(--hint); margin-bottom: 6px;" id="admin-syp-rate-desc">مربوط بقاعدة البيانات ويتم تطبيقه فورياً على الشحن بالليرة السورية</div>
-          <div style="display: flex; gap: 6px;">
-            <input type="number" class="admin-text-input" id="admin-syp-rate-input" placeholder="e.g. 15000" style="flex: 1; font-family: monospace; font-size: 12px;">
-            <button class="btn-action-primary" onclick="submitAdminUpdateSypRate()" style="height: 38px; padding: 0 14px; font-size: 11px; font-weight: 700;" id="btn-syp-rate-update">تحديث</button>
+          <label style="font-size: 11px; font-weight: 700; display: block; margin-bottom: 4px;" id="admin-syp-rate-title">سعر صرف الليرة السورية مقابل الدولار (SYP / USD)</label>
+          <div style="position: relative;">
+            <input type="number" class="admin-text-input" id="admin-syp-rate-input" placeholder="e.g. 15000" style="width: 100%; font-family: monospace; font-size: 13px; font-weight: 700; padding-inline-end: 45px;">
+            <span style="position: absolute; inset-inline-end: 12px; top: 50%; transform: translateY(-50%); font-size: 11px; color: var(--hint); pointer-events: none;">ل.س</span>
           </div>
         </div>
 
         <div>
-          <div style="font-size: 11px; font-weight: 700; margin-bottom: 4px;" id="admin-stars-rate-title">قيمة النجمة الواحدة مقابل الدولار</div>
-          <div style="font-size: 10px; color: var(--hint); margin-bottom: 6px;" id="admin-stars-rate-desc">افتراضياً: 0.01$ للنجمة الواحدة (100 نجمة = 1$)</div>
-          <div style="display: flex; gap: 6px;">
-            <input type="number" step="any" class="admin-text-input" id="admin-stars-rate-input" placeholder="0.01" style="flex: 1; font-family: monospace; font-size: 12px;">
-            <button class="btn-action-primary" onclick="submitAdminUpdateStarsRate()" style="height: 38px; padding: 0 14px; font-size: 11px; font-weight: 700;" id="admin-stars-rate-btn">حفظ سعر النجوم</button>
+          <label style="font-size: 11px; font-weight: 700; display: block; margin-bottom: 4px;" id="admin-stars-rate-title">سعر تحويل النجمة الواحدة مقابل الدولار ($ / Stars)</label>
+          <div style="position: relative;">
+            <input type="number" step="any" class="admin-text-input" id="admin-stars-rate-input" placeholder="0.01" style="width: 100%; font-family: monospace; font-size: 13px; font-weight: 700; padding-inline-end: 45px;">
+            <span style="position: absolute; inset-inline-end: 12px; top: 50%; transform: translateY(-50%); font-size: 11px; color: var(--hint); pointer-events: none;">$</span>
           </div>
         </div>
       </div>
 
       <!-- Card 2: Pricing & Profit Margins -->
       <div class="inset-card" style="padding: 14px;">
-        <div style="font-size: 13px; font-weight: 800; color: var(--accent); margin-bottom: 10px;" id="sec-hdr-pricing">التسعير وهوامش الأرباح</div>
+        <div style="font-size: 13px; font-weight: 800; color: var(--accent); margin-bottom: 12px;" id="sec-hdr-pricing">التسعير وهوامش الأرباح</div>
         
         <div style="margin-bottom: 12px;">
-          <div style="font-size: 11px; font-weight: 700; margin-bottom: 4px;" id="admin-margin-rate-title">نسبة هامش الربح العام على المنتجات (%)</div>
-          <div style="font-size: 10px; color: var(--hint); margin-bottom: 6px;" id="admin-margin-rate-desc">تحدد نسبة ربح المتجر التلقائية على أسعار المورد لجميع المنتجات</div>
-          <div style="display: flex; gap: 6px;">
-            <input type="number" step="any" class="admin-text-input" id="admin-margin-input" placeholder="20" style="flex: 1; font-family: monospace; font-size: 12px;">
-            <button class="btn-action-primary" onclick="submitAdminUpdateMargin()" style="height: 38px; padding: 0 14px; font-size: 11px; font-weight: 700;" id="btn-margin-update">تحديث الهامش</button>
+          <label style="font-size: 11px; font-weight: 700; display: block; margin-bottom: 4px;" id="admin-margin-rate-title">هامش الربح العام على المنتجات (للعملاء العاديين)</label>
+          <div style="position: relative;">
+            <input type="number" step="any" class="admin-text-input" id="admin-margin-input" placeholder="20" style="width: 100%; font-family: monospace; font-size: 13px; font-weight: 700; padding-inline-end: 35px;">
+            <span style="position: absolute; inset-inline-end: 12px; top: 50%; transform: translateY(-50%); font-size: 12px; font-weight: 700; color: var(--accent); pointer-events: none;">%</span>
           </div>
         </div>
 
-        <div>
-          <div style="font-size: 11px; font-weight: 700; margin-bottom: 4px;" id="admin-ref-rate-title">نسبة عمولة الإحالة من أرباح الهامش (%)</div>
-          <div style="font-size: 10px; color: var(--hint); margin-bottom: 6px;" id="admin-ref-rate-desc">النسبة التي يحصل عليها العميل من أرباح مشتريات أصدقائه</div>
-          <div style="display: flex; gap: 6px;">
-            <input type="number" step="any" class="admin-text-input" id="admin-ref-rate-input" placeholder="0.2" style="flex: 1; font-family: monospace; font-size: 12px;">
-            <button class="btn-action-primary" onclick="submitAdminUpdateReferralRate()" style="height: 38px; padding: 0 14px; font-size: 11px; font-weight: 700;" id="btn-ref-rate-update">تحديث</button>
+        <div style="margin-bottom: 12px;">
+          <label style="font-size: 11px; font-weight: 700; display: block; margin-bottom: 4px;">هامش ربح الموزعين العام (Global Reseller Margin)</label>
+          <div style="position: relative;">
+            <input type="number" step="any" class="admin-text-input" id="admin-reseller-margin-input" placeholder="8" style="width: 100%; font-family: monospace; font-size: 13px; font-weight: 700; padding-inline-end: 35px;">
+            <span style="position: absolute; inset-inline-end: 12px; top: 50%; transform: translateY(-50%); font-size: 12px; font-weight: 700; color: #10b981; pointer-events: none;">%</span>
+          </div>
+          <div style="font-size: 10px; color: var(--hint); margin-top: 3px;">النسبة الافتراضية المضافة فوق التكلفة لحسابات الموزعين المعتمدة.</div>
+        </div>
+
+        <div style="margin-bottom: 14px;">
+          <label style="font-size: 11px; font-weight: 700; display: block; margin-bottom: 4px;" id="admin-ref-rate-title">نسبة عمولة الإحالة من أرباح المتجر</label>
+          <div style="position: relative;">
+            <input type="number" step="any" class="admin-text-input" id="admin-ref-rate-input" placeholder="0.2" style="width: 100%; font-family: monospace; font-size: 13px; font-weight: 700; padding-inline-end: 35px;">
+            <span style="position: absolute; inset-inline-end: 12px; top: 50%; transform: translateY(-50%); font-size: 12px; font-weight: 700; color: var(--warning); pointer-events: none;">%</span>
           </div>
         </div>
+
+        <!-- Button to open Reseller Pricing Table -->
+        <button class="btn-action-secondary" onclick="openAdminResellerPricingPage()" style="width: 100%; height: 42px; font-size: 12px; font-weight: 800; border-color: rgba(56, 189, 248, 0.45); color: var(--accent); display: flex; align-items: center; justify-content: center; gap: 8px;">
+          <span>🏷️ جدول تسعير الموزعين بالتفصيل لكل المنتجات</span>
+          <span>←</span>
+        </button>
       </div>
+
       <!-- Card 3: Store Identity & Announcements -->
       <div class="inset-card" style="padding: 14px;">
-        <div style="font-size: 13px; font-weight: 800; color: var(--accent); margin-bottom: 10px;" id="sec-hdr-branding">هوية المتجر والإعلانات</div>
+        <div style="font-size: 13px; font-weight: 800; color: var(--accent); margin-bottom: 12px;" id="sec-hdr-branding">هوية المتجر والإعلانات</div>
         
         <div style="margin-bottom: 12px;">
-          <div style="font-size: 11px; font-weight: 700; margin-bottom: 4px;" id="admin-logo-url-title">رابط شعار المتجر</div>
-          <div style="font-size: 10px; color: var(--hint); margin-bottom: 6px;" id="admin-logo-url-desc">يظهر أعلى المتجر بجانب الاسم (يدعم PNG و SVG و WebP)</div>
-          <div style="display: flex; gap: 6px;">
-            <input type="text" class="admin-text-input" id="admin-store-logo-input" placeholder="https://example.com/logo.png" style="flex: 1; font-size: 11px;">
-            <button class="btn-action-primary" onclick="submitAdminUpdateStoreLogo()" style="height: 38px; padding: 0 14px; font-size: 11px; font-weight: 700;" id="btn-logo-update">حفظ الشعار</button>
-          </div>
+          <label style="font-size: 11px; font-weight: 700; display: block; margin-bottom: 4px;" id="admin-logo-url-title">رابط شعار المتجر (Logo URL)</label>
+          <input type="text" class="admin-text-input" id="admin-store-logo-input" placeholder="https://example.com/logo.png" style="width: 100%; font-size: 12px;">
+        </div>
+
+        <div style="margin-bottom: 12px;">
+          <label style="font-size: 11px; font-weight: 700; display: block; margin-bottom: 4px;" id="admin-broadcast-banner-title">شريط الإعلانات العام في المتجر</label>
+          <input type="text" class="admin-text-input" id="admin-announcement-input" placeholder="خصم خاص بمناسبة العطلة..." style="width: 100%; font-size: 12px;">
         </div>
 
         <div>
-          <div style="font-size: 11px; font-weight: 700; margin-bottom: 4px;" id="admin-broadcast-banner-title">شريط الإعلانات العام في المتجر</div>
-          <div style="font-size: 10px; color: var(--hint); margin-bottom: 6px;" id="admin-broadcast-banner-desc">يظهر أعلى الصفحة لجميع الزوار (اتركه فارغاً لإخفائه)</div>
-          <div style="display: flex; gap: 6px;">
-            <input type="text" class="admin-text-input" id="admin-announcement-input" placeholder="خصم خاص بمناسبة العطلة..." style="flex: 1; font-size: 11px;">
-            <button class="btn-action-primary" onclick="submitAdminUpdateAnnouncement()" style="height: 38px; padding: 0 14px; font-size: 11px; font-weight: 700;" id="btn-announcement-update">نشر الإعلان</button>
-          </div>
-        </div>
-        <div style="margin-top: 12px; border-top: 1px dashed var(--border); padding-top: 12px;">
-          <div style="font-size: 11px; font-weight: 700; margin-bottom: 4px;" id="admin-trending-tags-title">العلامات الأكثر بحثاً في المتجر (Trending Search Tags)</div>
-          <div style="font-size: 10px; color: var(--hint); margin-bottom: 6px;" id="admin-trending-tags-desc">افصل بين الكلمات بفاصلة (اتركه فارغاً للاعتماد على أكثر المنتجات طلباً تلقائياً)</div>
-          <div style="display: flex; gap: 6px;">
-            <input type="text" class="admin-text-input" id="admin-trending-tags-input" placeholder="Netflix, ChatGPT, Canva, Windows" style="flex: 1; font-size: 11px;">
-            <button class="btn-action-primary" onclick="submitAdminUpdateTrendingTags()" style="height: 38px; padding: 0 14px; font-size: 11px; font-weight: 700;" id="btn-trending-tags-update">حفظ العلامات</button>
-          </div>
+          <label style="font-size: 11px; font-weight: 700; display: block; margin-bottom: 4px;" id="admin-trending-tags-title">العلامات الأكثر بحثاً (Trending Search Tags)</label>
+          <input type="text" class="admin-text-input" id="admin-trending-tags-input" placeholder="Netflix, ChatGPT, Canva, Windows" style="width: 100%; font-size: 12px;">
         </div>
       </div>
 
       <!-- Card 4: Operations & Sync -->
       <div class="inset-card" style="padding: 14px;">
-        <div style="font-size: 13px; font-weight: 800; color: var(--accent); margin-bottom: 10px;" id="sec-hdr-operations">أدوات التشغيل والمزامنة</div>
+        <div style="font-size: 13px; font-weight: 800; color: var(--accent); margin-bottom: 12px;" id="sec-hdr-operations">أدوات التشغيل والمزامنة</div>
         
         <div style="background: var(--input-bg); border-radius: 10px; padding: 10px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
           <div>
@@ -1228,35 +1290,103 @@
         </div>
 
         <div>
-          <button class="btn-action-primary" id="btn-force-sync-catalog" onclick="submitAdminCatalogSync()" style="width: 100%; height: 44px; background: linear-gradient(135deg, #6366f1, #4f46e5); font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px;">
+          <button class="btn-action-primary" id="btn-force-sync-catalog" onclick="submitAdminCatalogSync()" style="width: 100%; height: 42px; background: linear-gradient(135deg, #6366f1, #4f46e5); font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px;">
             <span id="btn-force-sync-label">مزامنة الكتالوج والأسعار من المورد فورياً</span>
           </button>
         </div>
       </div>
+
+      <!-- Master Save Button for All Store Settings -->
+      <button class="btn-action-primary" onclick="submitAllStoreSettings()" id="btn-save-all-settings" style="width: 100%; height: 46px; font-size: 13px; font-weight: 800; background: linear-gradient(135deg, #0284c7, #6366f1); display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 4px 14px rgba(2,132,199,0.35);">
+        <span>💾 حفظ وتطبيق كافة الإعدادات</span>
+      </button>
     </div>
   </section>
+
+  <!-- DEDICATED IN-APP RESELLER PRICING VIEW -->
+  <section id="view-admin-reseller-pricing" class="tab-view">
+    <div class="subview-header">
+      <button class="btn-back-catalog" onclick="closeAdminResellerPricingPage()">
+        <span>→</span>
+        <span id="btn-back-reseller-pricing-label">العودة للإعدادات</span>
+      </button>
+      <span style="font-size: 13px; color: var(--accent); font-weight: 700;">تسعير حسابات الموزعين</span>
+    </div>
+
+    <!-- Master Global Margin Banner -->
+    <div class="inset-card" style="margin-top: 10px; padding: 14px; margin-bottom: 12px; background: linear-gradient(135deg, rgba(56, 189, 248, 0.12), rgba(99, 102, 241, 0.12)); border-color: rgba(56, 189, 248, 0.4);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <div>
+          <div style="font-size: 13px; font-weight: 800; color: var(--text);">🏷️ هامش ربح الموزعين الافتراضي العام</div>
+          <div style="font-size: 10px; color: var(--hint); margin-top: 2px;">يُضاف تلقائياً فوق سعر التكلفة لأي منتج ليس له تسعير مخصص</div>
+        </div>
+      </div>
+      <div style="display: flex; gap: 8px; align-items: center;">
+        <input type="number" step="any" id="reseller-global-margin-input" class="admin-text-input" placeholder="8" style="width: 85px; font-size: 14px; font-weight: 800; text-align: center;">
+        <span style="font-weight: 800; font-size: 14px; color: var(--accent);">%</span>
+        <button class="btn-action-primary" onclick="submitGlobalResellerMargin()" style="height: 38px; padding: 0 16px; font-size: 12px; font-weight: 700;">تحديث النسبة العامة</button>
+      </div>
+    </div>
+
+    <!-- Search & Filter Bar -->
+    <div style="margin-bottom: 12px;">
+      <input type="text" id="reseller-product-search" class="admin-text-input" placeholder="🔍 ابحث بالاسم أو السيرفر أو التصنيف..." oninput="filterResellerPricingList()" style="width: 100%; font-size: 12px;">
+    </div>
+
+    <!-- Products List Container -->
+    <div id="reseller-pricing-products-list" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 30px;">
+      <div class="skeleton-card"></div>
+      <div class="skeleton-card"></div>
+    </div>
+  </section>
+
+  <!-- RESELLER PRODUCT PRICE EDIT MODAL -->
+  <div class="admin-modal-overlay" id="admin-reseller-product-modal" style="display: none;">
+    <div class="admin-modal-sheet">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <h3 style="font-size: 16px; font-weight: 800;">🏷️ تسعير الموزع للمنتج</h3>
+        <button class="circle-icon-btn" onclick="closeAdminResellerProductModal()">✕</button>
+      </div>
+      <input type="hidden" id="reseller-edit-prod-id">
+      <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 14px;">
+        <div style="font-size: 14px; font-weight: 800;" id="reseller-edit-prod-name">-</div>
+        <div style="display: flex; gap: 10px; margin-top: 6px; font-size: 12px; color: var(--hint);">
+          <span>التكلفة: <strong id="reseller-edit-prod-cost" style="color: var(--text);">$0.00</strong></span>
+          <span>·</span>
+          <span>سعر التجزئة: <strong id="reseller-edit-prod-retail" style="color: var(--accent);">$0.00</strong></span>
+        </div>
+      </div>
+
+      <div style="margin-bottom: 14px;">
+        <label style="font-size: 12px; font-weight: 700; display: block; margin-bottom: 6px;">سعر ثابت مخصص للموزع ($ USD):</label>
+        <input type="number" step="any" id="reseller-edit-prod-fixed-price" class="admin-text-input" placeholder="اتركه فارغاً للاعتماد على النسبة %" style="width: 100%; font-size: 14px; font-weight: 800;">
+        <div style="font-size: 10px; color: var(--hint); margin-top: 4px;">إذا تم تحديده، سيتم قفل السعر للموزع بهذا المبلغ دائماً.</div>
+      </div>
+
+      <div style="margin-bottom: 16px;">
+        <label style="font-size: 12px; font-weight: 700; display: block; margin-bottom: 6px;">أو نسبة هامش مخصصة لهذا المنتج (% فوق التكلفة):</label>
+        <input type="number" step="any" id="reseller-edit-prod-margin-pct" class="admin-text-input" placeholder="e.g. 5" style="width: 100%; font-size: 14px; font-weight: 800;">
+        <div style="font-size: 10px; color: var(--hint); margin-top: 4px;">اتركه فارغاً لتطبيق هامش الموزعين العام الافتراضي.</div>
+      </div>
+
+      <div style="display: flex; gap: 8px;">
+        <button class="btn-action-primary" onclick="submitProductResellerPrice()" style="flex: 2; height: 42px; font-size: 13px; font-weight: 800;">حفظ تسعير المنتج</button>
+        <button class="btn-action-secondary" onclick="clearProductResellerPrice()" style="flex: 1; height: 42px; font-size: 12px; color: var(--danger);">إلغاء التخصيص</button>
+      </div>
+    </div>
+  </div>
 
 
   <!-- TAB 2: PROCESSES & ACTIVITY VIEW (ORDERS & RECHARGES) -->
   <main id="view-orders" class="tab-view">
-    <!-- Admin Live Radar / My Orders Switcher (Visible ONLY for Admins) -->
-    <div id="admin-activity-mode-switcher" style="display: none; margin-bottom: 14px;">
-      <div class="theme-segmented-control">
-        <div class="theme-segment-btn active" id="btn-mode-live-radar" onclick="switchAdminActivityMode('radar')">
-          <span>رادار العمليات المباشر</span>
-        </div>
-        <div class="theme-segment-btn" id="btn-mode-my-orders" onclick="switchAdminActivityMode('my_orders')">
-          <span>طلباتي الشخصية</span>
-        </div>
-      </div>
-    </div>
+    <!-- Dedicated Admin Live Operations Header (Visible for Admins) -->
 
     <!-- Live Admin Radar Header & Actions (Visible ONLY for Admins in Radar Mode) -->
     <div id="admin-radar-header-box" style="display: none; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 14px; padding: 12px; margin-bottom: 14px;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
         <div style="display: flex; align-items: center; gap: 6px;">
           <span style="width: 8px; height: 8px; border-radius: 50%; background: #10b981; display: inline-block; box-shadow: 0 0 8px #10b981;"></span>
-          <span style="font-size: 13px; font-weight: 800; color: var(--text);" id="admin-radar-title">بث مباشر لعمليات المتجر</span>
+          <span style="font-size: 13px; font-weight: 800; color: var(--text);" id="admin-radar-title">عمليات المتجر المباشرة</span>
           <span class="pill-badge" id="admin-radar-attention-badge" style="display: none; background: rgba(239,68,68,0.2); color: #ef4444; font-size: 10px;">0 تحتاج اعتماد</span>
         </div>
         <button class="btn-copy-mini" onclick="loadAdminLiveRadar(true)" style="padding: 3px 8px; font-size: 11px;">
@@ -1264,15 +1394,17 @@
         </button>
       </div>
       <div style="font-size: 11px; color: var(--hint); line-height: 1.4;" id="admin-radar-desc">
-        متابعة حية وفورية لكافة طلبات الشراء وعمليات الشحن في البوت، مع إمكانية اعتماد الشحن المعلق أو الفاشل فورياً.
+        متابعة حية وفورية لكافة طلبات العملاء، عمليات الشحن، والتحويلات اليدوية في المتجر.
       </div>
     </div>
 
     <div class="section-title" id="title-orders-history">العمليات والسجل</div>
     <div class="filter-chips-row" id="activity-filter-row" style="margin-bottom: 14px;">
       <div class="filter-chip active" id="act-filter-all" onclick="filterActivityView('all')">الكل</div>
-      <div class="filter-chip" id="act-filter-vault" onclick="filterActivityView('vault')">🔐 خزنة المفاتيح</div>
+      <div class="filter-chip" id="act-filter-orders" onclick="filterActivityView('orders')" style="display: none;">🛍️ الطلبات</div>
       <div class="filter-chip" id="act-filter-recharges" onclick="filterActivityView('recharges')">عمليات الشحن</div>
+      <div class="filter-chip" id="act-filter-transfers" onclick="filterActivityView('transfers')" style="display: none;">💸 تحويلات الإدارة</div>
+      <div class="filter-chip" id="act-filter-vault" onclick="filterActivityView('vault')">🔐 خزنة المفاتيح</div>
       <div class="filter-chip" id="act-filter-attention" onclick="filterActivityView('attention')" style="display: none; color: #ef4444; font-weight: 700;">المعلقة والفاشلة</div>
     </div>
     <div id="orders-container-box">
@@ -1337,8 +1469,7 @@
         <!-- 3. Sham Cash -->
         <div class="recharge-method-card" id="method-card-shamcash" onclick="selectRechargeMethod('shamcash')">
           <div class="method-card-left">
-            <img src="https://shamcash.sy/_next/static/media/logo.5be69def.svg" class="method-brand-img" alt="Sham Cash" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-            <span class="method-icon" style="display: none;">💳</span>
+            <img src="/static/img/pay-shamcash.png" data-pay-logo="shamcash" class="method-brand-img" alt="Sham Cash" loading="lazy" style="object-fit: contain; border-radius: 6px;">
             <div>
               <div class="method-name" id="label-method-shamcash-name">شام كاش</div>
               <div class="method-sub" id="label-method-shamcash-sub">دفع مباشر وسريع عبر بنك شام كاش</div>
@@ -1350,14 +1481,34 @@
         <!-- 4. Syriatel Cash (SYP only) -->
         <div class="recharge-method-card" id="method-card-syriatelcash" onclick="selectRechargeMethod('syriatelcash')">
           <div class="method-card-left">
-            <img src="https://www.syriatel.sy/assets/img/logo.png" class="method-brand-img" alt="Syriatel Cash" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-            <span class="method-icon" style="display: none;">📱</span>
+            <img src="/static/img/pay-syriatel.png" data-pay-logo="syriatel" class="method-brand-img" alt="Syriatel Cash" loading="lazy" style="object-fit: contain; border-radius: 6px;">
             <div>
               <div class="method-name" id="label-method-syriatelcash-name">سيرياتيل كاش</div>
               <div class="method-sub" id="label-method-syriatelcash-sub">دفع مباشر بالليرة السورية (SYP)</div>
             </div>
           </div>
           <div class="method-radio-check">✓</div>
+        </div>
+      </div>
+      <!-- ShamCash Currency Toggle (USD vs SYP) -->
+      <div id="shamcash-currency-box" style="display: none; background: var(--input-bg); border: 1px solid var(--border); border-radius: 14px; padding: 12px; margin-top: 10px; margin-bottom: 12px;">
+        <div style="font-size: 12px; font-weight: 700; color: var(--hint); margin-bottom: 8px;" id="label-sham-curr-title">عملة السداد في شام كاش:</div>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" class="filter-chip active" id="btn-sham-curr-usd" onclick="setShamCurrency('USD')" style="flex: 1; text-align: center; height: 38px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;">
+            <span>💵</span>
+            <span id="label-sham-usd-btn">بالدولار (USD)</span>
+          </button>
+          <button type="button" class="filter-chip" id="btn-sham-curr-syp" onclick="setShamCurrency('SYP')" style="flex: 1; text-align: center; height: 38px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;">
+            <svg class="syria-flag-svg" viewBox="0 0 30 20" width="18" height="12" style="border-radius: 2px; vertical-align: middle; display: inline-block; box-shadow: 0 0 1px rgba(0,0,0,0.5); flex-shrink: 0;" xmlns="http://www.w3.org/2000/svg">
+              <rect width="30" height="6.67" y="0" fill="#007A3D"/>
+              <rect width="30" height="6.67" y="6.67" fill="#FFFFFF"/>
+              <rect width="30" height="6.67" y="13.33" fill="#000000"/>
+              <polygon points="8.5,7.7 9.1,9.2 10.7,9.2 9.4,10.2 9.9,11.7 8.5,10.7 7.1,11.7 7.6,10.2 6.3,9.2 7.9,9.2" fill="#CE1126"/>
+              <polygon points="15,7.7 15.6,9.2 17.2,9.2 15.9,10.2 16.4,11.7 15,10.7 13.6,11.7 14.1,10.2 12.8,9.2 14.4,9.2" fill="#CE1126"/>
+              <polygon points="21.5,7.7 22.1,9.2 23.7,9.2 22.4,10.2 22.9,11.7 21.5,10.7 20.1,11.7 20.6,10.2 19.3,9.2 20.9,9.2" fill="#CE1126"/>
+            </svg>
+            <span id="label-sham-syp-btn">بالليرة السورية (SYP)</span>
+          </button>
         </div>
       </div>
 
@@ -1400,18 +1551,38 @@
         <div style="font-size: 12px; color: var(--hint);" id="admin-reserves-sub">لوحة السيولة والتحكم المالي للمتجر</div>
       </div>
 
-      <!-- Supplier Balances Grid -->
-      <div class="section-title" style="margin-top: 16px;" id="admin-reserves-sec-title">أرصدة محافظ الموردين والسيولة</div>
-      <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px;">
-        <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; text-align: center;">
-          <div style="font-size: 11px; color: var(--hint); margin-bottom: 4px;" id="admin-reserves-s1-title">رصيد BatStore</div>
-          <div style="font-size: 20px; font-weight: 800; color: #10b981;" id="admin-wallet-batstore">$0.00</div>
-          <div style="font-size: 10px; color: var(--hint); margin-top: 2px;" id="admin-reserves-s1-sub">تجهيز الحسابات</div>
+      <!-- 3 APIs Supplier Reserves & Liquidity Grid -->
+      <div class="section-title" style="margin-top: 16px;" id="admin-reserves-sec-title">أرصدة محافظ الموردين والسيولة (3 APIs)</div>
+      <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 12px;">
+        <!-- 1. BatStore (Server 1) -->
+        <div class="inset-card" style="padding: 12px; text-align: center; border-radius: 12px; border: 1px solid rgba(16, 185, 129, 0.3); background: linear-gradient(180deg, rgba(16, 185, 129, 0.06) 0%, var(--input-bg) 100%);">
+          <div style="font-size: 11px; font-weight: 800; color: #10b981; margin-bottom: 4px;" id="admin-reserves-s1-title">⚡ سيرفر 1 (BatStore)</div>
+          <div style="font-size: 20px; font-weight: 900; color: #10b981;" id="admin-wallet-batstore">$0.00</div>
+          <div style="font-size: 10px; color: var(--hint); margin-top: 3px;" id="admin-reserves-s1-sub">تجهيز الاشتراكات (USD)</div>
         </div>
-        <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; text-align: center;">
-          <div style="font-size: 11px; color: var(--hint); margin-bottom: 4px;" id="admin-reserves-sam-title">محفظة SAM (USD)</div>
-          <div style="font-size: 20px; font-weight: 800; color: #38bdf8;" id="admin-wallet-sam-usd">$0.00 USD</div>
-          <div style="font-size: 11px; font-weight: 700; color: #f59e0b; margin-top: 2px;" id="admin-wallet-sam-syp">0 ل.س</div>
+        <!-- 2. ProdSeller (Server 2) -->
+        <div class="inset-card" style="padding: 12px; text-align: center; border-radius: 12px; border: 1px solid rgba(56, 189, 248, 0.3); background: linear-gradient(180deg, rgba(56, 189, 248, 0.06) 0%, var(--input-bg) 100%);">
+          <div style="font-size: 11px; font-weight: 800; color: #38bdf8; margin-bottom: 4px;" id="admin-reserves-s2-title">🚀 سيرفر 2 (ProdSeller)</div>
+          <div style="font-size: 20px; font-weight: 900; color: #38bdf8;" id="admin-wallet-prodseller">$0.00</div>
+          <div style="font-size: 10px; color: var(--hint); margin-top: 3px;" id="admin-reserves-s2-sub">الحسابات الفورية (USDT)</div>
+        </div>
+      </div>
+
+      <!-- 3. SAM API (Server 3 - Dual Balances: USD & SYP) -->
+      <div class="inset-card" style="padding: 12px 14px; margin-bottom: 14px; border-radius: 14px; border: 1px solid rgba(245, 158, 11, 0.35); background: linear-gradient(180deg, rgba(245, 158, 11, 0.06) 0%, var(--input-bg) 100%);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <div style="font-size: 12px; font-weight: 800; color: #f59e0b;" id="admin-reserves-sam-title">💳 بوابة SAM API (سيرياتيل كاش & شام كاش)</div>
+          <span class="pill-badge" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; font-size: 10px; font-weight: 700;">رصيد مزدوج</span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; background: rgba(0,0,0,0.15); border-radius: 10px; padding: 8px 10px; text-align: center;">
+          <div>
+            <div style="font-size: 10px; color: var(--hint); margin-bottom: 2px;">رصيد SAM (USD)</div>
+            <div style="font-size: 18px; font-weight: 900; color: #10b981;" id="admin-wallet-sam-usd">$0.00</div>
+          </div>
+          <div>
+            <div style="font-size: 10px; color: var(--hint); margin-bottom: 2px;">رصيد SAM (SYP)</div>
+            <div style="font-size: 17px; font-weight: 900; color: #f59e0b;" id="admin-wallet-sam-syp">0 ل.س</div>
+          </div>
         </div>
       </div>
 
@@ -1430,7 +1601,7 @@
       <!-- Quick Admin Actions -->
       <div class="section-title" id="admin-reserves-actions-title">إجراءات الإدارة السريعة</div>
       <div style="display: flex; flex-direction: column; gap: 8px;">
-        <button class="btn-action-primary" onclick="openAdminUserSearchPage()" style="height: 46px; background: linear-gradient(135deg, #0284c7, #2563eb); font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 8px;">
+        <button class="btn-action-primary" onclick="openAdminUsersPage('wallet')" style="height: 46px; background: linear-gradient(135deg, #0284c7, #2563eb); font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 8px;">
           <span id="admin-reserves-btn-user">تعديل أو إيداع رصيد لأي عميل</span>
         </button>
         <button class="btn-action-secondary" onclick="openAdminConfigPage()" style="height: 44px; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 8px;">
@@ -1629,13 +1800,8 @@
       <div class="section-title" style="margin-top: 0;" id="label-lang-title">اللغة</div>
       <div style="margin-top: 6px;">
         <select class="admin-text-input" id="language-select-dropdown" onchange="changeStoreLanguage(this.value)" style="width: 100%; height: 44px; font-size: 14px; font-weight: 700; background: var(--input-bg); border-color: var(--border); color: var(--text); border-radius: 12px; padding: 0 12px; outline: none; cursor: pointer;">
-          <option value="ar">🇸🇦 العربية</option>
-          <option value="en">🇬🇧 English</option>
-          <option value="de">🇩🇪 Deutsch</option>
-          <option value="es">🇪🇸 Español</option>
-          <option value="fr">🇫🇷 Français</option>
-          <option value="it">🇮🇹 Italiano</option>
-          <option value="zh">🇨🇳 中文</option>
+          <option value="ar">العربية</option>
+          <option value="en">English</option>
         </select>
       </div>
     </div>
@@ -1659,7 +1825,7 @@
         </div>
         <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 10px; text-align: center;">
           <div style="font-size: 10px; color: var(--hint); font-weight: 700;" id="label-ref-stat-rate">نسبة العمولة</div>
-          <div style="font-size: 16px; font-weight: 800; color: var(--warning); margin-top: 2px;">0.2%</div>
+          <div style="font-size: 16px; font-weight: 800; color: var(--warning); margin-top: 2px;" id="referral-rate-val">0.2%</div>
         </div>
       </div>
 
@@ -1678,11 +1844,13 @@
     <!-- Direct Customer Support & Official Channels -->
     <div class="inset-card" style="display: flex; flex-direction: column; gap: 8px;">
       <div class="section-title" style="margin-top: 0;" id="label-support-section-title">الدعم وقنوات المتجر</div>
-      <button class="btn-action-secondary" onclick="openCustomerSupportChat()" style="height: 42px; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 8px;">
-        <span id="label-support-chat-btn">التواصل مع خدمة العملاء والدعم</span>
+      <button class="btn-action-secondary" onclick="openCustomerSupportChat()" style="height: 44px; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 8px;">
+        <span style="font-size: 16px;">💬</span>
+        <span id="label-support-chat-btn">التواصل مع خدمة العملاء والدعم (@ahmedghx)</span>
       </button>
-      <button class="btn-action-secondary" onclick="openOfficialChannel()" style="height: 42px; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 8px;">
-        <span id="label-official-channel-btn">قناة العروض والتحديثات الرسمية</span>
+      <button class="btn-action-secondary" onclick="openOfficialChannel()" style="height: 44px; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 8px;">
+        <span style="font-size: 16px;">📢</span>
+        <span id="label-official-channel-btn">قناة العروض والتحديثات الرسمية (@ghstorex)</span>
       </button>
     </div>
   </main>

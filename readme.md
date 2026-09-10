@@ -105,7 +105,7 @@ docker compose -p ghstore up -d --build
 
 View live container logs:
 ```bash
-docker logs -f GHstore
+docker logs -f gh-store-tele-docker
 ```
 
 ---

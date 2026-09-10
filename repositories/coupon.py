@@ -57,6 +57,16 @@ class CouponRepository:
         return coupon
 
     @staticmethod
-    async def increment_usage(coupon_id: int, session: AsyncSession) -> None:
-        stmt = update(Coupon).where(Coupon.id == coupon_id).values(usage_count=Coupon.usage_count + 1)
-        await session_execute(stmt, session)
+    async def increment_usage(coupon_id: int, session: AsyncSession) -> bool:
+        """Atomically increment usage only if under limit. Returns True if claimed."""
+        from sqlalchemy import or_
+        stmt = (update(Coupon)
+                .where(Coupon.id == coupon_id,
+                       or_(Coupon.usage_limit.is_(None), Coupon.usage_count < Coupon.usage_limit))
+                .values(usage_count=Coupon.usage_count + 1)
+                .returning(Coupon.id))
+        res = await session_execute(stmt, session)
+        try:
+            return res.scalar_one_or_none() is not None
+        except Exception:
+            return True

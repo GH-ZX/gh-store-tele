@@ -96,6 +96,18 @@ class UserRepository:
         await session_execute(stmt, session)
 
     @staticmethod
+    async def credit_balance(telegram_id: int, amount: float, session: Session | AsyncSession) -> None:
+        """Atomically credit balance to top_up_amount."""
+        if amount <= 0:
+            return
+        stmt = (
+            update(User)
+            .where(User.telegram_id == telegram_id)
+            .values(top_up_amount=func.coalesce(User.top_up_amount, 0.0) + amount)
+        )
+        await session_execute(stmt, session)
+
+    @staticmethod
     async def create(user_dto: UserDTO, session: Session | AsyncSession) -> int:
         user = User(**user_dto.model_dump())
         session.add(user)

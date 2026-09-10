@@ -29,7 +29,7 @@ from repositories.batstore_product import BatStoreProductRepository
 from repositories.coupon import CouponRepository
 from repositories.referral_withdrawal import ReferralWithdrawalRepository
 from repositories.user import UserRepository
-from routes.common import verify_admin
+from routes.common import normalize_delivery_good, verify_admin
 from routes.tma_catalog import invalidate_catalog_cache, invalidate_admin_stats_cache
 from services.batstore import BatStoreService
 from services.config import CONFIG_DEFINITIONS, ConfigService
@@ -42,8 +42,8 @@ from utils.telegram import clean_tg_emojis
 router = APIRouter(tags=["admin"])
 
 @router.get("/api/admin/search/demands")
-async def get_admin_search_demands(tg_id: int):
-    if not verify_admin(tg_id):
+async def get_admin_search_demands(tg_id: int, request: Request):
+    if not verify_admin(tg_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
     from bot import redis
     demands = []
@@ -58,6 +58,8 @@ async def get_admin_search_demands(tg_id: int):
 
     return {"status": "ok", "demands": demands}
 
+
+_RUNNING_BROADCASTS: dict[str, "asyncio.Task"] = {}
 
 async def _run_admin_broadcast(broadcast_id: str, message: str, target_segment: str):
     """Rate-limited background broadcast runner (~25 msgs/sec)."""
@@ -74,15 +76,46 @@ async def _run_admin_broadcast(broadcast_id: str, message: str, target_segment: 
             total = len(users)
             sent = 0
             failed = 0
-
-            for u in users:
+            if redis:
+                try:
+                    await redis.setex(f"ghstore:broadcast:{broadcast_id}", 86400, json.dumps({"active": True, "sent": 0, "total": total, "failed": 0}))
+                except Exception:
+                    pass
+            for idx, u in enumerate(users):
                 try:
                     await bot.send_message(u.telegram_id, message, parse_mode="HTML")
                     sent += 1
-                except Exception:
-                    failed += 1
+                except Exception as e:
+                    err_name = type(e).__name__
+                    if err_name in ("TelegramRetryAfter", "RetryAfter"):
+                        try:
+                            await asyncio.sleep(float(getattr(e, "retry_after", 5)) + 1.0)
+                        except Exception:
+                            await asyncio.sleep(5)
+                        try:
+                            await bot.send_message(u.telegram_id, message, parse_mode="HTML")
+                            sent += 1
+                        except Exception:
+                            failed += 1
+                    elif err_name in ("TelegramForbiddenError", "BotBlocked", "UserDeactivated"):
+                        failed += 1
+                        try:
+                            async with get_db_session() as s2:
+                                uu = await UserRepository.get_by_tgid(u.telegram_id, s2)
+                                if uu is not None:
+                                    uu.can_receive_messages = False
+                                    await UserRepository.update(uu, s2)
+                                    await session_commit(s2)
+                        except Exception:
+                            pass
+                    else:
+                        failed += 1
                 await asyncio.sleep(0.04)
-
+                if redis and (idx % 25 == 0):
+                    try:
+                        await redis.setex(f"ghstore:broadcast:{broadcast_id}", 86400, json.dumps({"active": True, "sent": sent, "total": total, "failed": failed}))
+                    except Exception:
+                        pass
             if redis:
                 await redis.setex(
                     f"ghstore:broadcast:{broadcast_id}",
@@ -95,8 +128,17 @@ async def _run_admin_broadcast(broadcast_id: str, message: str, target_segment: 
                         "completed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                     })
                 )
+    except asyncio.CancelledError:
+        try:
+            if redis:
+                await redis.setex(f"ghstore:broadcast:{broadcast_id}", 86400, json.dumps({"active": False, "cancelled": True}))
+        except Exception:
+            pass
+        raise
     except Exception as e:
         logging.error("Broadcast %s failed: %s", broadcast_id, e)
+    finally:
+        _RUNNING_BROADCASTS.pop(broadcast_id, None)
 
 
 @router.post("/api/admin/manual-sale")
@@ -108,7 +150,7 @@ async def admin_manual_sale(request: Request):
         return JSONResponse({"error": "invalid_json"}, status_code=400)
 
     admin_tg_id = int(body.get("admin_tg_id") or 0)
-    if not verify_admin(admin_tg_id):
+    if not verify_admin(admin_tg_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
 
     product_id = int(body.get("product_id") or 0)
@@ -400,8 +442,27 @@ async def admin_start_broadcast(request: Request):
         return JSONResponse({"error": "empty_message"}, status_code=400)
 
     broadcast_id = uuid.uuid4().hex[:8]
-    asyncio.create_task(_run_admin_broadcast(broadcast_id, msg, segment))
+    task = asyncio.create_task(_run_admin_broadcast(broadcast_id, msg, segment))
+    _RUNNING_BROADCASTS[broadcast_id] = task
+    task.add_done_callback(lambda t, bid=broadcast_id: _RUNNING_BROADCASTS.pop(bid, None))
     return {"status": "started", "broadcast_id": broadcast_id}
+
+
+@router.post("/api/admin/broadcast/cancel")
+async def admin_broadcast_cancel(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not verify_admin(admin_id, request):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    bid = str(body.get("broadcast_id") or "").strip()
+    task = _RUNNING_BROADCASTS.get(bid)
+    if task is None:
+        return JSONResponse({"error": "not_running"}, status_code=404)
+    task.cancel()
+    return {"status": "cancelling", "broadcast_id": bid}
 
 
 @router.get("/api/admin/broadcast/status")
@@ -417,6 +478,8 @@ async def admin_broadcast_status(request: Request, tg_id: int, broadcast_id: str
                 return json.loads(raw)
     except Exception:
         pass
+    if broadcast_id in _RUNNING_BROADCASTS:
+        return {"active": True, "sent": 0, "total": 0, "failed": 0}
     return {"active": False, "sent": 0, "total": 0, "failed": 0}
 
 
@@ -427,16 +490,37 @@ async def admin_update_rate(request: Request):
     except Exception:
         return JSONResponse({"error": "invalid_json"}, status_code=400)
     admin_id = body.get("admin_tg_id") or body.get("tg_id")
-    if not verify_admin(admin_id):
+    if not verify_admin(admin_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
-    rate_raw = float(body.get("syp_rate") or 0.0)
+    try:
+        rate_raw = float(body.get("syp_rate") or body.get("syp_usd_rate") or 0.0)
+    except (ValueError, TypeError):
+        return JSONResponse({"error": "invalid_rate"}, status_code=400)
     if rate_raw <= 0:
         return JSONResponse({"error": "invalid_rate"}, status_code=400)
-    stored_rate = str(1.0 / rate_raw) if rate_raw > 100.0 else str(rate_raw)
+    from services.currency_rates import CurrencyRateService
+    parsed = CurrencyRateService.parse_syp_rate(rate_raw)
+    if not parsed:
+        return JSONResponse({"error": "invalid_rate"}, status_code=400)
     async with get_db_session() as session:
-        await ConfigService.set(session, "SAM_SYP_USD_RATE", stored_rate)
+        await ConfigService.set(session, "SAM_SYP_USD_RATE", str(parsed))
         await session_commit(session)
-    return {"status": "ok", "syp_rate": int(round(rate_raw if rate_raw > 100.0 else 1.0 / rate_raw))}
+    CurrencyRateService.set_rate("SYP", parsed)
+    invalidate_catalog_cache()
+    invalidate_admin_stats_cache()
+    try:
+        import config as _cfg
+        _cfg.SAM_SYP_USD_RATE = str(parsed)
+    except Exception:
+        pass
+    try:
+        from routes.tma_catalog import _SUPPLIER_WALLETS_CACHE, broadcast_sse_event
+        _SUPPLIER_WALLETS_CACHE["data"] = None
+        _SUPPLIER_WALLETS_CACHE["expire_time"] = 0.0
+        broadcast_sse_event("rate_update", {"syp_rate": parsed})
+    except Exception:
+        pass
+    return {"status": "ok", "syp_rate": parsed}
 
 
 @router.post("/api/admin/referral-rate/update")
@@ -446,9 +530,14 @@ async def admin_update_referral_rate(request: Request):
     except Exception:
         return JSONResponse({"error": "invalid_json"}, status_code=400)
     admin_id = body.get("admin_tg_id") or body.get("tg_id")
-    if not verify_admin(admin_id):
+    if not verify_admin(admin_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
-    ref_rate = float(body.get("referral_rate") or 0.2)
+    try:
+        ref_rate = float(body.get("referral_rate") or 0.2)
+    except (ValueError, TypeError):
+        return JSONResponse({"error": "invalid_rate"}, status_code=400)
+    if not (0.0 <= ref_rate <= 50.0):
+        return JSONResponse({"error": "invalid_rate"}, status_code=400)
     async with get_db_session() as session:
         await ConfigService.set(session, "REFERRAL_MARGIN_COMMISSION_PERCENT", str(ref_rate))
         await session_commit(session)
@@ -463,7 +552,7 @@ async def admin_update_store_logo(request: Request):
     except Exception:
         return JSONResponse({"error": "invalid_json"}, status_code=400)
     admin_id = body.get("admin_tg_id") or body.get("tg_id")
-    if not verify_admin(admin_id):
+    if not verify_admin(admin_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
     url = (body.get("store_logo_url") or "").strip()
     async with get_db_session() as session:
@@ -481,7 +570,7 @@ async def admin_update_margin(request: Request):
     except Exception:
         return JSONResponse({"error": "invalid_json"}, status_code=400)
     admin_id = body.get("admin_tg_id") or body.get("tg_id")
-    if not verify_admin(admin_id):
+    if not verify_admin(admin_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
     margin = float(body.get("margin_percent") or 20.0)
     async with get_db_session() as session:
@@ -499,9 +588,14 @@ async def admin_update_stars_rate(request: Request):
     except Exception:
         return JSONResponse({"error": "invalid_json"}, status_code=400)
     admin_id = body.get("admin_tg_id") or body.get("tg_id")
-    if not verify_admin(admin_id):
+    if not verify_admin(admin_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
-    rate = float(body.get("stars_rate") or 0.01)
+    try:
+        rate = float(body.get("stars_rate") or 0.01)
+    except (ValueError, TypeError):
+        return JSONResponse({"error": "invalid_rate"}, status_code=400)
+    if not (0.0 < rate <= 1.0):
+        return JSONResponse({"error": "invalid_rate"}, status_code=400)
     async with get_db_session() as session:
         await ConfigService.set(session, "GHSTORE_STARS_TO_USD", str(rate))
         await session_commit(session)
@@ -516,7 +610,7 @@ async def admin_update_announcement(request: Request):
     except Exception:
         return JSONResponse({"error": "invalid_json"}, status_code=400)
     admin_id = body.get("admin_tg_id") or body.get("tg_id")
-    if not verify_admin(admin_id):
+    if not verify_admin(admin_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
     announcement = (body.get("announcement") or "").strip()
     async with get_db_session() as session:
@@ -532,7 +626,7 @@ async def admin_update_trending_tags(request: Request):
     except Exception:
         return JSONResponse({"error": "invalid_json"}, status_code=400)
     admin_id = body.get("admin_tg_id") or body.get("tg_id")
-    if not verify_admin(admin_id):
+    if not verify_admin(admin_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
     tags = (body.get("tags") or "").strip()
     async with get_db_session() as session:
@@ -549,7 +643,7 @@ async def admin_sync_catalog(request: Request):
     except Exception:
         return JSONResponse({"error": "invalid_json"}, status_code=400)
     admin_id = body.get("admin_tg_id") or body.get("tg_id")
-    if not verify_admin(admin_id):
+    if not verify_admin(admin_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
     async with get_db_session() as session:
         created, updated = await BatStoreService.sync_catalog(session)
@@ -571,7 +665,7 @@ async def admin_toggle_autorefund(request: Request):
     except Exception:
         return JSONResponse({"error": "invalid_json"}, status_code=400)
     admin_id = body.get("admin_tg_id") or body.get("tg_id")
-    if not verify_admin(admin_id):
+    if not verify_admin(admin_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
     async with get_db_session() as session:
         curr = await ConfigService.get(session, "AUTOREFUND_ENABLED", default="false")
@@ -582,9 +676,9 @@ async def admin_toggle_autorefund(request: Request):
 
 
 @router.get("/api/admin/stuck-orders")
-async def admin_get_stuck_orders(tg_id: int):
+async def admin_get_stuck_orders(tg_id: int, request: Request):
     """Return orders that are pending fulfillment or stuck requiring admin action."""
-    if not verify_admin(tg_id):
+    if not verify_admin(tg_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
     async with get_db_session() as session:
         stmt = select(BatStoreOrder).where(
@@ -615,9 +709,9 @@ async def admin_get_stuck_orders(tg_id: int):
 
 
 @router.get("/api/admin/live-activity")
-async def admin_get_live_activity(tg_id: int, limit: int = 50):
+async def admin_get_live_activity(tg_id: int, request: Request, limit: int = 50):
     """Real-time store activity radar for admin: live stream of all customer orders & recharges."""
-    if not verify_admin(tg_id):
+    if not verify_admin(tg_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
 
     async with get_db_session() as session:
@@ -629,8 +723,15 @@ async def admin_get_live_activity(tg_id: int, limit: int = 50):
         orders = (await session_execute(stmt_orders, session)).scalars().all()
         for o in orders:
             product_names = []
+            goods_list = []
+            warranty_days = 0
             for d in (o.details or []):
                 product_names.append(d.get("name") or "Product")
+                warranty_days = max(warranty_days, d.get("warranty_days") or 0)
+                for g in d.get("delivery_goods", []):
+                    clean_g = normalize_delivery_good(g)
+                    if clean_g:
+                        goods_list.append(clean_g)
             activities.append({
                 "id": f"order_{o.id}",
                 "raw_id": o.id,
@@ -640,11 +741,12 @@ async def admin_get_live_activity(tg_id: int, limit: int = 50):
                 "total_usd": round(float(o.total_sell or 0.0), 2),
                 "sym": sym,
                 "status": o.status,
-                "needs_attention": o.status in ("pending_fulfillment", "failed", "pending"),
+                "goods": goods_list,
+                "warranty_days": warranty_days,
+                "needs_attention": o.status in ("pending_fulfillment", "pending"),
                 "created_at": o.created_at.strftime("%b %d, %H:%M") if getattr(o, "created_at", None) else "",
                 "timestamp": o.created_at.timestamp() if getattr(o, "created_at", None) else 0,
             })
-
         # 2. SAM Recharges
         stmt_sam = select(SamPayment).order_by(SamPayment.id.desc()).limit(limit)
         sam_rows = (await session_execute(stmt_sam, session)).scalars().all()
@@ -652,19 +754,21 @@ async def admin_get_live_activity(tg_id: int, limit: int = 50):
             is_paid = (sp.event == "invoice.paid")
             is_expired = (sp.event == "invoice.expired")
             status_label = "completed" if is_paid else ("failed" if is_expired else "pending")
+            method_name = sp.method or "shamcash"
             activities.append({
                 "id": f"sam_{sp.id}",
                 "raw_id": sp.id,
                 "type": "recharge",
-                "method": sp.payment_method or "shamcash",
-                "title": f"شحن {sp.payment_method.upper() if sp.payment_method else 'SAM'}",
+                "method": method_name,
+                "title": f"شحن {method_name.upper()}",
                 "telegram_id": sp.telegram_id,
                 "amount_usd": round(float(sp.usd_amount or 0.0), 2),
                 "local_amount": round(float(sp.amount or 0.0), 2),
                 "currency": sp.currency or "USD",
                 "invoice_id": sp.invoice_id or "",
+                "transaction_ref": sp.transaction_ref or "",
                 "status": status_label,
-                "needs_attention": not is_paid,
+                "needs_attention": (not is_paid and not is_expired),
                 "created_at": sp.created_at.strftime("%b %d, %H:%M") if getattr(sp, "created_at", None) else "",
                 "timestamp": sp.created_at.timestamp() if getattr(sp, "created_at", None) else 0,
             })
@@ -690,6 +794,71 @@ async def admin_get_live_activity(tg_id: int, limit: int = 50):
                 "timestamp": stp.created_at.timestamp() if getattr(stp, "created_at", None) else 0,
             })
 
+        # 4. Crypto Deposits
+        from models.deposit import Deposit
+        stmt_dep = select(Deposit).order_by(Deposit.id.desc()).limit(limit)
+        dep_rows = (await session_execute(stmt_dep, session)).scalars().all()
+        for dp in dep_rows:
+            activities.append({
+                "id": f"crypto_{dp.id}",
+                "raw_id": dp.id,
+                "type": "recharge",
+                "method": "crypto",
+                "title": f"شحن كريبتو ({dp.currency or 'USDT'})",
+                "telegram_id": dp.user_id,
+                "amount_usd": round(float(dp.amount or 0.0), 2),
+                "local_amount": round(float(dp.amount or 0.0), 2),
+                "currency": dp.currency or "USD",
+                "invoice_id": str(dp.id),
+                "status": "completed",
+                "needs_attention": False,
+                "created_at": dp.created_at.strftime("%b %d, %H:%M") if getattr(dp, "created_at", None) else "",
+                "timestamp": dp.created_at.timestamp() if getattr(dp, "created_at", None) else 0,
+            })
+
+        # 5. Admin Manual Balance Transfers & Adjustments
+        stmt_audit = select(AdminAuditLog).where(
+            AdminAuditLog.action.in_(["adjust_balance", "rollback_adjust_balance", "manual_sale", "recharge_approved"])
+        ).order_by(AdminAuditLog.id.desc()).limit(limit)
+        audit_rows = (await session_execute(stmt_audit, session)).scalars().all()
+        for aud in audit_rows:
+            det = aud.details or {}
+            target_user = det.get("target_user")
+            amount = det.get("amount") or det.get("sale_price") or det.get("amount_usd") or 0.0
+            action_type = det.get("action_type") or aud.action
+
+            if aud.action == "adjust_balance":
+                if action_type == "add":
+                    title = "تحويل رصيد يدوي للعميل (+)"
+                elif action_type == "deduct":
+                    title = "خصم رصيد يدوي (-)"
+                else:
+                    title = "تعديل رصيد يدوي"
+            elif aud.action == "rollback_adjust_balance":
+                title = "تراجع عن تحويل رصيد"
+            elif aud.action == "manual_sale":
+                title = f"بيع يدوي خارج المتجر ({det.get('product_name', 'منتج')})"
+            elif aud.action == "recharge_approved":
+                title = "اعتماد يدوي لعملية شحن"
+            else:
+                title = f"عملية إدارية ({aud.action})"
+
+            activities.append({
+                "id": f"audit_{aud.id}",
+                "raw_id": aud.id,
+                "type": "admin_transfer",
+                "method": "admin_transfer",
+                "title": title,
+                "telegram_id": target_user or aud.admin_tg_id,
+                "amount_usd": round(float(amount or 0.0), 2),
+                "local_amount": round(float(amount or 0.0), 2),
+                "currency": "USD",
+                "status": "completed",
+                "action_type": action_type,
+                "needs_attention": False,
+                "created_at": aud.created_at.strftime("%b %d, %H:%M") if getattr(aud, "created_at", None) else "",
+                "timestamp": aud.created_at.timestamp() if getattr(aud, "created_at", None) else 0,
+            })
         activities.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
 
         user_tg_ids = {a["telegram_id"] for a in activities if a.get("telegram_id")}
@@ -719,7 +888,7 @@ async def admin_approve_recharge(request: Request):
         return JSONResponse({"error": "invalid_json"}, status_code=400)
 
     admin_tg_id = int(body.get("admin_tg_id") or 0)
-    if not verify_admin(admin_tg_id):
+    if not verify_admin(admin_tg_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
 
     recharge_id = str(body.get("recharge_id") or "")
@@ -741,7 +910,7 @@ async def admin_approve_recharge(request: Request):
             return JSONResponse({"error": "invalid_params"}, status_code=400)
 
         res = await session_execute(
-            select(User.top_up_amount, User.consume_records).where(User.telegram_id == target_tg_id)
+            select(User.top_up_amount, User.consume_records).where(User.telegram_id == target_tg_id), session
         )
         user_row = res.first()
         if not user_row:
@@ -795,7 +964,7 @@ async def admin_refund_stuck_order(request: Request):
     except Exception:
         return JSONResponse({"error": "invalid_json"}, status_code=400)
     admin_id = body.get("admin_tg_id") or body.get("tg_id")
-    if not verify_admin(admin_id):
+    if not verify_admin(admin_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
     order_id = int(body.get("order_id") or 0)
     if not order_id:
@@ -925,9 +1094,9 @@ async def admin_test_batstore_balance(request: Request):
 
 
 @router.get("/api/admin/supplier/details")
-async def admin_get_supplier_details(tg_id: int):
+async def admin_get_supplier_details(tg_id: int, request: Request):
     """Return paired supplier settings, status, and config for the dedicated admin suppliers page."""
-    if not verify_admin(tg_id):
+    if not verify_admin(tg_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
     async with get_db_session() as session:
         bat_key = await ConfigService.get(session, "BATSTORE_API_KEY", env_fallback=os.environ.get("BATSTORE_API_KEY", ""))
@@ -940,6 +1109,17 @@ async def admin_get_supplier_details(tg_id: int):
         bat_prod_count = (await session_execute(select(func.count(BatStoreProduct.id)).where(BatStoreProduct.supplier == "batstore"), session)).scalar() or 0
         prod_prod_count = (await session_execute(select(func.count(BatStoreProduct.id)).where(BatStoreProduct.supplier == "prodseller"), session)).scalar() or 0
 
+        from services.batstore import BatStoreService
+        from services.prodseller import ProdSellerService
+        from services.sam import SamService
+        force_refresh = request.query_params.get("refresh") == "true"
+        bat_bal = await BatStoreService.get_cached_reseller_balance(session, force_refresh=force_refresh)
+        prod_bal = await ProdSellerService.get_cached_balance(session, force_refresh=force_refresh)
+        sam_bals = await SamService.get_cached_wallet_balances(session, force_refresh=force_refresh)
+        sam_usd = float(sam_bals.get("usd") or 0.0)
+        sam_syp = float(sam_bals.get("syp") or 0.0)
+        total_supp = round(bat_bal + prod_bal + sam_usd, 2)
+
     return {
         "batstore": {
             "name": "سيرفر 1: BatStore / VenteBot",
@@ -949,6 +1129,7 @@ async def admin_get_supplier_details(tg_id: int):
             "api_key_masked": (bat_key[:6] + "..." + bat_key[-4:]) if len(bat_key or "") > 10 else ("configured" if bat_key else ""),
             "sync_enabled": bat_sync,
             "product_count": bat_prod_count,
+            "balance": bat_bal,
         },
         "prodseller": {
             "name": "سيرفر 2: ProdSeller",
@@ -958,6 +1139,18 @@ async def admin_get_supplier_details(tg_id: int):
             "api_key_masked": (prod_key[:6] + "..." + prod_key[-4:]) if len(prod_key or "") > 10 else ("configured" if prod_key else ""),
             "sync_enabled": prod_sync,
             "product_count": prod_prod_count,
+            "balance": prod_bal,
+        },
+        "sam": {
+            "usd": sam_usd,
+            "syp": sam_syp,
+        },
+        "balances": {
+            "batstore_usd": bat_bal,
+            "prodseller_usd": prod_bal,
+            "sam_usd": sam_usd,
+            "sam_syp": sam_syp,
+            "total_supplier_usd": total_supp,
         },
         "routing_strategy": strategy,
         "auto_failover": auto_failover,
@@ -1018,9 +1211,9 @@ async def admin_sync_all_suppliers(request: Request):
 
 
 @router.get("/api/admin/config/all")
-async def admin_get_all_configs(tg_id: int):
+async def admin_get_all_configs(tg_id: int, request: Request):
     """Return all system configuration keys, current values, and descriptions."""
-    if not verify_admin(tg_id):
+    if not verify_admin(tg_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
     async with get_db_session() as session:
         configs_list = []
@@ -1029,11 +1222,13 @@ async def admin_get_all_configs(tg_id: int):
                 continue
             val = await ConfigService.get(session, key, env_fallback=os.environ.get(key, ""))
             is_secret = meta.get("secret", False)
+            masked_val = ("*" * 8 + str(val)[-4:]) if (is_secret and val and len(str(val)) > 4) else ("*" * 8 if is_secret and val else (val or ""))
             configs_list.append({
                 "key": key,
                 "desc": meta.get("desc", ""),
                 "secret": is_secret,
-                "value": val or "",
+                "value": masked_val,
+                "has_value": bool(val),
             })
         custom_keys = ["STORE_LOGO_URL", "STORE_ANNOUNCEMENT", "GLOBAL_MARGIN_PERCENT", "AUTOREFUND_ENABLED", "WEBHOOK_HOST"]
         for ck in custom_keys:
@@ -1056,12 +1251,14 @@ async def admin_set_config(request: Request):
     except Exception:
         return JSONResponse({"error": "invalid_json"}, status_code=400)
     admin_id = body.get("admin_tg_id") or body.get("tg_id")
-    if not verify_admin(admin_id):
+    if not verify_admin(admin_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
     key = str(body.get("key") or "").strip()
     value = str(body.get("value") or "").strip()
     if not key:
         return JSONResponse({"error": "missing_key"}, status_code=400)
+    if value.startswith("****"):
+        return {"status": "ok", "key": key, "value": "unchanged"}
     async with get_db_session() as session:
         await ConfigService.set(session, key, value)
         await session_commit(session)
@@ -1069,14 +1266,16 @@ async def admin_set_config(request: Request):
 
 
 @router.get("/api/admin/users")
-async def admin_get_users(tg_id: int, query: str = ""):
-    if not verify_admin(tg_id):
+async def admin_get_users(tg_id: int, request: Request, query: str = ""):
+    if not verify_admin(tg_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
     async with get_db_session() as session:
         stmt = select(User)
         q = (query or "").strip().lower()
         if q:
-            if q.isdigit():
+            if q == "reseller" or q == "resellers":
+                stmt = stmt.where(User.is_reseller == True).order_by(User.id.desc()).limit(50)  # noqa: E712
+            elif q.isdigit():
                 stmt = stmt.where((User.telegram_id == int(q)) | (User.id == int(q)))
             else:
                 uname = q.lstrip("@")
@@ -1101,6 +1300,7 @@ async def admin_get_users(tg_id: int, query: str = ""):
                 "vip_discount": disc_pct,
                 "is_banned": bool(u.is_banned),
                 "referrals_count": ref_qty,
+                "is_reseller": bool(getattr(u, "is_reseller", False)),
                 "custom_discount_pct": getattr(u, "custom_discount_pct", None),
                 "registered_at": u.registered_at.strftime("%Y-%m-%d") if getattr(u, "registered_at", None) else ""
             })
@@ -1114,7 +1314,7 @@ async def admin_adjust_balance(request: Request):
     except Exception:
         return JSONResponse({"error": "invalid_json"}, status_code=400)
     admin_id = body.get("admin_tg_id") or body.get("tg_id")
-    if not verify_admin(admin_id):
+    if not verify_admin(admin_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
     target_tg_id = int(body.get("target_tg_id") or 0)
     amount = float(body.get("amount") or 0.0)
@@ -1155,7 +1355,7 @@ async def admin_audit_rollback(request: Request):
         return JSONResponse({"error": "invalid_json"}, status_code=400)
 
     admin_id = body.get("admin_tg_id") or body.get("tg_id")
-    if not verify_admin(admin_id):
+    if not verify_admin(admin_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
 
     log_id = int(body.get("audit_id") or 0)
@@ -1190,6 +1390,7 @@ async def admin_audit_rollback(request: Request):
         else:
             return JSONResponse({"error": "set_cannot_be_automatically_reversed"}, status_code=400)
 
+        audit_entry.action = "adjust_balance_rolled_back"
         await UserRepository.update(user, session)
         session.add(AdminAuditLog(
             admin_tg_id=admin_id,
@@ -1209,7 +1410,7 @@ async def admin_toggle_ban(request: Request):
     except Exception:
         return JSONResponse({"error": "invalid_json"}, status_code=400)
     admin_id = body.get("admin_tg_id") or body.get("tg_id")
-    if not verify_admin(admin_id):
+    if not verify_admin(admin_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
     target_tg_id = int(body.get("target_tg_id") or 0)
     async with get_db_session() as session:
@@ -1222,6 +1423,119 @@ async def admin_toggle_ban(request: Request):
     return {"status": "ok", "is_banned": user.is_banned}
 
 
+@router.post("/api/admin/users/toggle-reseller")
+async def admin_toggle_reseller(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not verify_admin(admin_id, request):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    target_tg_id = int(body.get("target_tg_id") or 0)
+    async with get_db_session() as session:
+        user = await UserRepository.get_by_tgid(target_tg_id, session)
+        if not user:
+            return JSONResponse({"error": "user_not_found"}, status_code=404)
+        if "is_reseller" in body:
+            user.is_reseller = bool(body["is_reseller"])
+        else:
+            user.is_reseller = not bool(getattr(user, "is_reseller", False))
+        await UserRepository.update(user, session)
+        session.add(AdminAuditLog(
+            admin_tg_id=admin_id,
+            action="toggle_reseller",
+            details={"target_user": target_tg_id, "is_reseller": user.is_reseller}
+        ))
+        await session_commit(session)
+    return {"status": "ok", "is_reseller": user.is_reseller}
+
+
+@router.get("/api/admin/reseller/pricing")
+async def admin_get_reseller_pricing(tg_id: int, request: Request):
+    """Return all products with wholesale cost, retail price, and reseller price for admin management."""
+    if not verify_admin(tg_id, request):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    async with get_db_session() as session:
+        from repositories.product import ProductRepository
+        from services.sale_pricing import compute_reseller_price
+        products = await ProductRepository.get_all(session)
+        global_margin = float(await ConfigService.get(session, "GLOBAL_RESELLER_MARGIN_PERCENT", default="8.0") or 8.0)
+        items = []
+        for p in products:
+            res_pr = compute_reseller_price(
+                cost=p.cost_usd,
+                retail_price=p.sell_price_usd,
+                reseller_price_usd=p.reseller_price_usd,
+                reseller_margin_pct=p.reseller_margin_pct,
+                global_reseller_margin_pct=global_margin
+            )
+            profit = round(res_pr - float(p.cost_usd or 0.0), 2)
+            items.append({
+                "product_id": p.product_id,
+                "name": p.custom_name or p.name,
+                "raw_name": p.name,
+                "category": p.category or "Other",
+                "supplier": p.supplier or "batstore",
+                "server_badge": getattr(p, "server_badge", "سيرفر 1 (BatStore)") or "سيرفر 1 (BatStore)",
+                "cost_usd": round(float(p.cost_usd or 0.0), 2),
+                "sell_price_usd": round(float(p.sell_price_usd or 0.0), 2),
+                "reseller_price_usd": p.reseller_price_usd,
+                "reseller_margin_pct": p.reseller_margin_pct,
+                "effective_reseller_price": res_pr,
+                "profit_usd": profit,
+                "hidden": bool(p.hidden),
+            })
+    return {
+        "status": "ok",
+        "global_reseller_margin_percent": global_margin,
+        "products": items
+    }
+
+
+@router.post("/api/admin/reseller/pricing/update")
+async def admin_update_product_reseller_pricing(request: Request):
+    """Update custom reseller price or percentage for a single product."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not verify_admin(admin_id, request):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    product_id = int(body.get("product_id") or 0)
+    res_price = body.get("reseller_price_usd")
+    res_pct = body.get("reseller_margin_pct")
+    async with get_db_session() as session:
+        from repositories.product import ProductRepository
+        prod = await ProductRepository.get_by_product_id(product_id, session)
+        if not prod:
+            return JSONResponse({"error": "product_not_found"}, status_code=404)
+        r_price_val = float(res_price) if res_price is not None and str(res_price).strip() != "" else None
+        r_pct_val = float(res_pct) if res_pct is not None and str(res_pct).strip() != "" else None
+        await ProductRepository.set_reseller_pricing(product_id, r_price_val, r_pct_val, session)
+        await session_commit(session)
+    invalidate_catalog_cache()
+    return {"status": "ok", "product_id": product_id, "reseller_price_usd": r_price_val, "reseller_margin_pct": r_pct_val}
+
+
+@router.post("/api/admin/reseller/global-margin/update")
+async def admin_update_global_reseller_margin(request: Request):
+    """Update system-wide fallback reseller margin percentage."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not verify_admin(admin_id, request):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    margin = float(body.get("margin_percent") or 8.0)
+    async with get_db_session() as session:
+        await ConfigService.set(session, "GLOBAL_RESELLER_MARGIN_PERCENT", str(margin))
+        await session_commit(session)
+    invalidate_catalog_cache()
+    return {"status": "ok", "global_reseller_margin_percent": margin}
+
 @router.post("/api/admin/users/send-message")
 async def admin_send_user_message(request: Request):
     """Admin sends direct message to a customer from the bot."""
@@ -1231,7 +1545,7 @@ async def admin_send_user_message(request: Request):
     except Exception:
         return JSONResponse({"error": "invalid_json"}, status_code=400)
     admin_id = body.get("admin_tg_id") or body.get("tg_id")
-    if not verify_admin(admin_id):
+    if not verify_admin(admin_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
     target_tg_id = int(body.get("target_tg_id") or 0)
     msg = str(body.get("message") or "").strip()
@@ -1252,7 +1566,7 @@ async def admin_set_discount(request: Request):
     except Exception:
         return JSONResponse({"error": "invalid_json"}, status_code=400)
     admin_id = body.get("admin_tg_id") or body.get("tg_id")
-    if not verify_admin(admin_id):
+    if not verify_admin(admin_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
     target_tg_id = int(body.get("target_tg_id") or 0)
     disc = body.get("discount_pct")
@@ -1268,8 +1582,8 @@ async def admin_set_discount(request: Request):
 
 
 @router.get("/api/admin/orders")
-async def admin_get_orders(tg_id: int, status: str = "all"):
-    if not verify_admin(tg_id):
+async def admin_get_orders(tg_id: int, request: Request, status: str = "all"):
+    if not verify_admin(tg_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
     async with get_db_session() as session:
         stmt = select(BatStoreOrder)
@@ -1284,6 +1598,12 @@ async def admin_get_orders(tg_id: int, status: str = "all"):
             cost_tot = sum(float(d.get("cost_usd") or 0.0) * int(d.get("quantity") or 1) for d in (o.details or []))
             sell_tot = float(o.total_sell or 0.0)
             profit = round(sell_tot - cost_tot, 2)
+            goods_list = []
+            for d in (o.details or []):
+                for g in d.get("delivery_goods", []):
+                    clean_g = normalize_delivery_good(g)
+                    if clean_g:
+                        goods_list.append(clean_g)
             result.append({
                 "id": o.id,
                 "telegram_id": o.telegram_id,
@@ -1292,6 +1612,7 @@ async def admin_get_orders(tg_id: int, status: str = "all"):
                 "profit_usd": profit,
                 "status": o.status,
                 "products": ", ".join(p_names) if p_names else "Order",
+                "goods": goods_list,
                 "customer_reference": o.customer_reference or "",
                 "created_at": o.created_at.strftime("%Y-%m-%d %H:%M") if getattr(o, "created_at", None) else "",
             })
@@ -1306,7 +1627,7 @@ async def admin_update_order_status(request: Request):
     except Exception:
         return JSONResponse({"error": "invalid_json"}, status_code=400)
     admin_id = body.get("admin_tg_id") or body.get("tg_id")
-    if not verify_admin(admin_id):
+    if not verify_admin(admin_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
     order_id = int(body.get("order_id") or 0)
     new_status = str(body.get("status") or "").strip()
@@ -1335,8 +1656,8 @@ async def admin_update_order_status(request: Request):
 
 
 @router.get("/api/admin/coupons")
-async def admin_get_coupons(tg_id: int):
-    if not verify_admin(tg_id):
+async def admin_get_coupons(tg_id: int, request: Request):
+    if not verify_admin(tg_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
     async with get_db_session() as session:
         stmt = select(Coupon).order_by(Coupon.id.desc()).limit(30)
@@ -1363,7 +1684,7 @@ async def admin_create_coupon(request: Request):
     except Exception:
         return JSONResponse({"error": "invalid_json"}, status_code=400)
     admin_id = body.get("admin_tg_id") or body.get("tg_id")
-    if not verify_admin(admin_id):
+    if not verify_admin(admin_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
     code = (body.get("code") or "").strip().upper()
     val = float(body.get("value") or 0.0)
@@ -1396,7 +1717,7 @@ async def admin_toggle_coupon(request: Request):
     except Exception:
         return JSONResponse({"error": "invalid_json"}, status_code=400)
     admin_id = body.get("admin_tg_id") or body.get("tg_id")
-    if not verify_admin(admin_id):
+    if not verify_admin(admin_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
     coupon_id = int(body.get("coupon_id") or 0)
     async with get_db_session() as session:
@@ -1416,7 +1737,7 @@ async def admin_update_product(request: Request):
     except Exception:
         return JSONResponse({"error": "invalid_json"}, status_code=400)
     admin_id = body.get("admin_tg_id") or body.get("tg_id")
-    if not verify_admin(admin_id):
+    if not verify_admin(admin_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
     product_id = int(body.get("product_id") or 0)
     async with get_db_session() as session:
@@ -1429,7 +1750,14 @@ async def admin_update_product(request: Request):
         if "category" in body:
             prod.category = (body["category"] or "").strip() or prod.category
         if "sell_price_usd" in body and body["sell_price_usd"] is not None:
-            prod.sell_price_usd = float(body["sell_price_usd"])
+            from models.batstore_product import MarginType
+            new_sell = float(body["sell_price_usd"])
+            prod.sell_price_usd = new_sell
+            prod.margin_type = MarginType.FIXED_PRICE
+            prod.margin_value = new_sell
+        if "reseller_price_usd" in body:
+            r_pr = body["reseller_price_usd"]
+            prod.reseller_price_usd = float(r_pr) if r_pr is not None and str(r_pr).strip() != "" else None
         if "stock" in body:
             prod.stock = int(body["stock"]) if body["stock"] is not None and str(body["stock"]).strip() != "" else None
         if "hidden" in body:
@@ -1446,7 +1774,7 @@ async def admin_update_category(request: Request):
     except Exception:
         return JSONResponse({"error": "invalid_json"}, status_code=400)
     admin_id = body.get("admin_tg_id") or body.get("tg_id")
-    if not verify_admin(admin_id):
+    if not verify_admin(admin_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
     category_id = int(body.get("category_id") or 0)
     async with get_db_session() as session:
@@ -1503,9 +1831,13 @@ async def admin_process_referral_withdrawal(request: Request):
         user = await UserRepository.get_by_tgid(withdrawal.telegram_id, session)
 
         if action == "approve":
+            if user is None:
+                return JSONResponse({"error": "user_not_found"}, status_code=404)
+            debited = await UserRepository.try_debit_balance(user.telegram_id, float(withdrawal.amount_usd or 0.0), session)
+            if not debited:
+                return JSONResponse({"error": "insufficient_spendable_balance", "message": "User already spent commission in store."}, status_code=400)
             await ReferralWithdrawalRepository.update_status(withdrawal_id, "completed", notes, session)
             await session_commit(session)
-            invalidate_admin_stats_cache()
             if user:
                 try:
                     await bot.send_message(

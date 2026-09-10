@@ -49,7 +49,7 @@ class FinancialDigestService:
 
         total_inflow = float(crypto_total) + float(stars_total) + float(sam_total)
 
-        # 4. Sales & Fulfillment (completed BatStore orders only)
+        # 4. Sales & Fulfillment across all suppliers (BatStore and ProdSeller)
         stmt_orders = (
             select(BatStoreOrder)
             .where(BatStoreOrder.created_at >= since, BatStoreOrder.status == "completed")
@@ -59,11 +59,17 @@ class FinancialDigestService:
 
         total_sales = 0.0
         wholesale_cost = 0.0
+        bat_orders_count = 0
+        prod_orders_count = 0
         for o in orders:
-            total_sales += o.total_sell or 0.0
+            total_sales += float(o.total_sell or 0.0)
+            is_prod = any(d.get("supplier") == "prodseller" for d in (o.details or []))
+            if is_prod:
+                prod_orders_count += 1
+            else:
+                bat_orders_count += 1
             for d in (o.details or []):
-                wholesale_cost += (d.get("cost_usd") or 0.0) * (d.get("quantity") or 1)
-
+                wholesale_cost += float(d.get("cost_usd") or 0.0) * int(d.get("quantity") or 1)
         gross_profit = total_sales - wholesale_cost
         margin_pct = (gross_profit / wholesale_cost * 100) if wholesale_cost > 0 else 0.0
 
@@ -85,10 +91,10 @@ class FinancialDigestService:
             f"• SAM Cash: {sam_total:.2f}{sym} ({sam_count} tx)\n"
             f"• <b>Total Top-ups:</b> <b>{total_inflow:.2f}{sym}</b>\n\n"
             "🛒 <b>Sales & Fulfillment:</b>\n"
-            f"• Orders: {len(orders)} fulfilled\n"
+            f"• Orders: {len(orders)} fulfilled (BatStore: {bat_orders_count}, ProdSeller: {prod_orders_count})\n"
             f"• Customer Revenue: {total_sales:.2f}{sym}\n"
             f"• Wholesale Cost: {wholesale_cost:.2f}{sym}\n"
-            f"• <b>Gross Profit (before fees):</b> <b>{'+' if gross_profit >= 0 else ''}{gross_profit:.2f}{sym}</b> ({margin_pct:.1f}%)\n\n"
+            f"• <b>Gross Profit:</b> <b>{'+' if gross_profit >= 0 else ''}{gross_profit:.2f}{sym}</b> ({margin_pct:.1f}%)\n\n"
             f"👥 <b>New Customers:</b> {new_users} registrations"
         )
 

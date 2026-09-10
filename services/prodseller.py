@@ -56,6 +56,12 @@ class ProdSellerService:
             cls._shared_client = httpx.AsyncClient(timeout=30.0)
         return _PersistentClientContext(cls._shared_client)
 
+    @classmethod
+    async def close_client(cls) -> None:
+        """Close persistent HTTP client session."""
+        if cls._shared_client and not cls._shared_client.is_closed:
+            await cls._shared_client.aclose()
+            cls._shared_client = None
     @staticmethod
     async def resolve_api_key(session: AsyncSession | Session | None = None) -> str:
         """Resolve ProdSeller API key from database config, falling back to environment."""
@@ -103,11 +109,11 @@ class ProdSellerService:
         }
 
     @staticmethod
-    async def get_cached_balance(session: AsyncSession | Session, redis_client=None) -> float:
+    async def get_cached_balance(session: AsyncSession | Session, redis_client=None, force_refresh: bool = False) -> float:
         """Fetch ProdSeller balance with 30s Redis TTL caching for circuit breaking."""
         cache_key = "ghstore:cache:prodseller_balance"
         r = redis_client or BatStoreProductRepository._redis
-        if r is not None:
+        if not force_refresh and r is not None:
             try:
                 cached = await r.get(cache_key)
                 if cached is not None:
@@ -126,8 +132,14 @@ class ProdSellerService:
             return bal
         except Exception as e:
             logging.warning("Failed to fetch ProdSeller balance: %s", e)
-            return 9999.0
-
+            if r is not None:
+                try:
+                    cached = await r.get(cache_key)
+                    if cached is not None:
+                        return float(cached)
+                except Exception:
+                    pass
+            return 0.0 if force_refresh else 9999.0
     get_cached_reseller_balance = get_cached_balance
     @staticmethod
     async def list_products(session: AsyncSession | Session | None = None) -> list[dict[str, Any]]:
@@ -201,6 +213,36 @@ class ProdSellerService:
         return goods
 
     @staticmethod
+    async def get_order(session: AsyncSession | Session, order_id: str) -> dict[str, Any]:
+        """Fetch order status and delivered goods from ProdSeller GET /v1/orders/{order_id}."""
+        key = await ProdSellerService.resolve_api_key(session)
+        headers = {
+            "X-API-Key": key,
+            "Accept": "application/json",
+        }
+        async with await ProdSellerService._client() as client:
+            try:
+                resp = await client.get(
+                    f"{ProdSellerService.BASE_URL}/orders/{order_id}",
+                    headers=headers,
+                )
+            except Exception as e:
+                raise ProdSellerAPIError(f"ProdSeller get_order connection error: {e}") from e
+
+        if resp.status_code == 200:
+            return resp.json()
+        raise ProdSellerAPIError(f"ProdSeller /orders/{order_id} returned {resp.status_code}: {resp.text[:100]}")
+
+    @staticmethod
+    def get_order_reseller_status(order_data: dict[str, Any]) -> str:
+        """Map ProdSeller order status to ('completed', 'failed', 'pending')."""
+        status_str = str(order_data.get("status") or "").lower()
+        if status_str in ("completed", "delivered", "success", "active") or bool(order_data.get("deliveredKey")):
+            return "completed"
+        if status_str in ("failed", "canceled", "cancelled", "rejected"):
+            return "failed"
+        return "pending"
+    @staticmethod
     async def sync_catalog(session: AsyncSession | Session) -> tuple[int, int]:
         """Pull /v1/products from ProdSeller and upsert into batstore_products table.
 
@@ -220,12 +262,14 @@ class ProdSellerService:
 
         created = 0
         updated = 0
+        kept_ids: list[int] = []
         for p in products:
             mongo_id = str(p.get("id") or "").strip()
             if not mongo_id:
                 continue
 
             int_pid = ProdSellerService.generate_product_id(mongo_id)
+            kept_ids.append(int_pid)
             name = str(p.get("name") or f"ProdSeller {mongo_id[:6]}").strip()
             cost = float(p.get("price") or 0.0)
             in_stock = bool(p.get("inStock", True))
@@ -262,16 +306,28 @@ class ProdSellerService:
                 await BatStoreProductRepository.create(dto, session)
                 created += 1
             else:
+                is_price_spike = bool(existing.cost_usd and cost > float(existing.cost_usd) * 1.30)
+                if is_price_spike:
+                    logging.warning(
+                        "Price spike on ProdSeller %s: old=%.2f new=%.2f. Auto-hiding product.",
+                        name, existing.cost_usd, cost,
+                    )
                 existing.cost_usd = cost
                 existing.stock = stock_count
                 existing.reseller_key_override = mongo_id
                 existing.supplier = "prodseller"
                 existing.server_badge = "سيرفر 2 (ProdSeller)"
+                existing.sell_price_usd = BatStoreService.compute_sell_price(
+                    cost, global_percent, global_fixed, existing.margin_type, existing.margin_value, global_type
+                )
+                if is_price_spike:
+                    existing.hidden = True
                 if not in_stock:
                     existing.stock = 0
                 await BatStoreProductRepository.update(existing, session)
                 updated += 1
 
+        await BatStoreProductRepository.delete_absent(kept_ids, session, supplier="prodseller")
         await session_commit(session)
         logging.info("ProdSeller catalog sync complete: %s created, %s updated", created, updated)
         return created, updated

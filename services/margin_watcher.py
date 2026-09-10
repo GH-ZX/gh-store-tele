@@ -39,7 +39,7 @@ class MarginWatcherService:
                 flagged.append({
                     "id": p.id,
                     "product_id": p.product_id,
-                    "name": p.clean_name or p.name,
+                    "name": getattr(p, "custom_name", None) or p.name,
                     "supplier": getattr(p, "supplier", "batstore"),
                     "cost_usd": cost,
                     "price_usd": price,

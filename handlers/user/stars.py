@@ -2,7 +2,7 @@ import logging
 import uuid
 
 from aiogram import Router, F, Bot
-from aiogram.types import Message, CallbackQuery, LabeledPrice, PreCheckoutQuery, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, LabeledPrice, PreCheckoutQuery, InlineKeyboardButton, BotSubscriptionUpdated
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -166,11 +166,20 @@ async def stars_successful_payment(message: Message, session: AsyncSession,
             await NotificationService.send_to_admins(f"⭐ Stars Direct Buy Order #{order.id}: tg:{tg_id} · {stars}⭐ (${usd})", None)
             return
         except Exception as e:
-            logging.error("Failed to fulfill stars_inapp order directly; crediting balance: %s", e)
-
-
-    await ReferralService.apply_deposit_referral(usd, user, session)
-    await session_commit(session)
+            logging.error("Failed to fulfill stars_inapp order %s for tg:%s: %s", product_id, tg_id, e)
+            try:
+                order = await BatStoreOrderRepository.create(BatStoreOrderDTO(
+                    telegram_id=tg_id, total_sell=usd, status="requires_manual_review",
+                    external_order_ref=None,
+                    customer_reference=customer_ref,
+                    details=[{"product_id": product_id, "name": product.name if product else "Product", "quantity": qty, "cost_usd": product.cost_usd if product else 0.0, "sell_usd": usd, "delivery_goods": [], "stars_inapp_failed": str(e)[:200]}],
+                ), session)
+                await session_commit(session)
+            except Exception:
+                pass
+            await NotificationService.send_to_admins(f"⚠️ Stars inapp requires_manual_review tg:{tg_id} prod:{product_id} err:{e}", None)
+            await message.answer("⚠️ Purchase received, fulfillment queued for manual review. Support will deliver shortly; no balance was credited.")
+            return
     sym = config.CURRENCY.get_localized_symbol()
     await message.answer(get_text(language, BotEntity.COMMON, "stars_success").format(
         stars=stars, usd=f"{usd}", sym=sym))

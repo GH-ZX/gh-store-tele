@@ -380,20 +380,20 @@ class StarsCallback(CallbackData, prefix="stars"):
     def create(level: int, stars: int | None = None, confirmation: bool = False):
         return StarsCallback(level=level, stars=stars, confirmation=confirmation)
 
-
 class SamCallback(CallbackData, prefix="sam"):
     """ShamCash / Syriatel (SAM API) balance top-up flow.
 
     Level 0: pick provider (shamcash | syriatel).
-    Level 1: FSM amount prompt (massage text) -> create invoice -> show paymentUrl.
+    Level 1: pick currency if shamcash (USD | SYP) or directly prompt amount for syriatel.
+    Level 2: FSM amount prompt (message text) -> create invoice -> show paymentUrl.
     """
     level: int
     provider: str | None = None
+    currency: str | None = None
 
     @staticmethod
-    def create(level: int, provider: str | None = None):
-        return SamCallback(level=level, provider=provider)
-
+    def create(level: int, provider: str | None = None, currency: str | None = None):
+        return SamCallback(level=level, provider=provider, currency=currency)
 
 class RestockCallback(CallbackData, prefix="restock"):
     """Callback for toggling restock notification interest."""

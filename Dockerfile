@@ -10,13 +10,16 @@ RUN uv pip install --no-cache --system --prefix=/install -r requirements.txt -r 
 
 FROM python:3.12-slim
 
+# Copy official cloudflared binary into runtime image
+COPY --from=cloudflare/cloudflared:latest /usr/local/bin/cloudflared /usr/local/bin/cloudflared
+
 RUN groupadd -r botuser && useradd -r -g botuser -d /bot -s /sbin/nologin botuser
 
 WORKDIR /bot
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 COPY --from=builder /install /usr/local
 COPY . .
-RUN chown -R botuser:botuser /bot
+RUN chmod +x /bot/entrypoint.sh && chown -R botuser:botuser /bot
 USER botuser
 EXPOSE 5000
 
@@ -26,4 +29,5 @@ ENV LOG_LEVEL=INFO
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')" || exit 1
 
+ENTRYPOINT ["/bot/entrypoint.sh"]
 CMD ["python", "-u", "run.py"]
