@@ -76,6 +76,12 @@
       min-height: 52px;
       transition: background-color 0.25s, border-color 0.25s;
     }
+
+    /* Fullscreen Mini App: never let the notch / status bar cover the header */
+    body.tg-fullscreen .top-header {
+      padding-top: max(var(--safe-top, 0px), env(safe-area-inset-top, 0px), 58px);
+    }
+
     .header-brand {
       display: flex;
       align-items: center;

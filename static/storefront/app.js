@@ -108,15 +108,21 @@ const tg = window.Telegram?.WebApp;
         right = Math.max(right, t.safeAreaInset.right || 0);
       }
 
-      // In case client is in fullscreen, ensure generous top clearance to avoid notch / 3-dots collision
-      if (t?.isFullscreen) {
-        top = Math.max(top, 54);
+      // Fullscreen: Telegram chrome is gone; guarantee clearance below the notch / status bar
+      // even on clients that report zero insets while fullscreen.
+      const isFs = !!t?.isFullscreen;
+      if (isFs) top = Math.max(top, 58);
+      if (typeof document !== 'undefined') {
+        document.body && document.body.classList.toggle('tg-fullscreen', isFs);
       }
 
-      if (top > 0) document.documentElement.style.setProperty('--safe-top', `${top}px`);
-      if (bottom > 0) document.documentElement.style.setProperty('--safe-bottom', `${bottom}px`);
-      if (left > 0) document.documentElement.style.setProperty('--safe-left', `${left}px`);
-      if (right > 0) document.documentElement.style.setProperty('--safe-right', `${right}px`);
+      // Always write the vars so they can also shrink back (e.g. leaving fullscreen).
+      if (typeof document !== 'undefined') {
+        document.documentElement.style.setProperty('--safe-top', `${top}px`);
+        document.documentElement.style.setProperty('--safe-bottom', `${bottom}px`);
+        document.documentElement.style.setProperty('--safe-left', `${left}px`);
+        document.documentElement.style.setProperty('--safe-right', `${right}px`);
+      }
     }
 
     if (tg) {
@@ -653,16 +659,7 @@ const tg = window.Telegram?.WebApp;
       }
       if (totEl) totEl.innerText = formatPrice(finalTotal);
       const userBal = userData?.balance || 0.0;
-      if (checkBtn) {
-        checkBtn.disabled = false;
-        if (userBal < finalTotal) {
-          checkBtn.innerHTML = `<span>${currentAppLanguage === 'ar' ? 'شحن الرصيد للمتابعة' : 'Top up to continue'} ($${userBal.toFixed(2)})</span>`;
-          checkBtn.onclick = () => { closeCartDrawer(); switchTab('wallet'); };
-        } else {
-          checkBtn.innerHTML = `<span>${currentAppLanguage === 'ar' ? `تأكيد شراء السلة (${items.length} منتجات)` : `Confirm cart (${items.length} items)`} • ${formatPrice(finalTotal)}</span>`;
-          checkBtn.onclick = executeCartCheckout;
-        }
-      }
+      let drawerNativeBar = false;
       if (tg?.MainButton && items.length > 0) {
         tg.MainButton.offClick(executeCartCheckout);
         if (userBal < finalTotal) {
@@ -675,6 +672,19 @@ const tg = window.Telegram?.WebApp;
             .show()
             .enable();
           tg.MainButton.onClick(executeCartCheckout);
+        }
+        drawerNativeBar = true;
+      }
+      if (checkBtn) {
+        checkBtn.disabled = false;
+        // Native bottom bar already carries the checkout CTA in Telegram clients.
+        checkBtn.style.display = drawerNativeBar ? 'none' : 'block';
+        if (userBal < finalTotal) {
+          checkBtn.innerHTML = `<span>${currentAppLanguage === 'ar' ? 'شحن الرصيد للمتابعة' : 'Top up to continue'} ($${userBal.toFixed(2)})</span>`;
+          checkBtn.onclick = () => { closeCartDrawer(); switchTab('wallet'); };
+        } else {
+          checkBtn.innerHTML = `<span>${currentAppLanguage === 'ar' ? `تأكيد شراء السلة (${items.length} منتجات)` : `Confirm cart (${items.length} items)`} • ${formatPrice(finalTotal)}</span>`;
+          checkBtn.onclick = executeCartCheckout;
         }
       }
       if (tg?.SecondaryButton && items.length > 0) {
@@ -3171,12 +3181,15 @@ const tg = window.Telegram?.WebApp;
         tg.MainButton.offClick(executeProductBuy);
         tg.MainButton.offClick(goToWalletFromMainBtn);
         tg.MainButton.offClick(triggerInAppRestockSubscribe);
+        tg.MainButton.offClick(openAdminGiftModal);
         tg.MainButton.hide();
       }
       if (tg?.SecondaryButton) {
         tg.SecondaryButton.offClick(addToCartCurrentProduct);
         tg.SecondaryButton.hide();
       }
+      const closedActionRow = document.getElementById('product-action-buttons-row');
+      if (closedActionRow) closedActionRow.style.display = 'flex';
 
       if (tg?.enableVerticalSwipes) tg.enableVerticalSwipes();
       if (tg?.disableClosingConfirmation) tg.disableClosingConfirmation();
@@ -3322,7 +3335,14 @@ const tg = window.Telegram?.WebApp;
       if (priceTag) { priceTag.innerText = `(${formatPrice(total)})`; priceTag.style.display = 'inline'; }
 
       const userBalance = userData?.balance || 0.0;
-      if (userBalance < total) {
+      const isAdminUser = !!(userData && userData.is_admin);
+      if (isAdminUser) {
+        // Admin wallet can't hold balance; deliver via the externally-paid manual sale flow instead.
+        if (alertBox) alertBox.style.display = 'none';
+        if (buyLabel) buyLabel.innerText = (currentAppLanguage === 'ar') ? 'بيع يدوي مدفوع (تسليم)' : 'Manual Paid Sale';
+        if (priceTag) priceTag.style.display = 'inline';
+        if (buyBtn) { buyBtn.disabled = false; buyBtn.onclick = openAdminGiftModal; }
+      } else if (userBalance < total) {
         const shortage = Math.max(0.01, +(total - userBalance).toFixed(2));
         if (alertBox) {
           alertBox.style.display = 'block';
@@ -3351,22 +3371,35 @@ const tg = window.Telegram?.WebApp;
         if (buyBtn) { buyBtn.disabled = false; buyBtn.onclick = executeProductBuy; }
       }
 
+      let detailNativeBar = false;
       if (tg?.MainButton) {
         tg.MainButton.offClick(executeProductBuy);
         tg.MainButton.offClick(goToWalletFromMainBtn);
         tg.MainButton.offClick(triggerInAppRestockSubscribe);
-        if (userBalance < total) {
+        tg.MainButton.offClick(openAdminGiftModal);
+        if (isAdminUser) {
+          tg.MainButton.setText((currentAppLanguage === 'ar') ? `بيع يدوي مدفوع • ${formatPrice(total)}` : `Manual Paid Sale • ${formatPrice(total)}`)
+            .show()
+            .enable();
+          tg.MainButton.onClick(openAdminGiftModal);
+          detailNativeBar = true;
+        } else if (userBalance < total) {
           tg.MainButton.setText(currentAppLanguage === 'ar' ? `شحن الرصيد للمتابعة ($${userBalance.toFixed(2)})` : `Top up balance ($${userBalance.toFixed(2)})`)
             .show()
             .enable();
           tg.MainButton.onClick(goToWalletFromMainBtn);
+          detailNativeBar = true;
         } else {
           tg.MainButton.setText(currentAppLanguage === 'ar' ? `شراء الآن • ${formatPrice(total)}` : `Buy Now • ${formatPrice(total)}`)
             .show()
             .enable();
           tg.MainButton.onClick(executeProductBuy);
+          detailNativeBar = true;
         }
       }
+      // Never show both the native bottom bar and the in-page buy row at once.
+      const actionRow = document.getElementById('product-action-buttons-row');
+      if (actionRow) actionRow.style.display = (detailNativeBar && !isOutOfStock) ? 'none' : 'flex';
       if (tg?.SecondaryButton) {
         tg.SecondaryButton.offClick(addToCartCurrentProduct);
         if (!isOutOfStock) {
@@ -6071,8 +6104,10 @@ const tg = window.Telegram?.WebApp;
       const plusBtn = document.getElementById('top-balance-plus');
 
       if (userData.is_admin) {
+        const reserves = Number(userData?.admin_stats?.supplier_wallets?.total_supplier_usd || 0);
+        const reservesTxt = `$${reserves.toFixed(2)}`;
         if (topBalEl) {
-          topBalEl.innerHTML = `<span>👑 ${isAr ? 'المشرف (المالك)' : 'Owner / Admin'}</span>`;
+          topBalEl.innerHTML = `<span>👑 ${isAr ? 'خزينة المتجر' : 'Store Treasury'} · ${reservesTxt}</span>`;
           topBalEl.style.color = '#f59e0b';
           topBalEl.style.fontWeight = '800';
           topBalEl.style.fontSize = '12px';
@@ -6107,6 +6142,9 @@ const tg = window.Telegram?.WebApp;
           ? `≈ $${Number(userData.balance || 0).toFixed(2)} USD`
           : (currentAppLanguage === 'ar' ? 'جاهز للشراء الفوري' : 'Ready for instant purchases');
       }
+
+      const finCard = document.getElementById('settings-finance-card');
+      if (finCard) finCard.style.display = userData.is_admin ? 'none' : 'grid';
 
       const cardBal = document.getElementById('settings-card-balance');
       if (cardBal) cardBal.innerText = balDisplay;
@@ -7216,7 +7254,11 @@ const tg = window.Telegram?.WebApp;
     function populateOrderDetailDOM(order) {
       if (!order) return;
       const isAr = (currentAppLanguage === 'ar');
-
+      const giftBadge = document.getElementById('order-detail-gift-badge');
+      if (giftBadge) {
+        giftBadge.style.display = order.gifted_by_admin ? 'inline-flex' : 'none';
+        giftBadge.innerText = isAr ? '🎁 هدية من الإدارة' : '🎁 Gifted by Admin';
+      }
       const idEl = document.getElementById('order-detail-id-title');
       if (idEl) idEl.innerText = `${isAr ? 'طلب' : 'Order'} #${order.id}`;
 
@@ -7475,7 +7517,8 @@ const tg = window.Telegram?.WebApp;
                 </div>
                 <div class="activity-notif-info">
                   <div class="activity-notif-title-row">
-                    <span class="activity-notif-title">${(currentAppLanguage === 'ar' ? 'طلب' : 'Order')} #${it.id} · ${it.products || (currentAppLanguage === 'ar' ? 'منتج رقمي' : 'Digital Service')}</span>
+                    <span class="activity-notif-title">${(currentAppLanguage === 'ar') ? 'طلب' : 'Order'} #${it.id} · ${it.products || (currentAppLanguage === 'ar' ? 'منتج رقمي' : 'Digital Service')}</span>
+                    ${it.gifted_by_admin ? `<span class="pill-badge" style="background: rgba(16, 185, 129, 0.18); color: #10b981; font-size: 10px; padding: 2px 7px; flex-shrink: 0;">🎁 ${currentAppLanguage === 'ar' ? 'هدية من الإدارة' : 'Gifted by Admin'}</span>` : ''}
                     <span class="activity-notif-amount amount-blue">${it.total.toFixed(2)}${it.sym}</span>
                   </div>
                   <div class="activity-notif-meta-row">
@@ -7512,11 +7555,13 @@ const tg = window.Telegram?.WebApp;
                 <!-- Structured Delivered Credentials -->
                 ${renderStructuredCredentials(it.goods)}
 
-                <!-- Action Pills -->
-                <div style="display: flex; gap: 6px; align-items: center; margin-top: 10px; flex-wrap: wrap;">
-                  ${it.warranty_days ? `
-                    <span class="pill-badge" style="background: rgba(56,189,248,0.15); color: var(--accent); font-size: 11px;">🛡️ ${currentAppLanguage === 'ar' ? `ضمان ${it.warranty_days} يوم` : `${it.warranty_days}d Warranty`}</span>
-                  ` : ''}
+                  <div style="display: flex; gap: 6px; align-items: center; margin-top: 10px; flex-wrap: wrap;">
+                    ${it.gifted_by_admin ? `
+                      <span class="pill-badge" style="background: rgba(16, 185, 129, 0.15); color: #10b981; font-size: 11px;">🎁 ${currentAppLanguage === 'ar' ? 'طلب مُهدى من إدارة المتجر' : 'Gifted by store administration'}</span>
+                    ` : ''}
+                    ${it.warranty_days ? `
+                      <span class="pill-badge" style="background: rgba(56,189,248,0.15); color: var(--accent); font-size: 11px;">🛡️ ${currentAppLanguage === 'ar' ? `ضمان ${it.warranty_days} يوم` : `${it.warranty_days}d Warranty`}</span>
+                    ` : ''}
                   ${it.status === 'completed' ? `
                     <button class="btn-action-secondary" onclick="showOrderReceiptModal(${it.id})" style="height: 34px; font-size: 11px; padding: 0 10px;">🧾 ${currentAppLanguage === 'ar' ? 'عرض الإيصال' : 'View Receipt'}</button>
                     <button id="btn-rate-order-${it.id}" class="btn-action-secondary" onclick="openReviewModal(${it.id})" style="height: 34px; font-size: 11px; padding: 0 10px;">⭐ ${currentAppLanguage === 'ar' ? 'تقييم' : 'Rate'}</button>

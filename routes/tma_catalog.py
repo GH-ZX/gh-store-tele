@@ -424,6 +424,7 @@ async def get_tma_user_data(request: Request, tg_id: int | None = None):
                 "created_at": o.created_at.strftime("%b %d, %H:%M") if o.created_at else "",
                 "timestamp": o.created_at.timestamp() if o.created_at else 0,
                 "type": "order",
+                "gifted_by_admin": any(isinstance(d, dict) and d.get("externally_paid") is True for d in (o.details or [])),
             })
 
         # Fetch Recharges History for Processes / Activity
@@ -722,6 +723,7 @@ async def get_tma_order_detail(order_id: int, request: Request, tg_id: int | Non
                 "timestamp": order.created_at.timestamp() if order.created_at else 0,
                 "customer_reference": order.customer_reference or "",
                 "external_order_ref": order.external_order_ref or "",
+                "gifted_by_admin": any(isinstance(d, dict) and d.get("externally_paid") is True for d in (order.details or [])),
                 "details": order.details or [],
                 "is_admin_viewer": is_admin,
             }

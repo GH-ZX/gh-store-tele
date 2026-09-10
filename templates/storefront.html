@@ -838,12 +838,12 @@
             <div style="font-size: 11px; color: var(--hint);" id="order-detail-date">2026-09-05</div>
           </div>
         </div>
-        <span class="pill-badge" id="order-detail-status-badge" style="font-size: 12px; padding: 4px 10px;">
-          مكتمل
+        <span style="display: flex; align-items: center; gap: 6px;">
+          <span class="pill-badge" id="order-detail-gift-badge" style="display: none; background: rgba(16, 185, 129, 0.18); color: #10b981; font-size: 11px; padding: 4px 10px; white-space: nowrap; flex-shrink: 0; align-items: center;">🎁 هدية من الإدارة</span>
+          <span class="pill-badge" id="order-detail-status-badge" style="font-size: 12px; padding: 4px 10px;">
+            مكتمل
+          </span>
         </span>
-      </div>
-
-      <!-- Admin Customer Identifier Box (Visible for Admins) -->
       <div id="order-detail-user-box" style="display: none; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 10px; padding: 8px 12px; margin-bottom: 12px; font-size: 12px;">
         <div style="display: flex; justify-content: space-between; align-items: center;">
           <div style="display: flex; align-items: center; gap: 8px;">
@@ -1634,7 +1634,7 @@
     </div>
 
     <!-- User Financial Overview (Balance & Spent) -->
-    <div class="inset-card" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px; margin-top: -2px;">
+    <div class="inset-card" id="settings-finance-card" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px; margin-top: -2px;">
       <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; padding: 10px; text-align: center;">
         <div style="font-size: 11px; color: var(--hint); margin-bottom: 2px;" id="settings-label-balance">الرصيد المتاح</div>
         <div style="font-size: 18px; font-weight: 800; color: var(--accent);" id="settings-card-balance">$0.00</div>
