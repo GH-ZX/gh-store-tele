@@ -3239,11 +3239,12 @@ const tg = window.Telegram?.WebApp;
       const discTag = document.getElementById('prod-discount-tag');
       const alertBox = document.getElementById('insufficient-funds-alert');
 
-      // Instant local estimate; the authoritative quote below overwrites it.
+      // Instant local estimate
       const estimate = unit * selectedQty;
       if (totalTag) totalTag.innerText = `${estimate.toFixed(2)}${sym}`;
-      if (priceTag) priceTag.innerText = `(${estimate.toFixed(2)}${sym})`;
-      if (buyBtn) buyBtn.disabled = true;
+      if (priceTag) { priceTag.innerText = `(${estimate.toFixed(2)}${sym})`; priceTag.style.display = 'inline'; }
+      if (buyBtn) { buyBtn.disabled = false; buyBtn.onclick = executeProductBuy; }
+      if (buyLabel) { buyLabel.innerText = d.buy_now || 'شراء'; }
 
       const seq = ++detailQuoteSeq;
       let quote = null;
@@ -3312,11 +3313,10 @@ const tg = window.Telegram?.WebApp;
       const dualTag = document.getElementById('prod-total-dual-price');
       if (dualTag) dualTag.innerHTML = getDualCurrencyPreview(total);
       if (priceTag) { priceTag.innerText = `(${formatPrice(total)})`; priceTag.style.display = 'inline'; }
-
       const userBalance = userData?.balance || 0.0;
       const isAdminUser = !!(userData && userData.is_admin);
 
-      // 1. Hide Telegram native MainButton & SecondaryButton on product detail (in-page buttons already exist)
+      // Hide native Telegram buttons on product detail to avoid duplicate floating bars
       if (tg?.MainButton) {
         tg.MainButton.offClick(executeProductBuy);
         tg.MainButton.offClick(goToWalletFromMainBtn);
@@ -3332,48 +3332,47 @@ const tg = window.Telegram?.WebApp;
       const actionRow = document.getElementById('product-action-buttons-row');
       const adminGiftBox = document.getElementById('admin-detail-gift-container');
 
-      if (isAdminUser) {
-        // Admin view: Hide consumer purchase row and shortage alert; show ONLY the Gift to user action
-        if (alertBox) alertBox.style.display = 'none';
-        if (actionRow) actionRow.style.display = 'none';
-        if (adminGiftBox) {
-          adminGiftBox.style.display = 'block';
-          const giftLabel = document.getElementById('admin-detail-gift-label');
-          if (giftLabel) giftLabel.innerText = (currentAppLanguage === 'ar') ? '🎁 إهداء أو بيع لعميل (Gift to User)' : '🎁 Gift or Sell to Customer';
-        }
-      } else {
-        // Customer view: Show clean in-page action row (Buy + Add to Cart)
-        if (adminGiftBox) adminGiftBox.style.display = 'none';
-        if (actionRow) actionRow.style.display = isOutOfStock ? 'none' : 'flex';
+      // Admin quick gift / manual sale button
+      if (adminGiftBox) {
+        adminGiftBox.style.display = isAdminUser ? 'block' : 'none';
+        const giftLabel = document.getElementById('admin-detail-gift-label');
+        if (giftLabel) giftLabel.innerText = (currentAppLanguage === 'ar') ? '🎁 إهداء أو بيع لعميل (Gift to User)' : '🎁 Gift or Sell to Customer';
+      }
 
-        if (userBalance < total) {
+      // In-page purchase row (Buy + Add to Cart) is ALWAYS enabled and visible when product is in stock
+      if (actionRow) actionRow.style.display = isOutOfStock ? 'none' : 'flex';
+      if (buyBtn) {
+        buyBtn.disabled = false;
+        buyBtn.onclick = executeProductBuy;
+      }
+      if (buyLabel) buyLabel.innerText = d.buy_now || 'شراء';
+      if (priceTag) {
+        priceTag.innerText = `(${formatPrice(total)})`;
+        priceTag.style.display = 'inline';
+      }
+
+      // If balance is less than total, show helpful top-up options in alert box, but NEVER gray out the button
+      if (alertBox) {
+        if (!isAdminUser && userBalance < total) {
           const shortage = Math.max(0.01, +(total - userBalance).toFixed(2));
-          if (alertBox) {
-            alertBox.style.display = 'block';
-            alertBox.innerHTML = `
-              <div style="margin-bottom: 8px;">
-                ${(currentAppLanguage === 'ar')
-                  ? `الرصيد المتاح غير كافٍ (تحتاج ${total.toFixed(2)}${sym}، رصيدك $${userBalance.toFixed(2)}).`
-                  : `Insufficient balance (Requires ${total.toFixed(2)}${sym}, available $${userBalance.toFixed(2)}).`}
-              </div>
-              <div style="display: flex; gap: 6px; justify-content: center; flex-wrap: wrap;">
-                <button type="button" onclick="quickTopupShortageStars(${shortage})" class="btn-action-warning" style="height: 32px; padding: 0 12px; font-size: 11px; font-weight: 800; background: linear-gradient(135deg, #f59e0b, #d97706); border: none; color: #fff; border-radius: 8px;">
-                  ${(currentAppLanguage === 'ar') ? `شحن النقص بالنجوم ($${shortage.toFixed(2)})` : `Top up exact $${shortage.toFixed(2)} via Stars`}
-                </button>
-                <button type="button" onclick="quickTopupShortageWallet(${shortage})" class="btn-action-secondary" style="height: 32px; padding: 0 10px; font-size: 11px; font-weight: 700;">
-                  ${(currentAppLanguage === 'ar') ? 'خيارات شحن أخرى' : 'Other Payment Rails'}
-                </button>
-              </div>
-            `;
-          }
-          if (buyLabel) buyLabel.innerText = d.topup_to_continue;
-          if (priceTag) priceTag.style.display = 'none';
-          if (buyBtn) { buyBtn.disabled = false; buyBtn.onclick = () => quickTopupShortageWallet(shortage); }
+          alertBox.style.display = 'block';
+          alertBox.innerHTML = `
+            <div style="margin-bottom: 8px;">
+              ${(currentAppLanguage === 'ar')
+                ? `الرصيد المتاح غير كافٍ (تحتاج ${total.toFixed(2)}${sym}، رصيدك $${userBalance.toFixed(2)}).`
+                : `Insufficient balance (Requires ${total.toFixed(2)}${sym}, available $${userBalance.toFixed(2)}).`}
+            </div>
+            <div style="display: flex; gap: 6px; justify-content: center; flex-wrap: wrap;">
+              <button type="button" onclick="quickTopupShortageStars(${shortage})" class="btn-action-warning" style="height: 32px; padding: 0 12px; font-size: 11px; font-weight: 800; background: linear-gradient(135deg, #f59e0b, #d97706); border: none; color: #fff; border-radius: 8px;">
+                ${(currentAppLanguage === 'ar') ? `شحن النقص بالنجوم ($${shortage.toFixed(2)})` : `Top up exact $${shortage.toFixed(2)} via Stars`}
+              </button>
+              <button type="button" onclick="quickTopupShortageWallet(${shortage})" class="btn-action-secondary" style="height: 32px; padding: 0 10px; font-size: 11px; font-weight: 700;">
+                ${(currentAppLanguage === 'ar') ? 'خيارات شحن أخرى' : 'Other Payment Rails'}
+              </button>
+            </div>
+          `;
         } else {
-          if (alertBox) alertBox.style.display = 'none';
-          if (buyLabel) buyLabel.innerText = d.buy_now;
-          if (priceTag) { priceTag.innerText = `(${formatPrice(total)})`; priceTag.style.display = 'inline'; }
-          if (buyBtn) { buyBtn.disabled = false; buyBtn.onclick = executeProductBuy; }
+          alertBox.style.display = 'none';
         }
       }
     }
