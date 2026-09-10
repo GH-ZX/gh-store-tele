@@ -734,7 +734,7 @@ const tg = window.Telegram?.WebApp;
       }
     }
     // Recharge Flow State
-    let selectedRechargeMethod = 'stars';
+    let selectedRechargeMethod = 'shamcash';
     let selectedRechargeAmount = 10.0;
     let activeInvoiceUrl = null;
 

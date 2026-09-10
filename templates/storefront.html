@@ -1462,8 +1462,20 @@
       <!-- Step 1: Choose Payment Method (4 Distinct Options, Zero API Names) -->
       <div class="section-title" id="recharge-method-title">1. اختر وسيلة الشحن</div>
       <div class="recharge-methods-grid">
-        <!-- 1. Telegram Stars -->
-        <div class="recharge-method-card active" id="method-card-stars" onclick="selectRechargeMethod('stars')">
+        <!-- 1. Sham Cash (Primary Top Recharge Method) -->
+        <div class="recharge-method-card active" id="method-card-shamcash" onclick="selectRechargeMethod('shamcash')">
+          <div class="method-card-left">
+            <img src="/static/img/pay-shamcash.png" data-pay-logo="shamcash" class="method-brand-img" alt="Sham Cash" loading="lazy" style="object-fit: contain; border-radius: 6px;">
+            <div>
+              <div class="method-name" id="label-method-shamcash-name">شام كاش</div>
+              <div class="method-sub" id="label-method-shamcash-sub">دفع مباشر وسريع عبر بنك شام كاش</div>
+            </div>
+          </div>
+          <div class="method-radio-check">✓</div>
+        </div>
+
+        <!-- 2. Telegram Stars -->
+        <div class="recharge-method-card" id="method-card-stars" onclick="selectRechargeMethod('stars')">
           <div class="method-card-left">
             <span class="method-icon">⭐</span>
             <div>
@@ -1474,25 +1486,13 @@
           <div class="method-radio-check">✓</div>
         </div>
 
-        <!-- 2. Cryptocurrency -->
+        <!-- 3. Cryptocurrency -->
         <div class="recharge-method-card" id="method-card-crypto" onclick="selectRechargeMethod('crypto')">
           <div class="method-card-left">
             <div style="width: 32px; height: 32px; border-radius: 50%; background: #26a17b; display: flex; align-items: center; justify-content: center; color: white; font-weight: 800; font-size: 15px; flex-shrink: 0;">₮</div>
             <div>
               <div class="method-name" id="label-method-crypto-name">USDT (BEP-20)</div>
               <div class="method-sub" id="label-method-crypto-sub">دفع مباشر وسريع عبر شبكة BEP-20</div>
-            </div>
-          </div>
-          <div class="method-radio-check">✓</div>
-        </div>
-
-        <!-- 3. Sham Cash -->
-        <div class="recharge-method-card" id="method-card-shamcash" onclick="selectRechargeMethod('shamcash')">
-          <div class="method-card-left">
-            <img src="/static/img/pay-shamcash.png" data-pay-logo="shamcash" class="method-brand-img" alt="Sham Cash" loading="lazy" style="object-fit: contain; border-radius: 6px;">
-            <div>
-              <div class="method-name" id="label-method-shamcash-name">شام كاش</div>
-              <div class="method-sub" id="label-method-shamcash-sub">دفع مباشر وسريع عبر بنك شام كاش</div>
             </div>
           </div>
           <div class="method-radio-check">✓</div>
@@ -1511,7 +1511,7 @@
         </div>
       </div>
       <!-- ShamCash Currency Toggle (USD vs SYP) -->
-      <div id="shamcash-currency-box" style="display: none; background: var(--input-bg); border: 1px solid var(--border); border-radius: 14px; padding: 12px; margin-top: 10px; margin-bottom: 12px;">
+      <div id="shamcash-currency-box" style="display: block; background: var(--input-bg); border: 1px solid var(--border); border-radius: 14px; padding: 12px; margin-top: 10px; margin-bottom: 12px;">
         <div style="font-size: 12px; font-weight: 700; color: var(--hint); margin-bottom: 8px;" id="label-sham-curr-title">عملة السداد في شام كاش:</div>
         <div style="display: flex; gap: 8px;">
           <button type="button" class="filter-chip active" id="btn-sham-curr-usd" onclick="setShamCurrency('USD')" style="flex: 1; text-align: center; height: 38px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;">
