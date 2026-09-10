@@ -6,6 +6,24 @@
   <title>GH Store</title>
   <meta name="ghstore-build" content="__BUILD_TAG__">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script>
+    (function() {
+      var tg = window.Telegram && window.Telegram.WebApp;
+      var isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (tg && (tg.platform === 'ios' || tg.platform === 'android'));
+      var topSafe = 0;
+      if (tg) {
+        if (tg.safeAreaInset && tg.safeAreaInset.top) topSafe = Math.max(topSafe, tg.safeAreaInset.top);
+        if (tg.contentSafeAreaInset && tg.contentSafeAreaInset.top) topSafe = Math.max(topSafe, tg.contentSafeAreaInset.top);
+      }
+      if (isMobile) {
+        topSafe = Math.max(topSafe, 56);
+      }
+      if (topSafe > 0) {
+        document.documentElement.style.setProperty('--safe-top', topSafe + 'px');
+        document.documentElement.style.setProperty('--tma-safe-top', topSafe + 'px');
+      }
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">

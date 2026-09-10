@@ -110,8 +110,6 @@ async def create_tma_topup_invoice(request: Request):
         if not user:
             return JSONResponse({"error": "user_not_found"}, status_code=404)
 
-        if is_admin_id(tg_id):
-            return JSONResponse({"error": "admin_cannot_recharge", "message": "حساب الإدارة لا يمكنه شحن الرصيد."}, status_code=403)
         if method == "stars":
             stars_rate = float(config.GHSTORE_STARS_TO_USD or 0.01)
             stars = max(1, int(amount / stars_rate))
@@ -339,8 +337,6 @@ async def tma_redeem_voucher(request: Request):
         if not user:
             return JSONResponse({"error": "user_not_found"}, status_code=404)
 
-        if is_admin_id(tg_id):
-            return JSONResponse({"error": "admin_cannot_recharge", "message": "حساب الإدارة لا يمكنه شحن الرصيد عبر كروت الهدايا."}, status_code=403)
         success, amount, msg = await GiftVoucherRepository.redeem(code, user.id, session)
         if not success:
             return JSONResponse({"error": msg}, status_code=400)
