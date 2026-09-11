@@ -121,8 +121,10 @@ async def create_db_and_tables():
         try:
             await session.execute(text("ALTER TABLE batstore_products ADD COLUMN IF NOT EXISTS description_ar TEXT;"))
             await session.execute(text("ALTER TABLE batstore_products ADD COLUMN IF NOT EXISTS custom_name TEXT;"))
+            await session.execute(text("ALTER TABLE batstore_products ADD COLUMN IF NOT EXISTS hidden_reason TEXT;"))
             await session.execute(text("ALTER TABLE batstore_products ADD COLUMN IF NOT EXISTS reseller_price_usd FLOAT;"))
             await session.execute(text("ALTER TABLE batstore_products ADD COLUMN IF NOT EXISTS reseller_margin_pct FLOAT;"))
+            await session.execute(text("ALTER TABLE storefront_categories ADD COLUMN IF NOT EXISTS product_category TEXT;"))
             await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS custom_discount_pct FLOAT;"))
             await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_reseller BOOLEAN DEFAULT FALSE;"))
             await session_commit(session)

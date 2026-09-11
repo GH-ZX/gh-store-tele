@@ -5930,6 +5930,7 @@ const tg = window.Telegram?.WebApp;
       document.getElementById('admin-edit-cat-prev-en').value = (cat && typeof cat === 'object') ? (cat.preview_en || '') : '';
       document.getElementById('admin-edit-cat-sort').value = (cat && typeof cat === 'object') ? (cat.sort_order || 1) : 1;
       document.getElementById('admin-edit-cat-hidden').checked = (cat && typeof cat === 'object') ? !!cat.hidden : false;
+      document.getElementById('admin-edit-cat-prod').value = (cat && typeof cat === 'object') ? (cat.product_category || '') : '';
       document.getElementById('admin-category-modal').style.display = 'flex';
     }
     function closeAdminCategoryModal() {
@@ -5946,6 +5947,7 @@ const tg = window.Telegram?.WebApp;
       const prevEn = document.getElementById('admin-edit-cat-prev-en')?.value;
       const sort = parseInt(document.getElementById('admin-edit-cat-sort')?.value || 1);
       const hidden = document.getElementById('admin-edit-cat-hidden')?.checked;
+      const prodCat = document.getElementById('admin-edit-cat-prod')?.value || '';
 
       haptic('light');
       try {
@@ -5962,7 +5964,8 @@ const tg = window.Telegram?.WebApp;
             preview_ar: prevAr,
             preview_en: prevEn,
             sort_order: sort,
-            hidden: hidden
+            hidden: hidden,
+            product_category: prodCat
           })
         });
         const d = await res.json();

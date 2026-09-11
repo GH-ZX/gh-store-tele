@@ -151,6 +151,8 @@ class ProductRepository:
         none_keys = [k for k, v in dto_dict.items() if v is None]
         for k in none_keys:
             dto_dict.pop(k)
+        if "hidden_reason" in getattr(dto, "model_fields", {}):
+            dto_dict["hidden_reason"] = dto.hidden_reason
         if "id" not in dto_dict and "product_id" not in dto_dict:
             return
         await ProductRepository.invalidate_cache()

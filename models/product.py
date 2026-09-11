@@ -228,6 +228,7 @@ class Product(Base):
     category = Column(String, nullable=True, default=None, index=True)
     sell_price_usd = Column(Float, nullable=False, default=0.0)
     hidden = Column(Boolean, nullable=False, default=False, index=True)
+    hidden_reason = Column(String, nullable=True)  # None | 'spike' | 'admin' | 'catalogue'
     reseller_key_override = Column(String, nullable=True)
     supplier = Column(String, nullable=False, default="batstore")
     server_badge = Column(String, nullable=True)
@@ -264,6 +265,7 @@ class ProductDTO(BaseModel):
     category: str | None = None
     sell_price_usd: float = 0.0
     hidden: bool = False
+    hidden_reason: str | None = None
     reseller_key_override: str | None = None
     supplier: str = "batstore"
     server_badge: str | None = None
@@ -298,7 +300,8 @@ class ProductAdmin(ModelView, model=Product):
         Product.supplier,
         Product.delivery_type,
         Product.stock,
-        Product.hidden
+        Product.hidden,
+        Product.hidden_reason,
     ]
     column_labels = {
         Product.product_id: "Product ID",
@@ -317,6 +320,7 @@ class ProductAdmin(ModelView, model=Product):
         Product.delivery_type: "Delivery",
         Product.stock: "Stock",
         Product.hidden: "Hidden",
+        Product.hidden_reason: "Hidden reason",
         Product.supplier: "Supplier",
         Product.reseller_key_override: "Reseller key (override)",
         Product.emoji: "Icon Emoji",

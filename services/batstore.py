@@ -381,6 +381,8 @@ class BatStoreService:
         except Exception as e:
             logging.warning("Failed to fetch Arabic descriptions from reseller API: %s", e)
         rules = await CustomEmojiService.get_rules(session)
+        from repositories.storefront_category import StorefrontCategoryRepository
+        cat_map = await StorefrontCategoryRepository.product_category_map(session)
         created = 0
         updated = 0
         restocked_products: list[tuple[int, str]] = []
@@ -411,7 +413,7 @@ class BatStoreService:
                     warranty_days=p.get("warranty_days"),
                     margin_type=None,
                     margin_value=None,
-                    category=auto_categorize(product_name),
+                    category=cat_map.get(auto_categorize(product_name), auto_categorize(product_name)),
                     sell_price_usd=BatStoreService.compute_sell_price(
                         cost, global_percent, global_fixed, None, None, global_type),
                     hidden=False,
@@ -449,7 +451,13 @@ class BatStoreService:
                     cost, global_percent, global_fixed, existing.margin_type,
                     existing.margin_value if existing.margin_type != MarginType.FIXED_PRICE
                     else existing.margin_value, global_type)
-                cat = existing.category if existing.category else auto_categorize(product_name)
+                cat = existing.category if existing.category else cat_map.get(auto_categorize(product_name), auto_categorize(product_name))
+                if is_price_spike:
+                    new_hidden, new_reason = True, "spike"
+                elif existing.hidden and existing.hidden_reason == "spike":
+                    new_hidden, new_reason = False, None
+                else:
+                    new_hidden, new_reason = existing.hidden, existing.hidden_reason
                 upd = BatStoreProductDTO(
                     id=existing.id,
                     product_id=pid,
@@ -469,7 +477,8 @@ class BatStoreService:
                     sell_price_usd=sell,
                     reseller_price_usd=getattr(existing, "reseller_price_usd", None),
                     reseller_margin_pct=getattr(existing, "reseller_margin_pct", None),
-                    hidden=True if is_price_spike else existing.hidden,
+                    hidden=new_hidden,
+                    hidden_reason=new_reason,
                 )
                 await BatStoreProductRepository.update(upd, session)
                 updated += 1

@@ -838,6 +838,7 @@ class G2BulkService:
             if not catalogue_items:
                 if existing and existing.supplier == "g2bulk":
                     existing.hidden = True
+                    existing.hidden_reason = "catalogue"
                     updated_count += 1
                 continue
             if existing and existing.margin_type == MarginType.FIXED_PRICE:
@@ -880,7 +881,7 @@ class G2BulkService:
             desc_en = f"Official instant top-up for {g_name}. Credits are delivered straight into your game account."
             desc_ar = f"شحن فوري ومباشر لحساب لعبة {g_name}. يتم إرسال الرصيد تلقائياً إلى حسابك داخل اللعبة."
             if existing:
-                existing.name = f"{g_name} (شحن فوري)"
+                existing.name = f"{g_name} (Instant Recharge)"
                 existing.cost_usd = min_cost
                 existing.sell_price_usd = base_sell
                 existing.reseller_price_usd = base_resell
@@ -889,13 +890,15 @@ class G2BulkService:
                 existing.stock = 9999
                 existing.delivery_type = "direct_topup"
                 existing.supplier = "g2bulk"
-                existing.hidden = False
+                if existing.hidden_reason != "admin":
+                    existing.hidden = False
+                    existing.hidden_reason = None
                 existing.server_badge = "سيرفر 3 (G2Bulk Games)"
                 updated_count += 1
             else:
                 new_prod = BatStoreProduct(
                     product_id=product_id,
-                    name=f"{g_name} (شحن فوري)",
+                    name=f"{g_name} (Instant Recharge)",
                     custom_name=g_name,
                     custom_name_ar=g_name,
                     custom_group="Instant recharge Games",
@@ -987,7 +990,7 @@ class G2BulkService:
             desc_v_ar = f"قسائم وأكواد شحن رقمية معتمدة لـ {cat_title}. استلام فوري للكود مباشرة بعد الشراء مع خطوات الاستخدام الكاملة."
 
             if existing_v:
-                existing_v.name = f"{cat_title} (قسائم رقمية)"
+                existing_v.name = f"{cat_title} (Digital Vouchers)"
                 existing_v.cost_usd = min_v_cost
                 existing_v.sell_price_usd = base_v_sell
                 existing_v.reseller_price_usd = base_v_resell
@@ -995,12 +998,15 @@ class G2BulkService:
                 existing_v.image_url = v_img or existing_v.image_url
                 existing_v.supplier = "g2bulk"
                 existing_v.delivery_type = "voucher"
+                if existing_v.hidden_reason != "admin":
+                    existing_v.hidden = False
+                    existing_v.hidden_reason = None
                 existing_v.server_badge = "سيرفر 3 (G2Bulk Vouchers)"
                 updated_count += 1
             else:
                 new_v = BatStoreProduct(
                     product_id=brand_prod_id,
-                    name=f"{cat_title} (قسائم رقمية)",
+                    name=f"{cat_title} (Digital Vouchers)",
                     custom_name=cat_title,
                     custom_name_ar=guide.get("name_ar") or cat_title,
                     custom_group="Vouchers",

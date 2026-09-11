@@ -77,6 +77,7 @@ async def get_tma_catalog():
         cats_db = await StorefrontCategoryRepository.get_all_visible(session)
         cats_list = []
         cat_image_by_name: dict[str, str] = {}
+        cat_display_map: dict[str, str] = {}
         for c in cats_db:
             resolved_cover = resolve_category_image(c.name, c.image_url, store_images)
             cat_image_by_name[c.name] = resolved_cover
@@ -90,7 +91,11 @@ async def get_tma_catalog():
                 "preview_ar": c.preview_ar,
                 "preview_en": c.preview_en,
                 "sort_order": c.sort_order,
+                "product_category": getattr(c, "product_category", None) or "",
             })
+            src_key = (getattr(c, "product_category", None) or "").strip() or c.name
+            cat_display_map[src_key] = c.name
+            cat_display_map[c.name] = c.name
 
         if not cats_list:
             raw_cats = await BatStoreProductRepository.get_categories(session)
@@ -113,7 +118,7 @@ async def get_tma_catalog():
 
         for p in products:
             specs = ProductSpecParser.parse(p.name)
-            cat_name = p.category or "Other"
+            cat_name = cat_display_map.get(p.category or "Other", p.category or "Other")
             p_lower = (p.name or "").lower()
 
             # 1. Folder / Subcategory resolution: Database custom_group has 100% priority

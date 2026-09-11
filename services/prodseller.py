@@ -259,6 +259,8 @@ class ProdSellerService:
         global_percent, global_fixed, global_type = await BatStoreService._global_margin(session)
         products = await ProdSellerService.list_products(session)
         rules = await CustomEmojiService.get_rules(session)
+        from repositories.storefront_category import StorefrontCategoryRepository
+        cat_map = await StorefrontCategoryRepository.product_category_map(session)
 
         created = 0
         updated = 0
@@ -276,7 +278,7 @@ class ProdSellerService:
             stock_count = 10 if in_stock else 0
 
             detected_emoji, detected_custom_id = CustomEmojiService.detect_icon(name, rules)
-            category = auto_categorize(name)
+            category = cat_map.get(auto_categorize(name), auto_categorize(name))
             sell_price = BatStoreService.compute_sell_price(cost, global_percent, global_fixed, None, None, global_type)
 
             existing = await BatStoreProductRepository.get_by_product_id(int_pid, session)
@@ -322,6 +324,10 @@ class ProdSellerService:
                 )
                 if is_price_spike:
                     existing.hidden = True
+                    existing.hidden_reason = "spike"
+                elif existing.hidden and existing.hidden_reason == "spike":
+                    existing.hidden = False
+                    existing.hidden_reason = None
                 if not in_stock:
                     existing.stock = 0
                 await BatStoreProductRepository.update(existing, session)

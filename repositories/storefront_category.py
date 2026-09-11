@@ -28,6 +28,21 @@ class StorefrontCategoryRepository:
         return StorefrontCategoryDTO.model_validate(obj, from_attributes=True)
 
     @staticmethod
+    async def product_category_map(session: AsyncSession | Session) -> dict[str, str]:
+        """Return mapping of canonical product category -> storefront display name."""
+        stmt = (
+            select(StorefrontCategory)
+            .where(StorefrontCategory.hidden == False)  # noqa: E712
+        )
+        rows = await session_execute(stmt, session)
+        result: dict[str, str] = {}
+        for c in rows.scalars().all():
+            src_key = (c.product_category or "").strip() or c.name
+            result[src_key] = c.name
+            result[c.name] = c.name
+        return result
+
+    @staticmethod
     async def count(session: AsyncSession | Session) -> int:
         stmt = select(func.count(StorefrontCategory.id))
         res = await session_execute(stmt, session)

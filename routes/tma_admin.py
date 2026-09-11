@@ -1545,6 +1545,7 @@ async def admin_get_reseller_pricing(tg_id: int, request: Request):
                 "effective_reseller_price": res_pr,
                 "profit_usd": profit,
                 "hidden": bool(p.hidden),
+                "hidden_reason": getattr(p, "hidden_reason", None) or "",
             })
     return {
         "status": "ok",
@@ -1827,6 +1828,7 @@ async def admin_update_product(request: Request):
         # NOTE: Stock is NEVER manually modified or saved; it is strictly synchronized from supplier APIs
         if "hidden" in body:
             prod.hidden = bool(body["hidden"])
+            prod.hidden_reason = "admin" if prod.hidden else None
         if body.get("hide_entire_folder"):
             from services.product_spec import ProductSpecParser
             cat_name = prod.category or "Other"
@@ -1840,6 +1842,7 @@ async def admin_update_product(request: Request):
                 sib_f = (p_sib.custom_group or ProductSpecParser.get_folder_info(p_sib.name, p_sib.custom_name, cat_name)["folder_key"]).strip().lower()
                 if sib_f == target_f_key or (prod.custom_group and p_sib.custom_group == prod.custom_group):
                     p_sib.hidden = True
+                    p_sib.hidden_reason = "admin"
         await session_commit(session)
     invalidate_catalog_cache()
     return {"status": "ok", "product_id": product_id}
@@ -1880,6 +1883,8 @@ async def admin_update_category(request: Request):
             cat.sort_order = int(body["sort_order"])
         if "hidden" in body:
             cat.hidden = bool(body["hidden"])
+        if "product_category" in body:
+            cat.product_category = (str(body["product_category"] or "").strip()) or None
         if cat.name != old_cat_name:
             await session_execute(
                 update(BatStoreProduct).where(BatStoreProduct.category == old_cat_name).values(category=cat.name),
@@ -1955,7 +1960,7 @@ async def admin_update_folder(request: Request):
                 update(Product).where(
                     (Product.category == folder.category) &
                     ((Product.custom_group == folder.title_en) | (Product.custom_group == old_title_en) | (Product.name.ilike(f"%{folder.key}%")))
-                ).values(hidden=True)
+                ).values(hidden=True, hidden_reason="admin")
             )
 
         await session_commit(session)
