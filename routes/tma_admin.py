@@ -12,7 +12,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select, update
 
 import config
 from db import get_db_session, session_commit, session_execute
@@ -646,13 +646,16 @@ async def admin_sync_catalog(request: Request):
     if not verify_admin(admin_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
     async with get_db_session() as session:
-        created, updated = await BatStoreService.sync_catalog(session)
+        sync_res = await MultiSupplierService.sync_all_suppliers(session)
+        created = sum(s.get("created", 0) for s in sync_res.values() if isinstance(s, dict))
+        updated = sum(s.get("updated", 0) for s in sync_res.values() if isinstance(s, dict))
         await session_commit(session)
     invalidate_catalog_cache()
     return {
         "status": "ok",
         "created": created,
         "updated": updated,
+        "details": sync_res,
         "synced_at": datetime.datetime.now(datetime.timezone.utc).strftime("%H:%M:%S")
     }
 
@@ -1022,6 +1025,42 @@ async def admin_refund_stuck_order(request: Request):
     return {"status": "ok", "refunded_amount": refund_amount if wallet_credited else 0.0, "order_id": order_id, "wallet_credited": wallet_credited}
 
 
+@router.post("/api/admin/g2bulk/test-balance")
+async def admin_test_g2bulk_balance(request: Request):
+    """Test G2Bulk API key live and return real-time balance and user status."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not verify_admin(admin_id, request):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+
+    api_key = str(body.get("api_key") or "").strip()
+    try:
+        from services.g2bulk import G2BulkService
+        async with get_db_session() as session:
+            if api_key:
+                base = await G2BulkService.resolve_api_url(session)
+                headers = {"X-API-Key": api_key, "Accept": "application/json"}
+                async with await G2BulkService._client() as client:
+                    resp = await client.get(f"{base}/getMe", headers=headers)
+                if resp.status_code != 200:
+                    return JSONResponse({"error": f"G2Bulk HTTP {resp.status_code}: {resp.text[:100]}"}, status_code=400)
+                data = resp.json()
+            else:
+                data = await G2BulkService.get_balance(session)
+        return {
+            "status": "ok",
+            "balance": float(data.get("balance") or 0.0),
+            "username": str(data.get("username") or ""),
+            "first_name": str(data.get("first_name") or ""),
+            "user_id": data.get("user_id"),
+        }
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+
 @router.post("/api/admin/prodseller/test-balance")
 async def admin_test_prodseller_balance(request: Request):
     """Test ProdSeller API key live and return real-time balance and membership tier."""
@@ -1101,25 +1140,29 @@ async def admin_get_supplier_details(tg_id: int, request: Request):
     async with get_db_session() as session:
         bat_key = await ConfigService.get(session, "BATSTORE_API_KEY", env_fallback=os.environ.get("BATSTORE_API_KEY", ""))
         prod_key = await ConfigService.get(session, "PRODSELLER_API_KEY", env_fallback=os.environ.get("PRODSELLER_API_KEY", ""))
+        g2b_key = await ConfigService.get(session, "G2BULK_API_KEY", env_fallback=os.environ.get("G2BULK_API_KEY", ""))
         strategy = await ConfigService.get(session, "SUPPLIER_ROUTING_STRATEGY", default="auto_cheapest")
         bat_sync = (await ConfigService.get(session, "BATSTORE_SYNC_ENABLED", default="true")).lower() == "true"
         prod_sync = (await ConfigService.get(session, "PRODSELLER_SYNC_ENABLED", default="true")).lower() == "true"
+        g2b_sync = (await ConfigService.get(session, "G2BULK_SYNC_ENABLED", default="true")).lower() == "true"
         auto_failover = (await ConfigService.get(session, "SUPPLIER_AUTO_FAILOVER", default="true")).lower() == "true"
 
         bat_prod_count = (await session_execute(select(func.count(BatStoreProduct.id)).where(BatStoreProduct.supplier == "batstore"), session)).scalar() or 0
         prod_prod_count = (await session_execute(select(func.count(BatStoreProduct.id)).where(BatStoreProduct.supplier == "prodseller"), session)).scalar() or 0
+        g2b_prod_count = (await session_execute(select(func.count(BatStoreProduct.id)).where(BatStoreProduct.supplier == "g2bulk"), session)).scalar() or 0
 
         from services.batstore import BatStoreService
         from services.prodseller import ProdSellerService
+        from services.g2bulk import G2BulkService
         from services.sam import SamService
         force_refresh = request.query_params.get("refresh") == "true"
         bat_bal = await BatStoreService.get_cached_reseller_balance(session, force_refresh=force_refresh)
         prod_bal = await ProdSellerService.get_cached_balance(session, force_refresh=force_refresh)
+        g2b_bal = await G2BulkService.get_cached_balance(session, force_refresh=force_refresh)
         sam_bals = await SamService.get_cached_wallet_balances(session, force_refresh=force_refresh)
         sam_usd = float(sam_bals.get("usd") or 0.0)
         sam_syp = float(sam_bals.get("syp") or 0.0)
-        total_supp = round(bat_bal + prod_bal + sam_usd, 2)
-
+        total_supp = round(bat_bal + prod_bal + g2b_bal + sam_usd, 2)
     return {
         "batstore": {
             "name": "سيرفر 1: BatStore / VenteBot",
@@ -1141,6 +1184,16 @@ async def admin_get_supplier_details(tg_id: int, request: Request):
             "product_count": prod_prod_count,
             "balance": prod_bal,
         },
+        "g2bulk": {
+            "name": "سيرفر 3: G2Bulk (ألعاب وقسائم)",
+            "badge": "سيرفر 3 (G2Bulk Games)",
+            "api_url": "https://api.g2bulk.com/v1",
+            "api_key_configured": bool(g2b_key),
+            "api_key_masked": (g2b_key[:6] + "..." + g2b_key[-4:]) if len(g2b_key or "") > 10 else ("configured" if g2b_key else ""),
+            "sync_enabled": g2b_sync,
+            "product_count": g2b_prod_count,
+            "balance": g2b_bal,
+        },
         "sam": {
             "usd": sam_usd,
             "syp": sam_syp,
@@ -1148,6 +1201,7 @@ async def admin_get_supplier_details(tg_id: int, request: Request):
         "balances": {
             "batstore_usd": bat_bal,
             "prodseller_usd": prod_bal,
+            "g2bulk_usd": g2b_bal,
             "sam_usd": sam_usd,
             "sam_syp": sam_syp,
             "total_supplier_usd": total_supp,
@@ -1170,9 +1224,11 @@ async def admin_update_supplier_config(request: Request):
 
     bat_key = str(body.get("batstore_api_key") or "").strip()
     prod_key = str(body.get("prodseller_api_key") or "").strip()
+    g2b_key = str(body.get("g2bulk_api_key") or "").strip()
     strategy = str(body.get("routing_strategy") or "auto_cheapest").strip().lower()
     bat_sync = body.get("batstore_sync_enabled")
     prod_sync = body.get("prodseller_sync_enabled")
+    g2b_sync = body.get("g2bulk_sync_enabled")
     failover = body.get("auto_failover")
 
     async with get_db_session() as session:
@@ -1180,6 +1236,10 @@ async def admin_update_supplier_config(request: Request):
             await ConfigService.set(session, "BATSTORE_API_KEY", bat_key)
         if prod_key:
             await ConfigService.set(session, "PRODSELLER_API_KEY", prod_key)
+        if g2b_key:
+            await ConfigService.set(session, "G2BULK_API_KEY", g2b_key)
+        if g2b_sync is not None:
+            await ConfigService.set(session, "G2BULK_SYNC_ENABLED", "true" if g2b_sync else "false")
         if strategy in ("auto_cheapest", "batstore_primary", "prodseller_primary"):
             await ConfigService.set(session, "SUPPLIER_ROUTING_STRATEGY", strategy)
         if bat_sync is not None:
@@ -1747,6 +1807,12 @@ async def admin_update_product(request: Request):
             return JSONResponse({"error": "product_not_found"}, status_code=404)
         if "custom_name" in body:
             prod.custom_name = (body["custom_name"] or "").strip() or None
+        if "custom_name_ar" in body:
+            prod.custom_name_ar = (body["custom_name_ar"] or "").strip() or None
+        if "custom_group" in body:
+            prod.custom_group = (body["custom_group"] or "").strip() or None
+        if "custom_group_ar" in body:
+            prod.custom_group_ar = (body["custom_group_ar"] or "").strip() or None
         if "category" in body:
             prod.category = (body["category"] or "").strip() or prod.category
         if "sell_price_usd" in body and body["sell_price_usd"] is not None:
@@ -1758,10 +1824,22 @@ async def admin_update_product(request: Request):
         if "reseller_price_usd" in body:
             r_pr = body["reseller_price_usd"]
             prod.reseller_price_usd = float(r_pr) if r_pr is not None and str(r_pr).strip() != "" else None
-        if "stock" in body:
-            prod.stock = int(body["stock"]) if body["stock"] is not None and str(body["stock"]).strip() != "" else None
+        # NOTE: Stock is NEVER manually modified or saved; it is strictly synchronized from supplier APIs
         if "hidden" in body:
             prod.hidden = bool(body["hidden"])
+        if body.get("hide_entire_folder"):
+            from services.product_spec import ProductSpecParser
+            cat_name = prod.category or "Other"
+            f_info = ProductSpecParser.get_folder_info(prod.name, prod.custom_name, cat_name)
+            target_f_key = (prod.custom_group or f_info["folder_key"]).strip().lower()
+
+            all_cat_prods = (await session_execute(
+                select(BatStoreProduct).where(BatStoreProduct.category == prod.category), session
+            )).scalars().all()
+            for p_sib in all_cat_prods:
+                sib_f = (p_sib.custom_group or ProductSpecParser.get_folder_info(p_sib.name, p_sib.custom_name, cat_name)["folder_key"]).strip().lower()
+                if sib_f == target_f_key or (prod.custom_group and p_sib.custom_group == prod.custom_group):
+                    p_sib.hidden = True
         await session_commit(session)
     invalidate_catalog_cache()
     return {"status": "ok", "product_id": product_id}
@@ -1782,10 +1860,16 @@ async def admin_update_category(request: Request):
         cat = (await session_execute(stmt, session)).scalar_one_or_none()
         if not cat:
             return JSONResponse({"error": "category_not_found"}, status_code=404)
+        old_cat_name = cat.name
         if "name_ar" in body:
             cat.name_ar = str(body["name_ar"]).strip()
         if "name_en" in body:
             cat.name_en = str(body["name_en"]).strip()
+        if "name" in body and str(body["name"]).strip() and str(body["name"]).strip() != cat.name:
+            new_name = str(body["name"]).strip()
+            existing_c = (await session_execute(select(StorefrontCategory).where(StorefrontCategory.name == new_name), session)).scalar_one_or_none()
+            if not existing_c or existing_c.id == cat.id:
+                cat.name = new_name
         if "image_url" in body:
             cat.image_url = str(body["image_url"]).strip()
         if "preview_ar" in body:
@@ -1796,10 +1880,237 @@ async def admin_update_category(request: Request):
             cat.sort_order = int(body["sort_order"])
         if "hidden" in body:
             cat.hidden = bool(body["hidden"])
+        if cat.name != old_cat_name:
+            await session_execute(
+                update(BatStoreProduct).where(BatStoreProduct.category == old_cat_name).values(category=cat.name),
+                session
+            )
         await session_commit(session)
     invalidate_catalog_cache()
     return {"status": "ok", "category_id": category_id}
 
+
+@router.get("/api/admin/folders")
+async def admin_get_folders(request: Request, category: str | None = None, tg_id: int | None = None):
+    try:
+        verified_tg_id = extract_and_verify_telegram_user(request, tg_id)
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
+    if not is_admin_id(verified_tg_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+
+    async with get_db_session() as session:
+        from repositories.storefront_folder import StorefrontFolderRepository
+        folders = await StorefrontFolderRepository.get_all(session)
+        if category:
+            folders = [f for f in folders if f.category == category]
+        return {
+            "status": "ok",
+            "folders": [f.model_dump() for f in folders]
+        }
+
+
+@router.post("/api/admin/folder/update")
+async def admin_update_folder(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not verify_admin(admin_id, request):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+
+    folder_id = body.get("folder_id")
+    folder_key = body.get("key")
+    if not folder_id and not folder_key:
+        return JSONResponse({"error": "missing_folder_identifier"}, status_code=400)
+
+    async with get_db_session() as session:
+        from models.storefront_folder import StorefrontFolder
+        if folder_id:
+            stmt = select(StorefrontFolder).where(StorefrontFolder.id == int(folder_id))
+        else:
+            stmt = select(StorefrontFolder).where(StorefrontFolder.key == str(folder_key).strip())
+        folder = (await session_execute(stmt, session)).scalar_one_or_none()
+        if not folder:
+            return JSONResponse({"error": "folder_not_found"}, status_code=404)
+
+        old_title_en = folder.title_en
+        if "title_en" in body and str(body["title_en"]).strip():
+            folder.title_en = str(body["title_en"]).strip()
+        if "title_ar" in body and str(body["title_ar"]).strip():
+            folder.title_ar = str(body["title_ar"]).strip()
+        if "icon" in body:
+            folder.icon = str(body["icon"]).strip() or "📁"
+        if "sort_order" in body and body["sort_order"] is not None:
+            folder.sort_order = int(body["sort_order"])
+        if "hidden" in body:
+            folder.hidden = bool(body["hidden"])
+        if "matching_keywords" in body:
+            folder.matching_keywords = str(body["matching_keywords"]).strip() or None
+
+        if body.get("hide_products") is True or folder.hidden:
+            from models.product import Product
+            await session.execute(
+                update(Product).where(
+                    (Product.category == folder.category) &
+                    ((Product.custom_group == folder.title_en) | (Product.custom_group == old_title_en) | (Product.name.ilike(f"%{folder.key}%")))
+                ).values(hidden=True)
+            )
+
+        await session_commit(session)
+    invalidate_catalog_cache()
+    return {"status": "ok", "folder_id": folder.id, "key": folder.key}
+
+
+@router.post("/api/admin/folder/create")
+async def admin_create_folder(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not verify_admin(admin_id, request):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+
+    key = str(body.get("key") or "").strip().lower()
+    category = str(body.get("category") or "").strip()
+    title_en = str(body.get("title_en") or "").strip()
+    title_ar = str(body.get("title_ar") or "").strip() or title_en
+
+    if not key or not category or not title_en:
+        return JSONResponse({"error": "missing_required_fields"}, status_code=400)
+
+    async with get_db_session() as session:
+        from models.storefront_folder import StorefrontFolderDTO
+        from repositories.storefront_folder import StorefrontFolderRepository
+        existing = await StorefrontFolderRepository.get_by_key(key, session)
+        if existing:
+            return JSONResponse({"error": "folder_key_already_exists"}, status_code=409)
+
+        dto = StorefrontFolderDTO(
+            key=key,
+            category=category,
+            title_en=title_en,
+            title_ar=title_ar,
+            icon=str(body.get("icon") or "📁").strip(),
+            sort_order=int(body.get("sort_order") or 50),
+            hidden=bool(body.get("hidden", False)),
+            matching_keywords=str(body.get("matching_keywords") or "").strip() or None
+        )
+        created = await StorefrontFolderRepository.create(dto, session)
+        await session_commit(session)
+    invalidate_catalog_cache()
+    return {"status": "ok", "folder": created.model_dump()}
+
+
+
+@router.get("/api/admin/banners")
+async def admin_get_banners(request: Request, tg_id: int | None = None):
+    try:
+        verified_tg_id = extract_and_verify_telegram_user(request, tg_id)
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
+    if not is_admin_id(verified_tg_id):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+
+    async with get_db_session() as session:
+        from models.promotional_banner import PromotionalBanner
+        stmt = select(PromotionalBanner).order_by(PromotionalBanner.sort_order.asc(), PromotionalBanner.id.desc())
+        banners = (await session_execute(stmt, session)).scalars().all()
+        return {
+            "status": "ok",
+            "banners": [{
+                "id": b.id,
+                "title_ar": b.title_ar,
+                "title_en": b.title_en,
+                "subtitle_ar": b.subtitle_ar or "",
+                "subtitle_en": b.subtitle_en or "",
+                "badge_ar": b.badge_ar or "",
+                "badge_en": b.badge_en or "",
+                "image_url": b.image_url or "",
+                "target_type": getattr(b, "target_type", "category") or "category",
+                "target_category": b.target_category or "",
+                "product_id": b.product_id,
+                "target_url": getattr(b, "target_url", None) or "",
+                "is_active": b.is_active,
+                "sort_order": b.sort_order,
+            } for b in banners]
+        }
+
+
+@router.post("/api/admin/banner/save")
+async def admin_save_banner(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not verify_admin(admin_id, request):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+
+    b_id = body.get("id") or body.get("banner_id")
+    title_ar = str(body.get("title_ar") or "").strip()
+    title_en = str(body.get("title_en") or "").strip() or title_ar
+    if not title_ar and not title_en:
+        return JSONResponse({"error": "title_required"}, status_code=400)
+
+    target_type = str(body.get("target_type") or "category").strip().lower()
+    target_category = str(body.get("target_category") or "").strip() or None
+    product_id = int(body.get("product_id")) if body.get("product_id") and str(body.get("product_id")).isdigit() else None
+    target_url = str(body.get("target_url") or "").strip() or None
+
+    async with get_db_session() as session:
+        from models.promotional_banner import PromotionalBanner
+        if b_id:
+            stmt = select(PromotionalBanner).where(PromotionalBanner.id == int(b_id))
+            banner = (await session_execute(stmt, session)).scalar_one_or_none()
+            if not banner:
+                return JSONResponse({"error": "banner_not_found"}, status_code=404)
+        else:
+            banner = PromotionalBanner()
+            session.add(banner)
+
+        banner.title_ar = title_ar
+        banner.title_en = title_en
+        banner.subtitle_ar = str(body.get("subtitle_ar") or "").strip() or None
+        banner.subtitle_en = str(body.get("subtitle_en") or "").strip() or None
+        banner.badge_ar = str(body.get("badge_ar") or "").strip() or None
+        banner.badge_en = str(body.get("badge_en") or "").strip() or None
+        banner.image_url = str(body.get("image_url") or "").strip() or None
+        banner.target_type = target_type
+        banner.target_category = target_category
+        banner.product_id = product_id
+        banner.target_url = target_url
+        banner.is_active = bool(body.get("is_active", True))
+        banner.sort_order = int(body.get("sort_order") or 1)
+
+        await session_commit(session)
+    invalidate_catalog_cache()
+    return {"status": "ok", "banner_id": banner.id}
+
+
+@router.post("/api/admin/banner/delete")
+async def admin_delete_banner(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not verify_admin(admin_id, request):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+
+    b_id = body.get("id") or body.get("banner_id")
+    if not b_id:
+        return JSONResponse({"error": "missing_banner_id"}, status_code=400)
+
+    async with get_db_session() as session:
+        from models.promotional_banner import PromotionalBanner
+        stmt = delete(PromotionalBanner).where(PromotionalBanner.id == int(b_id))
+        await session_execute(stmt, session)
+        await session_commit(session)
+    invalidate_catalog_cache()
+    return {"status": "ok", "deleted_id": int(b_id)}
 
 @router.post("/api/admin/referral/withdraw/action")
 async def admin_process_referral_withdrawal(request: Request):

@@ -45,11 +45,29 @@ class CategoryService:
                 )
             )
 
-        # --- BatStore categories (merged into the same view) ---
+        # --- BatStore categories (merged into the same view with full DB localization) ---
+        from repositories.storefront_category import StorefrontCategoryRepository
+        cats_db = await StorefrontCategoryRepository.get_all_visible(session)
+        cats_dict = {c.name: c for c in cats_db}
+
         batstore_cats = await BatStoreProductRepository.get_categories(session)
+        # Sort categories according to database sort_order
+        batstore_cats = sorted(batstore_cats, key=lambda name: cats_dict[name].sort_order if name in cats_dict else 99)
+
         for cat_name in batstore_cats:
+            c_meta = cats_dict.get(cat_name)
+            if c_meta:
+                disp_name = c_meta.name_ar if language == Language.AR else c_meta.name_en
+                icon = c_meta.icon or "📦"
+                if icon and not disp_name.startswith(icon):
+                    btn_text = f"{icon} {disp_name}".strip()
+                else:
+                    btn_text = disp_name.strip()
+            else:
+                btn_text = cat_name
+
             kb_builder.button(
-                text=cat_name,
+                text=btn_text,
                 callback_data=AllCategoriesCallback.create(
                     level=callback_data.level + 1,
                     batstore_category_name=cat_name
@@ -67,22 +85,6 @@ class CategoryService:
                 item_type = get_text(language, BotEntity.COMMON, "all")
             caption = get_text(language, BotEntity.USER, "pick_category").format(
                 item_type=item_type
-            )
-            kb_builder.row(
-                InlineKeyboardButton(
-                    text=get_text(language, BotEntity.COMMON, "pick_all_categories"),
-                    callback_data=AllCategoriesCallback.create(level=callback_data.level + 1,
-                                                               item_type=callback_data.item_type).pack()
-                )
-            )
-        tma_host = (config.WEBHOOK_HOST or "").strip().rstrip('/')
-        if tma_host and tma_host.startswith("https://"):
-            from aiogram.types import WebAppInfo
-            kb_builder.row(
-                InlineKeyboardButton(
-                    text="🛍️ Open Web Store App",
-                    web_app=WebAppInfo(url=f"{tma_host}/app")
-                )
             )
         kb_builder = await add_search_button(kb_builder, EntityType.CATEGORY, callback_data, filters, language)
         kb_builder = await add_sorting_buttons(

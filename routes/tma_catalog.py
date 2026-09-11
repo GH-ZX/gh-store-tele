@@ -4,6 +4,7 @@ import datetime
 import json
 import logging
 import os
+import re
 import time
 from typing import Any
 
@@ -103,14 +104,95 @@ async def get_tma_catalog():
         products = await BatStoreProductRepository.get_visible(session)
         sym = config.CURRENCY.get_localized_symbol()
         data = []
+        folders_by_cat: dict[str, dict[str, dict]] = {}
+
+        # Load database-defined storefront folders (DB-first priority)
+        from repositories.storefront_folder import StorefrontFolderRepository
+        db_folders = await StorefrontFolderRepository.get_all_visible(session)
+        db_folders_by_key = {f.key: f for f in db_folders}
+
         for p in products:
             specs = ProductSpecParser.parse(p.name)
-            clean_title = p.custom_name or specs["clean_name"] or p.name
             cat_name = p.category or "Other"
-            data.append({
+            p_lower = (p.name or "").lower()
+
+            # 1. Folder / Subcategory resolution: Database custom_group has 100% priority
+            custom_grp = getattr(p, "custom_group", None)
+            custom_grp_ar = getattr(p, "custom_group_ar", None)
+            if custom_grp and str(custom_grp).strip():
+                f_name_en = str(custom_grp).strip()
+                f_name_ar = str(custom_grp_ar).strip() if (custom_grp_ar and str(custom_grp_ar).strip()) else f_name_en
+                f_key = re.sub(r"[^a-zA-Z0-9]+", "_", f_name_en.lower()).strip("_") or "folder"
+                folder_info = {
+                    "folder_key": f_key,
+                    "folder_title_en": f_name_en,
+                    "folder_title_ar": f_name_ar,
+                    "icon": p.emoji or "📁",
+                    "custom_emoji_id": p.custom_emoji_id,
+                    "priority": 1,
+                }
+            else:
+                # Check if matches any database folder from storefront_folders table
+                matched_db_f = None
+                for f in db_folders:
+                    if f.category == cat_name:
+                        if f.key in p_lower:
+                            matched_db_f = f
+                            break
+                        if f.matching_keywords:
+                            kws = [k.strip() for k in f.matching_keywords.split(",") if k.strip()]
+                            if any(re.search(kw, p_lower, re.IGNORECASE) for kw in kws):
+                                matched_db_f = f
+                                break
+                if matched_db_f:
+                    folder_info = {
+                        "folder_key": matched_db_f.key,
+                        "folder_title_en": matched_db_f.title_en,
+                        "folder_title_ar": matched_db_f.title_ar,
+                        "icon": matched_db_f.icon or p.emoji or "📁",
+                        "custom_emoji_id": matched_db_f.custom_emoji_id or p.custom_emoji_id,
+                        "priority": matched_db_f.sort_order,
+                    }
+                else:
+                    folder_info = ProductSpecParser.get_folder_info(p.name, p.custom_name, cat_name)
+            # 2. Variant / Product title resolution: Database custom_name has 100% priority
+            c_name = getattr(p, "custom_name", None)
+            c_name_ar = getattr(p, "custom_name_ar", None)
+            if c_name and str(c_name).strip():
+                v_title_en = str(c_name).strip()
+                v_title_ar = str(c_name_ar).strip() if (c_name_ar and str(c_name_ar).strip()) else v_title_en
+                clean_title = v_title_en
+            elif c_name_ar and str(c_name_ar).strip():
+                v_title_ar = str(c_name_ar).strip()
+                v_title_en = v_title_ar
+                clean_title = v_title_ar
+            else:
+                v_title_en, v_title_ar = ProductSpecParser.get_clean_variant_title(p.name, None, specs)
+                clean_title = specs["clean_name"] or p.name
+
+            dur_weight = ProductSpecParser.get_duration_weight(specs.get("duration_en"), p.name)
+            instructions = ProductSpecParser.extract_clean_instructions(p.description, getattr(p, "description_ar", None), p.name)
+
+            prod_item = {
                 "id": p.product_id,
                 "name": p.name,
                 "clean_name": clean_title,
+                "custom_name": getattr(p, "custom_name", None) or "",
+                "custom_name_ar": getattr(p, "custom_name_ar", None) or "",
+                "custom_group": getattr(p, "custom_group", None) or "",
+                "custom_group_ar": getattr(p, "custom_group_ar", None) or "",
+                "variant_title_en": v_title_en,
+                "variant_title_ar": v_title_ar,
+                "folder_key": folder_info["folder_key"],
+                "folder_title_en": folder_info["folder_title_en"],
+                "folder_title_ar": folder_info["folder_title_ar"],
+                "folder_icon": folder_info["icon"],
+                "folder_custom_emoji_id": folder_info.get("custom_emoji_id"),
+                "folder_priority": folder_info.get("priority", 50),
+                "duration_weight": dur_weight,
+                "instructions_en": instructions.get("steps_en", []),
+                "instructions_ar": instructions.get("steps_ar", []),
+                "instructions_type": instructions.get("type", "account"),
                 "category": cat_name,
                 "price": p.sell_price_usd,
                 "reseller_price": compute_reseller_price(
@@ -132,15 +214,50 @@ async def get_tma_catalog():
                 "warranty_en": specs["warranty_en"],
                 "type_ar": specs["type_ar"],
                 "type_en": specs["type_en"],
-                "emoji": p.emoji or "⚡",
-                "custom_emoji_id": p.custom_emoji_id,
+                "emoji": p.emoji or folder_info.get("icon") or "⚡",
+                "custom_emoji_id": p.custom_emoji_id or folder_info.get("custom_emoji_id"),
                 "image_url": getattr(p, "image_url", None) or "",
                 "display_image": resolve_product_image(getattr(p, "image_url", None), cat_name, cat_image_by_name.get(cat_name, ""), store_images),
                 "stock": p.stock,
                 "delivery_type": p.delivery_type or "stock",
                 "supplier": getattr(p, "supplier", "batstore") or "batstore",
                 "server_badge": getattr(p, "server_badge", "سيرفر 1 (BatStore)") or "سيرفر 1 (BatStore)",
-            })
+                "extra_meta": getattr(p, "extra_meta", None) or {},
+            }
+            data.append(prod_item)
+
+            # Build pre-grouped folder
+            f_key = folder_info["folder_key"]
+            if cat_name not in folders_by_cat:
+                folders_by_cat[cat_name] = {}
+            if f_key not in folders_by_cat[cat_name]:
+                folders_by_cat[cat_name][f_key] = {
+                    "key": f_key,
+                    "title_en": folder_info["folder_title_en"],
+                    "title_ar": folder_info["folder_title_ar"],
+                    "icon": folder_info["icon"],
+                    "custom_emoji_id": folder_info.get("custom_emoji_id"),
+                    "priority": folder_info.get("priority", 50),
+                    "category": cat_name,
+                    "min_price": p.sell_price_usd,
+                    "items_count": 0,
+                    "in_stock_count": 0,
+                    "variant_ids": [],
+                }
+            f_ref = folders_by_cat[cat_name][f_key]
+            f_ref["items_count"] += 1
+            if p.stock is None or p.stock > 0:
+                f_ref["in_stock_count"] += 1
+            f_ref["min_price"] = min(f_ref["min_price"], p.sell_price_usd)
+            f_ref["variant_ids"].append(p.product_id)
+
+        # Sort products inside catalog: folder priority first, then duration_weight, then price
+        data.sort(key=lambda x: (x.get("folder_priority", 50), x.get("duration_weight", 100), x.get("price", 0.0)))
+
+        folders_list = []
+        for cat_name, f_dict in folders_by_cat.items():
+            sorted_folders = sorted(f_dict.values(), key=lambda x: (x["priority"], x["title_en"]))
+            folders_list.extend(sorted_folders)
         store_logo_url = store_images.get("logo", "")
         flash_enabled = (await ConfigService.get(session, "FLASH_SALE_ENABLED", default="false")).lower() in ("true", "1", "yes")
         flash_pct = float(await ConfigService.get(session, "FLASH_SALE_PERCENT", default="15") or 15)
@@ -164,12 +281,15 @@ async def get_tma_catalog():
             "badge_ar": b.badge_ar,
             "badge_en": b.badge_en,
             "image_url": (b.image_url or "").strip() or store_images.get("hero", ""),
+            "target_type": getattr(b, "target_type", "category") or "category",
             "target_category": b.target_category,
             "product_id": b.product_id,
+            "target_url": getattr(b, "target_url", None) or "",
         } for b in banners_db]
 
         result = {
             "categories": cats_list,
+            "folders": folders_list,
             "products": data,
             "store_logo_url": store_logo_url or "",
             "store_images": store_images,
@@ -266,13 +386,15 @@ async def get_trending_searches():
     """Return trending search tags configured by admin or derived from real demand."""
     from bot import redis
     from services.config import ConfigService
-    async with get_db_session() as session:
-        admin_tags_raw = await ConfigService.get(session, "STORE_TRENDING_TAGS", default="")
-        if admin_tags_raw and str(admin_tags_raw).strip():
-            tags = [t.strip() for t in str(admin_tags_raw).split(",") if t.strip()]
-            if tags:
-                return {"status": "ok", "trending": tags[:8]}
-
+    try:
+        async with get_db_session() as session:
+            admin_tags_raw = await ConfigService.get(session, "STORE_TRENDING_TAGS", default="")
+            if admin_tags_raw and str(admin_tags_raw).strip():
+                tags = [t.strip() for t in str(admin_tags_raw).split(",") if t.strip()]
+                if tags:
+                    return {"status": "ok", "trending": tags[:8]}
+    except Exception as e:
+        logging.warning("Failed to fetch STORE_TRENDING_TAGS: %s", e)
     try:
         if redis:
             raw = await redis.zrevrange("ghstore:trending_searches", 0, 7)
@@ -283,20 +405,24 @@ async def get_trending_searches():
     except Exception:
         pass
 
-    async with get_db_session() as session:
-        from repositories.batstore_product import BatStoreProductRepository
-        prods = await BatStoreProductRepository.get_all(session)
-        real_names = [p.clean_name or p.name for p in prods if not getattr(p, "hidden", False) and getattr(p, "clean_name", None)]
-        seen = set()
-        real_tags = []
-        for n in real_names:
-            short = n.split()[0] if n else ""
-            if short and short.lower() not in seen and len(short) > 2:
-                seen.add(short.lower())
-                real_tags.append(short)
-            if len(real_tags) >= 6:
-                break
-        return {"status": "ok", "trending": real_tags}
+    try:
+        async with get_db_session() as session:
+            from repositories.batstore_product import BatStoreProductRepository
+            prods = await BatStoreProductRepository.get_all(session)
+            real_names = [p.clean_name or p.name for p in prods if not getattr(p, "hidden", False) and getattr(p, "clean_name", None)]
+            seen = set()
+            real_tags = []
+            for n in real_names:
+                short = n.split()[0] if n else ""
+                if short and short.lower() not in seen and len(short) > 2:
+                    seen.add(short.lower())
+                    real_tags.append(short)
+                if len(real_tags) >= 6:
+                    break
+            return {"status": "ok", "trending": real_tags}
+    except Exception as e:
+        logging.warning("Failed to derive trending tags from products: %s", e)
+        return {"status": "ok", "trending": []}
 
 
 @router.get("/api/reviews")
@@ -577,10 +703,11 @@ async def get_tma_user_data(request: Request, tg_id: int | None = None):
                     if force_refresh or _SUPPLIER_WALLETS_CACHE["data"] is None or now_w >= _SUPPLIER_WALLETS_CACHE["expire_time"]:
                         from services.batstore import BatStoreService
                         from services.prodseller import ProdSellerService
+                        from services.g2bulk import G2BulkService
                         from services.sam import SamService
                         bat_bal = await BatStoreService.get_cached_reseller_balance(session, force_refresh=force_refresh)
                         prod_bal = await ProdSellerService.get_cached_balance(session, force_refresh=force_refresh)
-
+                        g2b_bal = await G2BulkService.get_cached_balance(session, force_refresh=force_refresh)
                         sam_bals = await SamService.get_cached_wallet_balances(session, force_refresh=force_refresh)
                         sam_usd = float(sam_bals.get("usd") or 0.0)
                         sam_syp = float(sam_bals.get("syp") or 0.0)
@@ -599,11 +726,11 @@ async def get_tma_user_data(request: Request, tg_id: int | None = None):
                             )
                             sam_syp_paid = (await session_execute(stmt_sam_syp, session)).scalar() or 0.0
                             sam_syp = round(float(sam_syp_paid)) if sam_syp_paid > 0 else int(round(sam_usd * syp_market))
-
-                        total_supp = round(bat_bal + prod_bal + sam_usd, 2)
+                        total_supp = round(bat_bal + prod_bal + g2b_bal + sam_usd, 2)
                         _SUPPLIER_WALLETS_CACHE["data"] = {
                             "batstore_usd": bat_bal,
                             "prodseller_usd": prod_bal,
+                            "g2bulk_usd": g2b_bal,
                             "sam_usd": sam_usd,
                             "sam_syp": sam_syp,
                             "total_supplier_usd": total_supp,
@@ -692,15 +819,34 @@ async def get_tma_order_detail(order_id: int, request: Request, tg_id: int | Non
         cost_total = 0.0
         warranty_days = 0
         goods_list = []
+        instructions_en = []
+        instructions_ar = []
         for d in (order.details or []):
             product_names.append(d.get("name") or "Product")
             cost_total += float(d.get("cost_usd") or 0.0) * int(d.get("quantity") or 1)
             warranty_days = max(warranty_days, d.get("warranty_days") or 0)
+            if d.get("instructions_en"):
+                instructions_en = d.get("instructions_en")
+            if d.get("instructions_ar"):
+                instructions_ar = d.get("instructions_ar")
             for g in d.get("delivery_goods", []):
                 clean_g = normalize_delivery_good(g)
                 if clean_g:
                     goods_list.append(clean_g)
 
+        if not instructions_en or not instructions_ar:
+            first_d = (order.details or [{}])[0] if order.details else {}
+            p_id = first_d.get("product_id")
+            first_prod = None
+            if p_id:
+                first_prod = await BatStoreProductRepository.get_by_product_id(int(p_id), session)
+            raw_p_name = first_prod.name if first_prod else (product_names[0] if product_names else "")
+            p_desc = first_prod.description if first_prod else ""
+            p_desc_ar = getattr(first_prod, "description_ar", None) if first_prod else None
+            from services.product_spec import ProductSpecParser
+            inst = ProductSpecParser.extract_clean_instructions(p_desc, p_desc_ar, raw_p_name)
+            instructions_en = inst.get("steps_en", [])
+            instructions_ar = inst.get("steps_ar", [])
         sym = config.CURRENCY.get_localized_symbol()
         total_sell = float(order.total_sell or 0.0)
 
@@ -719,6 +865,8 @@ async def get_tma_order_detail(order_id: int, request: Request, tg_id: int | Non
                 "goods": goods_list,
                 "warranty_days": warranty_days,
                 "warranty_claimed": getattr(order, "warranty_claimed", False),
+                "instructions_en": instructions_en,
+                "instructions_ar": instructions_ar,
                 "created_at": order.created_at.strftime("%b %d, %Y · %H:%M") if order.created_at else "",
                 "timestamp": order.created_at.timestamp() if order.created_at else 0,
                 "customer_reference": order.customer_reference or "",
@@ -958,5 +1106,76 @@ async def get_user_avatar(telegram_id: int):
                         return Response(content=resp.content, media_type=resp.headers.get("content-type", "image/jpeg"), headers={"Cache-Control": "public, max-age=3600"})
     except Exception as e:
         logging.debug("Could not fetch user avatar: %s", e)
-
     raise HTTPException(status_code=404, detail="Avatar not found")
+
+
+@router.post("/api/games/check-player")
+async def check_game_player(request: Request):
+    """Validate game player account existence live via G2Bulk checkPlayerId."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    try:
+        extract_and_verify_telegram_user(request, int(body.get("tg_id") or 0))
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
+
+
+    game_code = str(body.get("game_code") or body.get("game") or "").strip()
+    user_id = str(body.get("user_id") or body.get("player_id") or "").strip()
+    server_id = str(body.get("server_id") or "").strip() or None
+    charname = str(body.get("charname") or "").strip() or None
+
+    if not game_code or not user_id:
+        return JSONResponse({"error": "missing_parameters", "message": "Game code and Player ID are required."}, status_code=400)
+
+    from services.g2bulk import G2BulkService
+    try:
+        async with get_db_session() as session:
+            res = await G2BulkService.check_player_id(
+                game_code=game_code,
+                user_id=user_id,
+                server_id=server_id,
+                charname=charname,
+                session=session
+            )
+            return res
+    except Exception as e:
+        logging.debug("Error checking player id: %s", e)
+        return JSONResponse({"valid": False, "message": str(e)}, status_code=200)
+
+
+@router.get("/api/games/{code}/catalogue")
+async def get_game_catalogue_api(code: str):
+    """Fetch fresh real-time items/denominations for a game from G2Bulk."""
+    clean_code = str(code).strip()
+    from services.g2bulk import G2BulkService
+    try:
+        async with get_db_session() as session:
+            items = await G2BulkService.get_game_catalogue(clean_code, session)
+            return {"status": "ok", "game_code": clean_code, "catalogues": items}
+    except Exception as e:
+        logging.debug("Error fetching game catalogue for %s: %s", clean_code, e)
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+
+@router.get("/api/games/{code}/fields")
+async def get_game_fields_api(code: str):
+    """Fetch required player fields and servers list for a game from G2Bulk."""
+    clean_code = str(code).strip()
+    from services.g2bulk import G2BulkService
+    try:
+        async with get_db_session() as session:
+            fields_info = await G2BulkService.get_game_fields(clean_code, session)
+            servers_map = await G2BulkService.get_game_servers(clean_code, session)
+            return {
+                "status": "ok",
+                "game_code": clean_code,
+                "fields": fields_info.get("fields", ["userid"]),
+                "notes": fields_info.get("notes", ""),
+                "servers": servers_map
+            }
+    except Exception as e:
+        logging.debug("Error fetching game fields for %s: %s", clean_code, e)
+        return JSONResponse({"error": str(e)}, status_code=502)

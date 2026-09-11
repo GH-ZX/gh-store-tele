@@ -14,6 +14,11 @@ CONFIG_DEFINITIONS = {
     "BATSTORE_API_URL": {"secret": False,
                          "desc": "Reseller API base URL. Default: "
                                  "https://ventetelegrambotrailway-production.up.railway.app"},
+    "PRODSELLER_API_KEY": {"secret": True, "desc": "ProdSeller wholesale catalog API key (psk_...)."},
+    "PRODSELLER_SYNC_ENABLED": {"secret": False, "desc": "Auto-sync ProdSeller catalog on startup (true/false)."},
+    "G2BULK_API_KEY": {"secret": True, "desc": "G2Bulk games & vouchers wholesale API key (Telegram @G2BULKBOT)."},
+    "G2BULK_API_URL": {"secret": False, "desc": "G2Bulk API base URL. Default: https://api.g2bulk.com/v1"},
+    "G2BULK_SYNC_ENABLED": {"secret": False, "desc": "Auto-sync G2Bulk Games & Vouchers catalog on startup (true/false)."},
     "SAM_API_KEY": {"secret": True, "desc": "sam-api.pro wallet/payments API key (sk_...)."},
     "SAM_API_BASE": {"secret": False, "desc": "sam-api.pro base URL. Default: https://www.sam-api.pro/api"},
     "KRYPTO_EXPRESS_API_KEY": {"secret": True, "desc": "KryptoExpress crypto payment API key."},

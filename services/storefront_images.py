@@ -21,6 +21,7 @@ LOCAL_SYRIATEL_LOGO = "/static/img/pay-syriatel.png"
 # Used for fresh seeds, data migrations, and runtime fallback when a
 # DB row has an empty image_url. Runtime code reads the DB first.
 DEFAULT_CATEGORY_IMAGES = {
+    "Games": "/static/img/cat-games.svg",
     "AI & Chatbots": "/static/img/cat-ai.svg",
     "Streaming & Entertainment": "/static/img/cat-streaming.svg",
     "VPN & Security": "/static/img/cat-vpn.svg",

@@ -57,11 +57,24 @@
       </div>
       <input type="hidden" id="admin-edit-prod-id">
       <div class="admin-input-row">
-        <label class="admin-input-label">الاسم المخصص المعروض</label>
-        <input type="text" class="admin-text-input" id="admin-edit-prod-name" placeholder="e.g. Gemini Activation">
+        <label class="admin-input-label">الاسم بالإنجليزية (English Name)</label>
+        <input type="text" class="admin-text-input" id="admin-edit-prod-name" placeholder="e.g. Gemini Pro, ChatGPT Plus">
       </div>
       <div class="admin-input-row">
-        <label class="admin-input-label">التصنيف</label>
+        <label class="admin-input-label">الاسم بالعربية (Arabic Name)</label>
+        <input type="text" class="admin-text-input" id="admin-edit-prod-name-ar" placeholder="e.g. جيميني برو، شات جي بي تي بلس">
+      </div>
+      <div class="admin-input-row">
+        <label class="admin-input-label">📁 المجلد / التصنيف الفرعي (Folder / Subcategory)</label>
+        <select class="admin-text-input" id="admin-edit-prod-folder-select" onchange="onAdminProdFolderSelectChange()"></select>
+      </div>
+      <div class="admin-input-row" id="admin-edit-prod-new-folder-wrap" style="display: none; background: var(--input-bg); border-radius: 12px; padding: 10px; border: 1px dashed var(--accent);">
+        <div style="font-size: 11px; font-weight: 700; color: var(--accent); margin-bottom: 6px;">➕ إنشاء مجلد جديد في قاعدة البيانات لهذا التصنيف:</div>
+        <input type="text" class="admin-text-input" id="admin-edit-prod-folder-new-en" placeholder="اسم المجلد بالإنجليزية (e.g. Google Gemini)" style="margin-bottom: 6px;">
+        <input type="text" class="admin-text-input" id="admin-edit-prod-folder-new-ar" placeholder="اسم المجلد بالعربية (e.g. جوجل جيميني)">
+      </div>
+      <div class="admin-input-row">
+        <label class="admin-input-label">التصنيف الرئيسي (Category)</label>
         <input type="text" class="admin-text-input" id="admin-edit-prod-cat" placeholder="AI & Chatbots">
       </div>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
@@ -75,12 +88,18 @@
         </div>
       </div>
       <div class="admin-input-row">
-        <label class="admin-input-label">المخزون (اتركه فارغاً للتسليم الآلي)</label>
-        <input type="number" class="admin-text-input" id="admin-edit-prod-stock" placeholder="فارغ = آلي">
+        <label class="admin-input-label">حالة المخزون (تزامن آلي من API المورد)</label>
+        <input type="text" class="admin-text-input" id="admin-edit-prod-stock-display" readonly style="opacity: 0.85; cursor: not-allowed; background: var(--bg); font-weight: 700; color: var(--accent);">
       </div>
-      <div style="display: flex; align-items: center; justify-content: space-between; margin: 10px 0 16px 0; background: var(--input-bg); padding: 10px 14px; border-radius: 10px;">
-        <span style="font-size: 13px; font-weight: 700;">إخفاء المنتج من المتجر</span>
-        <input type="checkbox" id="admin-edit-prod-hidden" style="width: 18px; height: 18px; accent-color: var(--accent);">
+      <div style="background: var(--input-bg); border-radius: 12px; padding: 10px 14px; margin: 10px 0 16px 0; display: flex; flex-direction: column; gap: 8px;">
+        <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
+          <span style="font-size: 13px; font-weight: 700;">إخفاء هذا المنتج من المتجر</span>
+          <input type="checkbox" id="admin-edit-prod-hidden" style="width: 18px; height: 18px; accent-color: var(--accent);">
+        </label>
+        <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer; border-top: 1px solid var(--border); padding-top: 6px;">
+          <span style="font-size: 12px; font-weight: 700; color: var(--danger);">إخفاء هذا المجلد بالكامل من المتجر</span>
+          <input type="checkbox" id="admin-edit-folder-hidden" style="width: 18px; height: 18px; accent-color: var(--danger);">
+        </label>
       </div>
       <button class="btn-action-primary" onclick="submitAdminProductUpdate()">حفظ التعديلات في قاعدة البيانات</button>
     </div>
@@ -125,6 +144,118 @@
         </div>
       </div>
       <button class="btn-action-primary" onclick="submitAdminCategoryUpdate()" style="margin-top: 10px;">حفظ بيانات التصنيف في قاعدة البيانات</button>
+    </div>
+  </div>
+  <!-- ADMIN FOLDER / SUBCATEGORY EDITOR MODAL SHEET -->
+  <div class="admin-modal-overlay" id="admin-folder-modal">
+    <div class="admin-modal-sheet">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <h3 style="font-size: 17px; font-weight: 800;">📁 تعديل بيانات المجلد / التصنيف الفرعي</h3>
+        <button class="circle-icon-btn" onclick="closeAdminFolderModal()">✕</button>
+      </div>
+      <input type="hidden" id="admin-edit-folder-id">
+      <input type="hidden" id="admin-edit-folder-key">
+      <div class="admin-input-row">
+        <label class="admin-input-label">الاسم بالإنجليزية (English Title)</label>
+        <input type="text" class="admin-text-input" id="admin-edit-folder-title-en" placeholder="e.g. Google Gemini, ChatGPT">
+      </div>
+      <div class="admin-input-row">
+        <label class="admin-input-label">الاسم بالعربية (Arabic Title)</label>
+        <input type="text" class="admin-text-input" id="admin-edit-folder-title-ar" placeholder="e.g. جوجل جيميني، شات جي بي تي">
+      </div>
+      <div class="admin-input-row">
+        <label class="admin-input-label">التصنيف الرئيسي (Category)</label>
+        <input type="text" class="admin-text-input" id="admin-edit-folder-cat" readonly style="opacity: 0.75; background: var(--bg);">
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+        <div class="admin-input-row">
+          <label class="admin-input-label">الأيقونة (Emoji)</label>
+          <input type="text" class="admin-text-input" id="admin-edit-folder-icon" placeholder="✨">
+        </div>
+        <div class="admin-input-row">
+          <label class="admin-input-label">ترتيب العرض</label>
+          <input type="number" class="admin-text-input" id="admin-edit-folder-sort" value="1">
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; background: var(--input-bg); padding: 10px 14px; border-radius: 10px; margin: 10px 0 16px 0;">
+        <span style="font-size: 13px; font-weight: 700; color: var(--danger);">إخفاء هذا المجلد بالكامل من المتجر</span>
+        <input type="checkbox" id="admin-edit-folder-hidden-check" style="width: 18px; height: 18px; accent-color: var(--danger);">
+      </div>
+      <button class="btn-action-primary" onclick="submitAdminFolderUpdate()" style="margin-top: 10px;">حفظ بيانات المجلد في قاعدة البيانات</button>
+    </div>
+  </div>
+
+  <!-- ADMIN PROMOTIONAL BANNER / AD EDITOR MODAL SHEET -->
+  <div class="admin-modal-overlay" id="admin-banner-modal">
+    <div class="admin-modal-sheet">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <h3 style="font-size: 17px; font-weight: 800;">📢 إدارة الإعلانات والبانرات الترويجية</h3>
+        <button class="circle-icon-btn" onclick="closeAdminBannerModal()">✕</button>
+      </div>
+      <input type="hidden" id="admin-edit-banner-id">
+      <div class="admin-input-row">
+        <label class="admin-input-label">العنوان بالعربية (Title AR)</label>
+        <input type="text" class="admin-text-input" id="admin-banner-title-ar" placeholder="e.g. عروض وتخفيضات خاصة">
+      </div>
+      <div class="admin-input-row">
+        <label class="admin-input-label">العنوان بالإنجليزية (Title EN)</label>
+        <input type="text" class="admin-text-input" id="admin-banner-title-en" placeholder="e.g. Special Offer">
+      </div>
+      <div class="admin-input-row">
+        <label class="admin-input-label">الوصف الإضافي (اختياري)</label>
+        <input type="text" class="admin-text-input" id="admin-banner-sub-ar" placeholder="تسليم فوري لجميع الباقات...">
+      </div>
+      <div class="admin-input-row">
+        <label class="admin-input-label">الشارة الترويجية (Badge text)</label>
+        <input type="text" class="admin-text-input" id="admin-banner-badge-ar" placeholder="e.g. عرض خاص، حصري، جديد">
+      </div>
+      <div class="admin-input-row">
+        <label class="admin-input-label">رابط صورة البانر (اختياري)</label>
+        <input type="text" class="admin-text-input" id="admin-banner-img" placeholder="https://... (فارغ = تصميم المتجر المدمج)">
+      </div>
+
+      <!-- Target Selection Dropdowns -->
+      <div class="admin-input-row">
+        <label class="admin-input-label">🎯 وجهة الإعلان عند النقر (Target Action)</label>
+        <select class="admin-text-input" id="admin-banner-target-type" onchange="onBannerTargetTypeChange()">
+          <option value="category">📁 فتح فئة / تصنيف محدد (Category)</option>
+          <option value="product">🛍️ فتح منتج محدد مباشرة (Product)</option>
+          <option value="tab">📱 فتح صفحة بالتطبيق (App Tab)</option>
+          <option value="url">🌐 فتح رابط خارجي (External URL)</option>
+        </select>
+      </div>
+
+      <!-- Sub-selectors depending on target_type -->
+      <div class="admin-input-row" id="admin-banner-group-category">
+        <label class="admin-input-label">اختر الفئة المستهدفة</label>
+        <select class="admin-text-input" id="admin-banner-target-cat"></select>
+      </div>
+      <div class="admin-input-row" id="admin-banner-group-product" style="display: none;">
+        <label class="admin-input-label">اختر المنتج المستهدف</label>
+        <select class="admin-text-input" id="admin-banner-target-prod"></select>
+      </div>
+      <div class="admin-input-row" id="admin-banner-group-tab" style="display: none;">
+        <label class="admin-input-label">اختر الصفحة بالتطبيق</label>
+        <select class="admin-text-input" id="admin-banner-target-tab">
+          <option value="wallet">💳 شحن الرصيد / المحفظة (Wallet)</option>
+          <option value="orders">📦 سجل الطلبات (Orders)</option>
+          <option value="support">💬 الدعم الفني المباشر (Support)</option>
+          <option value="settings">⚙️ الإعدادات والحساب (Settings)</option>
+        </select>
+      </div>
+      <div class="admin-input-row" id="admin-banner-group-url" style="display: none;">
+        <label class="admin-input-label">الرابط الخارجي (URL)</label>
+        <input type="text" class="admin-text-input" id="admin-banner-target-url" placeholder="https://t.me/...">
+      </div>
+
+      <div style="display: flex; align-items: center; justify-content: space-between; background: var(--input-bg); padding: 10px 14px; border-radius: 10px; margin: 10px 0 16px 0;">
+        <span style="font-size: 13px; font-weight: 700;">تفعيل وظهور الإعلان</span>
+        <input type="checkbox" id="admin-banner-active" checked style="width: 18px; height: 18px; accent-color: var(--accent);">
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <button class="btn-action-secondary" id="btn-admin-banner-delete" onclick="deleteCurrentAdminBanner()" style="display: none; height: 44px; color: var(--danger); border-color: rgba(239, 68, 68, 0.4);">حذف الإعلان</button>
+        <button class="btn-action-primary" onclick="submitAdminBannerSave()" style="flex: 1; height: 44px;">حفظ الإعلان 📢</button>
+      </div>
     </div>
   </div>
 
@@ -483,10 +614,12 @@
       </div>
       <div class="store-brand-info">
         <span class="store-title">GH Store</span>
-        <span class="vip-tag" id="top-vip-tag" style="display: none; cursor: pointer;" onclick="openVipBenefitsModal()">VIP</span>
       </div>
     </div>
     <div class="header-right-actions">
+      <button class="circle-icon-btn search-nav-btn" id="header-search-btn" onclick="openSearchPage()" title="بحث">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      </button>
       <div class="header-balance-pill" onclick="switchTab('wallet')" title="المحفظة">
         <span class="bal-pill-amount" id="top-balance-str">$0.00</span>
         <span class="bal-pill-plus" id="top-balance-plus">➕</span>
@@ -501,26 +634,11 @@
 
   <!-- TAB 1: STORE VIEW -->
   <main id="view-store" class="tab-view active">
-    <!-- Home Screen Pin Banner (Bot API 8.0) -->
-    <div class="pwa-banner" id="home-screen-banner" style="display: none;">
-      <div style="font-size: 13px;">
-        <strong id="pwa-banner-title">أضف التطبيق للشاشة الرئيسية</strong>
-        <div style="font-size: 11px; color: var(--hint);" id="pwa-banner-sub">لوصول فوري ومباشر دون فتح تيليجرام</div>
-      </div>
-      <button class="btn-copy-mini" id="pwa-banner-btn" onclick="promptAddToHomeScreen()">إضافة الآن</button>
-    </div>
 
     <!-- Flash Sale Countdown Banner -->
     <div class="flash-sale-banner" id="flash-sale-banner" style="display: none;">
       <div class="flash-badge" id="flash-sale-badge">عروض فلاش محدودة</div>
       <div class="flash-timer" id="flash-countdown-timer">00:00:00</div>
-    </div>
-    <!-- Search Bar -->
-    <div class="search-box" style="position: relative;">
-      <span class="search-icon">🔍</span>
-      <input type="text" id="store-search-input" placeholder="ابحث عن كلود، جيميني، نتفلكس، في بي ان..." oninput="handleSearch()" onfocus="handleSearch()" autocomplete="off">
-      <span class="clear-search" id="store-clear-btn" onclick="clearSearch()">✕</span>
-      <div id="search-autocomplete-dropdown" class="search-autocomplete-box" style="display: none;"></div>
     </div>
 
     <!-- Trending Searches Bar (Dynamically rendered from Admin Config / Real Searches) -->
@@ -530,21 +648,23 @@
     </div>
     <!-- Quick Filters & Sorting -->
     <div class="filter-chips-row" id="quick-filters-row">
+      <div class="filter-chip filter-search-chip" id="filter-search-chip" onclick="openSearchPage()"><span style="margin-inline-end: 4px;">🔍</span><span id="lbl-filter-search">بحث</span></div>
       <div class="filter-chip active" id="filter-all" onclick="applyCatalogFilter('all')"><span id="lbl-filter-all">الكل</span></div>
       <div class="filter-chip" id="filter-wishlist" onclick="applyCatalogFilter('wishlist')">
         <svg class="fav-icon-svg active" viewBox="0 0 24 24" width="14" height="14" style="filter:none;"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
         <span id="label-filter-wishlist">المفضلة</span>
       </div>
       <div class="filter-chip" id="filter-stock" onclick="applyCatalogFilter('stock')"><span id="lbl-filter-stock">متوفر فقط</span></div>
-      <div class="filter-chip" id="filter-instant" onclick="applyCatalogFilter('instant')"><span id="lbl-filter-instant">تسليم فوري</span></div>
       <div class="filter-chip" id="filter-lowprice" onclick="applyCatalogFilter('lowprice')"><span id="lbl-filter-lowprice">الأقل سعراً</span></div>
     </div>
 
-    <!-- Promotional Hero Banner (Rendered ONLY when Admin configures a Store Announcement or Banner) -->
-    <div class="hero-banner" id="storefront-hero-banner" style="display: none;">
-      <div class="banner-badge" id="banner-badge-text">تحديثات المتجر</div>
-      <div class="banner-title" id="banner-title-text"></div>
-      <div class="banner-sub" id="banner-sub-text"></div>
+    <!-- Dynamic Promotional Banners Container (Only shown when admin configures active banner) -->
+    <div class="promotional-banners-wrapper" id="promotional-banners-wrapper" style="display: none;">
+      <div class="hero-banner" id="storefront-hero-banner" style="display: none;">
+        <div class="banner-badge" id="banner-badge-text"></div>
+        <div class="banner-title" id="banner-title-text"></div>
+        <div class="banner-sub" id="banner-sub-text"></div>
+      </div>
     </div>
     <!-- Mode A: Catalogs Cards (Homepage Collections with Grid/List Toggle) -->
     <div id="catalogs-collection-mode">
@@ -560,8 +680,38 @@
         </div>
       </div>
       <div class="catalogs-grid grid-layout" id="catalogs-grid">
-        <div class="skeleton-card"></div>
-        <div class="skeleton-card"></div>
+          <div class="skeleton-card-item">
+            <div class="skeleton-shimmer"></div>
+            <div class="skeleton-thumb-circle"></div>
+            <div class="skeleton-text-group">
+              <div class="skeleton-bar title-bar"></div>
+              <div class="skeleton-bar sub-bar"></div>
+            </div>
+          </div>
+          <div class="skeleton-card-item">
+            <div class="skeleton-shimmer"></div>
+            <div class="skeleton-thumb-circle"></div>
+            <div class="skeleton-text-group">
+              <div class="skeleton-bar title-bar"></div>
+              <div class="skeleton-bar sub-bar"></div>
+            </div>
+          </div>
+          <div class="skeleton-card-item">
+            <div class="skeleton-shimmer"></div>
+            <div class="skeleton-thumb-circle"></div>
+            <div class="skeleton-text-group">
+              <div class="skeleton-bar title-bar"></div>
+              <div class="skeleton-bar sub-bar"></div>
+            </div>
+          </div>
+          <div class="skeleton-card-item">
+            <div class="skeleton-shimmer"></div>
+            <div class="skeleton-thumb-circle"></div>
+            <div class="skeleton-text-group">
+              <div class="skeleton-bar title-bar"></div>
+              <div class="skeleton-bar sub-bar"></div>
+            </div>
+          </div>
       </div>
     </div>
 
@@ -573,6 +723,14 @@
           <span id="btn-back-to-catalogs">جميع التصنيفات</span>
         </button>
         <div style="font-size: 16px; font-weight: 700;" id="active-collection-title">التصنيف</div>
+      </div>
+      <div id="admin-category-actions-bar" style="display: none; margin: 8px 0 12px 0; gap: 8px;">
+        <button class="btn-action-primary" onclick="openAdminCreateFolderModal()" style="flex: 1; height: 38px; font-size: 12px; font-weight: 700; border-radius: 12px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+          <span>➕</span><span>إضافة مجلد جديد لهذه الفئة</span>
+        </button>
+        <button class="btn-action-secondary" onclick="openAdminCurrentCategoryEditor()" style="width: 44px; height: 38px; font-size: 14px; border-radius: 12px; display: flex; align-items: center; justify-content: center;" title="تعديل بيانات هذه الفئة">
+          ✏️
+        </button>
       </div>
       <div id="catalog-products-list"></div>
     </div>
@@ -586,6 +744,11 @@
         </button>
         <div style="font-size: 16px; font-weight: 700;" id="active-service-title">باقات الخدمة</div>
       </div>
+      <div id="admin-folder-edit-bar" style="display: none; margin: 8px 0 12px 0;">
+        <button class="btn-action-secondary" onclick="openAdminCurrentFolderEditor()" style="width: 100%; height: 38px; font-size: 12px; font-weight: 700; border-radius: 12px;">
+          📁 تعديل هذا المجلد كمسؤول (Edit Folder)
+        </button>
+      </div>
       <div id="service-variants-products-list"></div>
     </div>
   </main>
@@ -597,6 +760,33 @@
     <span class="cart-badge-total" id="cart-badge-total">$0.00</span>
   </div>
 
+  <!-- DEDICATED SEARCH PAGE VIEW -->
+  <section id="view-search" class="tab-view">
+    <div class="subview-header search-page-subview-header">
+      <button class="btn-back-catalog" onclick="closeSearchPage()">
+        <span id="search-page-back-icon">→</span>
+        <span id="btn-back-search">رجوع</span>
+      </button>
+      <div class="search-page-input-wrapper">
+        <span class="search-page-input-icon">🔍</span>
+        <input type="text" id="search-page-input" placeholder="ابحث عن منتج، اشتراك، خدمة..." oninput="handleSearchPageInput()" autocomplete="off">
+        <span class="search-page-clear-btn" id="search-page-clear-btn" onclick="clearSearchPageInput()" style="display: none;">✕</span>
+      </div>
+    </div>
+
+    <!-- Clean Empty / Initial Placeholder State -->
+    <div class="search-page-empty-state" id="search-page-empty-state">
+      <div class="search-empty-icon">🔍</div>
+      <div class="search-empty-title" id="search-empty-title">ابحث في المتجر</div>
+      <div class="search-empty-desc" id="search-empty-desc">اكتب اسم الخدمة أو الباقة (مثل: جيميني، شات جي بي تي، نتفلكس، كاب كات...) لتظهر لك النتائج فوراً.</div>
+    </div>
+
+    <!-- Search Results Container -->
+    <div class="search-page-results" id="search-page-results" style="display: none;">
+      <div class="search-results-count-bar" id="search-results-count-bar"></div>
+      <div id="search-page-products-list"></div>
+    </div>
+  </section>
 
   <!-- DEDICATED IN-APP PRODUCT DETAIL PAGE (Clean Hero, No Emojis) -->
   <section id="view-product-detail" class="tab-view">
@@ -642,6 +832,70 @@
       </button>
     </div>
 
+    <!-- IN-PAGE ITEM / DENOMINATION VARIANT SELECTOR -->
+    <div class="inset-card" id="detail-variants-container" style="display: none;">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+        <div style="font-size: 12px; font-weight: 700; color: var(--accent);" id="label-variants-title">اختر الفئة أو الباقة | Select Item</div>
+        <span class="catalog-visual-pill" id="variants-count-badge" style="display: none;"></span>
+      </div>
+      <div class="detail-variants-grid" id="detail-variants-list"></div>
+    </div>
+
+    <!-- DYNAMIC GAME PLAYER INPUTS & LIVE VERIFICATION -->
+    <div class="inset-card" id="detail-game-fields-container" style="display: none;">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+        <div style="font-size: 12px; font-weight: 700; color: var(--accent); display: flex; align-items: center; gap: 6px;">
+          <span>🎮</span>
+          <span id="label-game-fields-title">بيانات الشحن داخل اللعبة</span>
+        </div>
+        <span class="game-instant-pill" id="badge-game-instant" style="background: rgba(16, 185, 129, 0.15); color: #10b981; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px;">⚡ شحن فوري</span>
+      </div>
+      <div id="game-fields-notes" style="display: none; font-size: 11px; color: var(--hint); margin-bottom: 10px; background: rgba(56, 189, 248, 0.06); padding: 6px 10px; border-radius: 8px; border: 1px solid rgba(56, 189, 248, 0.2);"></div>
+
+      <!-- Player ID (User ID / UID) Field -->
+      <div class="game-input-group" id="group-player-id" style="margin-bottom: 10px;">
+        <label style="font-size: 12px; font-weight: 700; color: var(--text); display: block; margin-bottom: 4px;" for="game-player-id-input" id="label-player-id">
+          معرف اللاعب (Player ID / UID) <span style="color: #ef4444;">*</span>
+        </label>
+        <div style="display: flex; gap: 8px;">
+          <input type="text" id="game-player-id-input" placeholder="مثال: 12345678" oninput="onPlayerInputChanged()" style="flex: 1; background: var(--input-bg); border: 1px solid var(--border); border-radius: 10px; color: var(--text); padding: 10px 12px; font-size: 13px; font-family: monospace; outline: none;">
+          <button type="button" class="btn-action-secondary" id="btn-verify-player" onclick="triggerPlayerVerification()" style="padding: 0 14px; height: 42px; font-size: 12px; font-weight: 700; white-space: nowrap; border-color: var(--accent); color: var(--accent);">
+            🔍 <span id="label-btn-verify">تحقق</span>
+          </button>
+        </div>
+        <div id="player-verify-status" style="display: none; font-size: 12px; font-weight: 700; margin-top: 6px; padding: 4px 8px; border-radius: 6px;"></div>
+      </div>
+
+      <!-- Server / Region ID Field (Select or Text) -->
+      <div class="game-input-group" id="group-server-id" style="display: none; margin-bottom: 10px;">
+        <label style="font-size: 12px; font-weight: 700; color: var(--text); display: block; margin-bottom: 4px;" for="game-server-id-input" id="label-server-id">
+          معرف السيرفر / المنطقة (Server / Zone ID) <span style="color: #ef4444;">*</span>
+        </label>
+        <select id="game-server-id-select" onchange="onPlayerInputChanged()" style="display: none; width: 100%; background: var(--input-bg); border: 1px solid var(--border); border-radius: 10px; color: var(--text); padding: 10px 12px; font-size: 13px; outline: none;"></select>
+        <input type="text" id="game-server-id-input" placeholder="مثال: 2001 (أرقام فقط)" oninput="onPlayerInputChanged()" style="display: none; width: 100%; background: var(--input-bg); border: 1px solid var(--border); border-radius: 10px; color: var(--text); padding: 10px 12px; font-size: 13px; font-family: monospace; outline: none;">
+      </div>
+
+      <!-- Character / In-Game Name Field (Optional) -->
+      <div class="game-input-group" id="group-charname" style="display: none; margin-bottom: 6px;">
+        <label style="font-size: 12px; font-weight: 700; color: var(--text); display: block; margin-bottom: 4px;" for="game-charname-input" id="label-charname">
+          اسم الشخصية أو الحساب (Character Nickname)
+        </label>
+        <input type="text" id="game-charname-input" placeholder="اسمك داخل اللعبة (اختياري)" oninput="onPlayerInputChanged()" style="width: 100%; background: var(--input-bg); border: 1px solid var(--border); border-radius: 10px; color: var(--text); padding: 10px 12px; font-size: 13px; outline: none;">
+      </div>
+    </div>
+    <!-- VOUCHER REDEMPTION MANUAL & INSTRUCTIONS -->
+    <div class="inset-card" id="detail-voucher-manual-container" style="display: none;">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+        <div style="font-size: 12px; font-weight: 700; color: var(--accent); display: flex; align-items: center; gap: 6px;">
+          <span>📋</span>
+          <span id="label-voucher-manual-title">طريقة الاستخدام واسترداد الكود</span>
+        </div>
+        <a href="#" id="link-voucher-official-site" target="_blank" rel="noopener" style="font-size: 11px; color: var(--accent); text-decoration: none; font-weight: 700; display: none;">
+          🌐 <span id="label-voucher-official-link">الموقع الرسمي</span>
+        </a>
+      </div>
+      <div class="voucher-steps-list" id="detail-voucher-steps-list"></div>
+    </div>
     <div class="inset-card">
       <div style="font-size: 12px; font-weight: 700; color: var(--hint); margin-bottom: 6px;" id="label-desc-title">الوصف</div>
       <div class="rich-desc-container" id="prod-rich-desc">تسليم المفاتيح والحسابات.</div>
@@ -668,7 +922,7 @@
           </div>
           <div style="font-size: 12px; color: var(--success); font-weight: 700;" id="prod-discount-tag"></div>
         </div>
-        <div class="stepper-capsule">
+        <div class="stepper-capsule" id="product-quantity-control">
           <button class="stepper-btn" onclick="adjustQty(-1)">–</button>
           <div class="stepper-divider"></div>
           <span class="stepper-val" id="prod-qty-val">1</span>
@@ -1163,6 +1417,44 @@
         </div>
       </div>
 
+      <!-- SERVER 3: G2Bulk Games & Vouchers Card -->
+      <div class="inset-card" style="border: 1px solid rgba(168, 85, 247, 0.4); background: var(--card); padding: 14px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+          <div style="display: inline-flex; align-items: center; gap: 6px;">
+            <span style="font-size: 18px;">🎮</span>
+            <div>
+              <div style="font-size: 13px; font-weight: 800; color: var(--text);" id="sup-card-g2b-title">سيرفر 3: G2Bulk ألعاب وقسائم</div>
+              <div style="font-size: 10px; color: var(--hint);" id="sup-card-g2b-count">0 منتج مرتبط</div>
+            </div>
+          </div>
+          <span class="pill-badge" style="background: rgba(168, 85, 247, 0.15); color: #c084fc; font-size: 11px; font-weight: 700;" id="sup-card-g2b-badge">نشط</span>
+        </div>
+        <div style="background: var(--input-bg); border-radius: 10px; padding: 10px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <div style="font-size: 10px; color: var(--hint);" id="sup-card-g2b-avail-lbl">الرصيد المتاح:</div>
+            <div style="font-size: 16px; font-weight: 800; color: #c084fc;" id="sup-card-g2b-bal">$0.00 USD</div>
+          </div>
+          <button class="btn-action-secondary" onclick="testG2BulkKeyLiveInSuppliersPage()" id="btn-test-g2bulk" style="height: 34px; padding: 0 12px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; border-color: #c084fc; color: #c084fc;">
+            🔄 <span id="sup-card-g2b-test-btn">فحص الرصيد</span>
+          </button>
+        </div>
+        <div id="sup-card-g2b-status" style="font-size: 11px; margin-bottom: 10px; display: none;"></div>
+        <div style="margin-bottom: 10px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label style="font-size: 11px; font-weight: 700; color: var(--text);" for="sup-card-g2b-key">مفتاح G2Bulk API</label>
+            <span style="font-size: 10px; color: var(--hint);" id="sup-card-g2b-key-state">محفوظ</span>
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <input type="password" class="admin-text-input" id="sup-card-g2b-key" placeholder="أدخل مفتاح X-API-Key..." style="flex: 1; font-family: monospace; font-size: 11px;">
+            <button class="btn-copy-mini" onclick="togglePasswordVisibility('sup-card-g2b-key')" style="padding: 0 8px; font-size: 10px;" title="إظهار/إخفاء">👁️</button>
+          </div>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 4px;">
+          <span style="font-size: 11px; color: var(--hint);" id="sup-card-g2b-sync-lbl">مزامنة الألعاب والقسائم تلقائياً</span>
+          <input type="checkbox" id="sup-card-g2b-sync" checked style="width: 18px; height: 18px; accent-color: #a855f7; cursor: pointer;">
+        </div>
+      </div>
+
     </div>
 
     <!-- SMART ROUTING STRATEGY & FAILOVER CONTROLS -->
@@ -1198,11 +1490,11 @@
     <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px;">
       <button class="btn-action-primary" onclick="saveSuppliersPageSettings()" style="height: 46px; font-size: 13px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-        <span id="sup-page-save-btn">حفظ إعدادات ومفاتيح السيرفرين</span>
+        <span id="sup-page-save-btn">حفظ إعدادات ومفاتيح الموردين الثلاثة</span>
       </button>
       <button class="btn-action-secondary" onclick="syncAllSupplierCatalogsInSuppliersPage()" id="btn-sup-page-sync" style="height: 44px; font-size: 12px; font-weight: 700; background: linear-gradient(135deg, #6366f1, #4f46e5); color: #fff; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
-        <span id="sup-page-sync-btn">مزامنة كافة المنتجات من كلا الموردين الآن</span>
+        <span id="sup-page-sync-btn">مزامنة كافة المنتجات من الموردين الثلاثة الآن</span>
       </button>
     </div>
   </section>
@@ -1673,6 +1965,10 @@
         <div style="font-size: 15px; font-weight: 800; color: var(--accent);" id="admin-center-title">لوحة تحكم المشرف</div>
         <span class="pill-badge" style="background: rgba(16, 185, 129, 0.2); color: var(--success); font-size: 10px;" id="admin-verified-badge">مسؤول معتمد</span>
       </div>
+      <button class="btn-action-primary" onclick="openAdminBannerModal()" style="width: 100%; height: 42px; font-size: 13px; font-weight: 700; margin-bottom: 14px; background: linear-gradient(135deg, #6366f1, #4f46e5); display: flex; align-items: center; justify-content: center; gap: 6px;">
+        <span>📢</span>
+        <span>إدارة الإعلانات والبانرات الترويجية (Manage Banners)</span>
+      </button>
 
       <!-- Financial Store Health Overview -->
       <div class="admin-stats-grid">

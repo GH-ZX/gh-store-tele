@@ -20,8 +20,8 @@ from models.batstore_product import BatStoreProduct
 from repositories.batstore_product import BatStoreProductRepository
 from services.batstore import BatStoreService, BatStoreOutOfStockError, BatStoreAPIError
 from services.prodseller import ProdSellerService, ProdSellerOutOfStockError, ProdSellerAPIError
+from services.g2bulk import G2BulkService, G2BulkOutOfStockError, G2BulkAPIError
 from services.config import ConfigService
-
 
 class MultiSupplierService:
     ROUTING_AUTO_CHEAPEST = "auto_cheapest"
@@ -39,6 +39,13 @@ class MultiSupplierService:
         """Sync catalogs from both BatStore and ProdSeller, tag server badges, and tag duplicate offerings."""
         bat_created, bat_updated = await BatStoreService.sync_catalog(session)
         prod_created, prod_updated = await ProdSellerService.sync_catalog(session)
+        g2b_created = g2b_updated = 0
+        g2b_sync = (await ConfigService.get(session, "G2BULK_SYNC_ENABLED", default="true")).lower() == "true"
+        if g2b_sync:
+            try:
+                g2b_created, g2b_updated = await G2BulkService.sync_catalog(session)
+            except Exception as ex_g2b:
+                logging.warning("G2Bulk catalog sync error: %s", ex_g2b)
 
         from models.batstore_product import BatStoreProduct
         from sqlalchemy import update as _sa_update
@@ -48,7 +55,11 @@ class MultiSupplierService:
             session
         )
         await session_execute(
-            _sa_update(BatStoreProduct).where((BatStoreProduct.supplier == None) | (BatStoreProduct.supplier != "prodseller")).values(supplier="batstore", server_badge="سيرفر 1 (BatStore)"),
+            _sa_update(BatStoreProduct).where(BatStoreProduct.supplier == "g2bulk").values(server_badge="سيرفر 3 (G2Bulk Games)"),
+            session
+        )
+        await session_execute(
+            _sa_update(BatStoreProduct).where((BatStoreProduct.supplier == None) | (~BatStoreProduct.supplier.in_(["prodseller", "g2bulk"]))).values(supplier="batstore", server_badge="سيرفر 1 (BatStore)"),
             session
         )
         await BatStoreProductRepository.invalidate_cache()
@@ -67,6 +78,7 @@ class MultiSupplierService:
         return {
             "batstore": {"created": bat_created, "updated": bat_updated},
             "prodseller": {"created": prod_created, "updated": prod_updated},
+            "g2bulk": {"created": g2b_created, "updated": g2b_updated},
             "total_products": total_count,
         }
 
@@ -74,6 +86,8 @@ class MultiSupplierService:
     async def get_cached_supplier_balance(product: BatStoreProduct, session: AsyncSession | Session, redis_client=None) -> float:
         """Check the cached reseller wallet balance for the specific supplier of this product."""
         supplier = getattr(product, "supplier", "batstore")
+        if supplier == "g2bulk":
+            return await G2BulkService.get_cached_balance(session, redis_client)
         if supplier == "prodseller":
             return await ProdSellerService.get_cached_balance(session, redis_client)
         return await BatStoreService.get_cached_reseller_balance(session, redis_client)
@@ -85,6 +99,7 @@ class MultiSupplierService:
         quantity: int = 1,
         customer_reference: str | None = None,
         idempotency_key: str | None = None,
+        extra_params: dict | None = None,
     ) -> dict[str, Any]:
         """Place order upstream with the product's supplier.
 
@@ -92,6 +107,67 @@ class MultiSupplierService:
         server has the product in stock and fail over without dropping the customer order.
         """
         supplier = getattr(product, "supplier", "batstore")
+
+        if supplier == "g2bulk":
+            delivery_type = getattr(product, "delivery_type", "voucher") or "voucher"
+            if delivery_type in ("direct_topup", "game_recharge"):
+                game_code = getattr(product, "reseller_key_override", None)
+                if not game_code and getattr(product, "extra_meta", None):
+                    game_code = product.extra_meta.get("game_code")
+                game_code = game_code or "aoem"
+
+                catalogue_name = (extra_params or {}).get("catalogue_name")
+                if not catalogue_name and getattr(product, "extra_meta", None):
+                    items = product.extra_meta.get("items", [])
+                    if items:
+                        catalogue_name = items[0].get("name")
+                catalogue_name = catalogue_name or "Standard"
+
+                player_id = str((extra_params or {}).get("player_id") or "").strip()
+                server_id = (extra_params or {}).get("server_id")
+                charname = (extra_params or {}).get("charname")
+
+                order_resp = await G2BulkService.create_game_order(
+                    session, game_code, catalogue_name, player_id,
+                    server_id=server_id, charname=charname,
+                    remark=customer_reference, idempotency_key=idempotency_key
+                )
+                upstream_id = str(order_resp.get("order_id") or "")
+                status_val = str(order_resp.get("status") or "PENDING").upper()
+                # Direct recharge has no voucher payload. Keep it pending until
+                # G2Bulk confirms COMPLETED through the status endpoint.
+                goods = []
+                return {
+                    "supplier": "g2bulk",
+                    "server_badge": "سيرفر 3 (G2Bulk Games)",
+                    "external_order_ref": f"g2b-game-{upstream_id}" if upstream_id else None,
+                    "goods": goods,
+                    "raw_order": order_resp,
+                    "status": status_val,
+                }
+            else:
+                v_prod_id = (extra_params or {}).get("selected_item_id")
+                if not v_prod_id and getattr(product, "extra_meta", None):
+                    items = product.extra_meta.get("items", [])
+                    if items:
+                        v_prod_id = items[0].get("id")
+                if not v_prod_id:
+                    v_prod_id = getattr(product, "reseller_key_override", None) or product.product_id
+
+                order_resp = await G2BulkService.purchase_voucher(
+                    session, int(v_prod_id), quantity=quantity, idempotency_key=idempotency_key
+                )
+                upstream_id = str(order_resp.get("order_id") or "")
+                goods = G2BulkService.extract_delivery_goods(order_resp)
+                status_val = str(order_resp.get("status") or ("COMPLETED" if goods else "PENDING")).upper()
+                return {
+                    "supplier": "g2bulk",
+                    "server_badge": "سيرفر 3 (G2Bulk Vouchers)",
+                    "external_order_ref": f"g2b-vouch-{upstream_id}" if upstream_id else None,
+                    "goods": goods,
+                    "raw_order": order_resp,
+                    "status": status_val,
+                }
 
         if supplier == "prodseller":
             mongo_id = getattr(product, "reseller_key_override", None) or str(product.product_id)

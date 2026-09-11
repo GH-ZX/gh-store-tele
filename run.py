@@ -66,16 +66,14 @@ async def start(message: Message, command: CommandObject, session: AsyncSession,
 
     is_ar = (language == Language.AR)
 
-    # 1. Update Telegram Client Menu Button to MiniApp
-    if tma_url:
-        try:
-            menu_btn_text = "🛍️ المتجر" if is_ar else "🛍️ Shop"
-            await message.bot.set_chat_menu_button(
-                chat_id=telegram_id,
-                menu_button=types.MenuButtonWebApp(text=menu_btn_text, web_app=types.WebAppInfo(url=tma_url))
-            )
-        except Exception:
-            pass
+    # 1. Reset Telegram Client Menu Button to Default (no Arabic/English override, always default Open App)
+    try:
+        await message.bot.set_chat_menu_button(
+            chat_id=telegram_id,
+            menu_button=types.MenuButtonDefault()
+        )
+    except Exception:
+        pass
 
     # 2. Build Welcome Text
     user_name = message.from_user.first_name or message.from_user.username or ("العميل" if is_ar else "Customer")
@@ -86,7 +84,7 @@ async def start(message: Message, command: CommandObject, session: AsyncSession,
             f"💰 <b>الرصيد المتاح:</b> <code>${balance:.2f} USD</code>\n\n"
             f"🛍️ يمكنك تصفح المنتجات الرقمية، شحن الرصيد، ومتابعة طلباتك فورياً عبر المتجر السريع أدناه:"
         )
-        btn_shop = "🛍️ فتح المتجر والتسوق"
+        btn_shop = "Open App"
         btn_wallet = "💳 شحن الرصيد"
         btn_orders = "📦 طلباتي وعملياتي"
         btn_support = "💬 الدعم الفني"
@@ -99,7 +97,7 @@ async def start(message: Message, command: CommandObject, session: AsyncSession,
             f"💰 <b>Available Balance:</b> <code>${balance:.2f} USD</code>\n\n"
             f"🛍️ Explore our full digital catalog, manage your balance, and track orders directly in the WebApp below:"
         )
-        btn_shop = "🛍️ Open Store WebApp"
+        btn_shop = "Open App"
         btn_wallet = "💳 Top Up Balance"
         btn_orders = "📦 My Orders"
         btn_support = "💬 Customer Support"
@@ -117,24 +115,23 @@ async def start(message: Message, command: CommandObject, session: AsyncSession,
             inline_kb.button(text=btn_admin, web_app=types.WebAppInfo(url=f"{tma_url}&startapp=admin_radar"))
         inline_kb.adjust(1, 2)
 
-    # 4. Persistent Bottom Reply Keyboard
-    keyboard = []
-    if tma_url:
-        keyboard.append([types.KeyboardButton(text=btn_shop, web_app=types.WebAppInfo(url=tma_url))])
-        keyboard.append([
-            types.KeyboardButton(text=btn_wallet, web_app=types.WebAppInfo(url=f"{tma_url}&startapp=wallet")),
-            types.KeyboardButton(text=btn_orders, web_app=types.WebAppInfo(url=f"{tma_url}&startapp=orders"))
-        ])
-    keyboard.append([
-        types.KeyboardButton(text=btn_reviews),
-        types.KeyboardButton(text=btn_support)
-    ])
-    if is_admin and tma_url:
-        keyboard.append([types.KeyboardButton(text=btn_admin, web_app=types.WebAppInfo(url=f"{tma_url}&startapp=admin_radar"))])
+    # 4. Persistent Bottom Reply Keyboard (Native interactive bot chat features)
+    kb_categories = get_text(language, BotEntity.USER, "all_categories")
+    kb_profile = get_text(language, BotEntity.USER, "my_profile")
+    kb_cart = get_text(language, BotEntity.USER, "cart")
+    kb_reviews = get_text(language, BotEntity.USER, "reviews")
+    kb_help = get_text(language, BotEntity.USER, "help")
+
+    keyboard = [
+        [types.KeyboardButton(text=kb_categories), types.KeyboardButton(text=kb_profile)],
+        [types.KeyboardButton(text=kb_cart), types.KeyboardButton(text=kb_reviews)],
+        [types.KeyboardButton(text=kb_help)],
+    ]
+    if is_admin:
+        kb_admin = get_text(language, BotEntity.ADMIN, "menu")
+        keyboard.append([types.KeyboardButton(text=kb_admin)])
 
     start_markup = types.ReplyKeyboardMarkup(resize_keyboard=True, keyboard=keyboard)
-    bot_photo_id = get_bot_photo_id()
-
     try:
         await message.answer_photo(photo=bot_photo_id, caption=welcome_caption, reply_markup=inline_kb.as_markup(), parse_mode="HTML")
     except Exception:

@@ -50,7 +50,43 @@ async def poll_pending_orders():
                     continue
 
                 try:
-                    if is_numeric:
+                    if ref_str.startswith("g2b-game-"):
+                        from services.g2bulk import G2BulkService
+                        g2b_id = ref_str.replace("g2b-game-", "").strip()
+                        async with get_db_session() as session:
+                            order_data = await asyncio.wait_for(
+                                G2BulkService.get_game_order_status(g2b_id, session),
+                                timeout=15.0
+                            )
+                        st = str(order_data.get("order", {}).get("status") or order_data.get("status") or "").upper()
+                        if st == "COMPLETED":
+                            reseller_status = "completed"
+                            goods = ["Game Top-Up Completed Successfully"]
+                        elif st in ("FAILED", "REFUNDED"):
+                            reseller_status = "failed"
+                            goods = []
+                        else:
+                            reseller_status = "pending"
+                            goods = []
+                    elif ref_str.startswith("g2b-vouch-"):
+                        from services.g2bulk import G2BulkService
+                        g2b_id = ref_str.replace("g2b-vouch-", "").strip()
+                        async with get_db_session() as session:
+                            order_data = await asyncio.wait_for(
+                                G2BulkService.get_delivery(g2b_id, session),
+                                timeout=15.0
+                            )
+                        st = str(order_data.get("status") or "").upper()
+                        if st == "COMPLETED":
+                            reseller_status = "completed"
+                            goods = G2BulkService.extract_delivery_goods(order_data)
+                        elif st in ("FAILED", "REFUNDED"):
+                            reseller_status = "failed"
+                            goods = []
+                        else:
+                            reseller_status = "pending"
+                            goods = []
+                    elif is_numeric:
                         async with get_db_session() as session:
                             order_data = await asyncio.wait_for(
                                 BatStoreService.get_order(session, int(order_id)),
@@ -97,14 +133,117 @@ async def poll_pending_orders():
 
 
 async def _notify_order_complete(order, goods: list[str]):
-    """Notify the customer that their order is ready."""
-    goods_text = "\n".join(f"• {g}" for g in goods[:20])
-    text = (
-        f"✅ Your order #{order.id} is ready!\n\n"
-        f"📦 Delivered goods:\n{goods_text}"
-    )
+    """Notify the customer that their order is ready.
+
+    Sends a full delivery receipt DM: order number, product name, amount
+    paid, copyable credentials in <code> tags, a clean step-by-step
+    activation guide, and a one-tap WebApp button (startapp=ord_<id>)
+    opening the exact order receipt in the Mini App.
+    """
+    import html
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+
+    details = list(getattr(order, "details", None) or [])
+    first = details[0] if details else {}
+    if not isinstance(first, dict):
+        first, details = {}, []
+    raw_product_id = first.get("product_id")
     try:
-        await NotificationService.send_to_user(text, order.telegram_id)
+        product_id = int(raw_product_id) if raw_product_id is not None else None
+    except (TypeError, ValueError):
+        product_id = None
+    product_name = str(first.get("name") or "").strip() or f"Order #{order.id}"
+    try:
+        amount = float(getattr(order, "total_sell", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        amount = 0.0
+
+    # Resolve the catalog product for clean activation instructions.
+    product = None
+    try:
+        async with get_db_session() as session:
+            from repositories.product import ProductRepository
+            if product_id is not None:
+                try:
+                    product = await ProductRepository.get_by_product_id(product_id, session)
+                except Exception:
+                    product = None
+            if product is None and product_name:
+                try:
+                    matches = await ProductRepository.search(product_name, session, limit=1)
+                    product = matches[0] if matches else None
+                except Exception:
+                    product = None
+    except Exception as e:
+        logging.debug("Could not resolve product for order %s: %s", order.id, e)
+        product = None
+
+    # Activation steps: stored per-order instructions win, else derive
+    # clean steps from the catalog product description.
+    steps: list[str] = []
+
+    def _as_steps(value) -> list[str]:
+        if not value:
+            return []
+        if isinstance(value, str):
+            return [ln.strip(" •-\t") for ln in value.splitlines() if ln.strip(" •-\t")]
+        if isinstance(value, (list, tuple)):
+            return [str(s).strip() for s in value if str(s).strip()]
+        return []
+
+    steps = _as_steps(first.get("instructions_en")) or _as_steps(first.get("instructions_ar"))
+    if not steps and product is not None:
+        try:
+            from services.product_spec import ProductSpecParser
+            guide = ProductSpecParser.extract_clean_instructions(
+                getattr(product, "description", None),
+                getattr(product, "description_ar", None),
+                getattr(product, "name", None) or product_name,
+            )
+            steps = list((guide or {}).get("steps_en") or [])
+        except Exception as e:
+            logging.debug("Could not extract instructions for order %s: %s", order.id, e)
+            steps = []
+
+    safe_name = html.escape(product_name, quote=False)
+    lines = [
+        f"✅ <b>Your order #{order.id} is ready!</b>",
+        "",
+        f"📦 <b>{safe_name}</b>",
+        f"💰 Amount paid: <b>${amount:.2f}</b>",
+    ]
+    clean_goods = [str(g).strip() for g in (goods or []) if str(g).strip()]
+    if clean_goods:
+        lines += ["", "🔑 <b>Your credentials (tap to copy):</b>"]
+        lines += [f"🔑 <code>{html.escape(g, quote=False)}</code>" for g in clean_goods[:20]]
+    if steps:
+        lines += ["", "📝 <b>Activation guide:</b>"]
+        lines += [f"{i}. {html.escape(str(s).strip(), quote=False)}" for i, s in enumerate(steps[:10], 1)]
+    lines += ["", "<i>Tap below to open your receipt in the Mini App.</i>"]
+    text = "\n".join(lines)
+
+    reply_markup = None
+    try:
+        tma_host = (getattr(config, "WEBHOOK_HOST", "") or "").strip().rstrip("/")
+        if tma_host:
+            from services.telegram_auth import generate_session_token
+            auth_tok = generate_session_token(int(order.telegram_id))
+            tma_url = (
+                f"{tma_host}/app?tg_id={order.telegram_id}"
+                f"&auth_token={auth_tok}&startapp=ord_{order.id}"
+            )
+            reply_markup = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(
+                    text="🧾 Open Receipt in Mini App",
+                    web_app=WebAppInfo(url=tma_url),
+                )
+            ]])
+    except Exception as e:
+        logging.debug("Could not build Mini App receipt button for order %s: %s", order.id, e)
+        reply_markup = None
+
+    try:
+        await NotificationService.send_to_user(text, order.telegram_id, reply_markup=reply_markup)
         from bot import bot
         from services.pdf_receipt import PDFReceiptService
         date_str = order.created_at.strftime("%Y-%m-%d %H:%M:%S UTC") if getattr(order, "created_at", None) else None
@@ -149,7 +288,7 @@ async def periodic_catalog_sync():
     """Periodically sync the BatStore catalog every hour to keep prices and stock fresh."""
     while True:
         await asyncio.sleep(3600)
-        if config.BATSTORE_SYNC_ENABLED or getattr(config, "PRODSELLER_SYNC_ENABLED", True):
+        if config.BATSTORE_SYNC_ENABLED or getattr(config, "PRODSELLER_SYNC_ENABLED", True) or getattr(config, "G2BULK_SYNC_ENABLED", True):
             try:
                 async with get_db_session() as session:
                     from services.multi_supplier import MultiSupplierService
@@ -207,6 +346,23 @@ async def check_reseller_balance(session) -> float | None:
             )
     except Exception as e:
         logging.debug("Could not check ProdSeller balance: %s", e)
+
+    try:
+        from services.g2bulk import G2BulkService
+        g2b_data = await G2BulkService.get_balance(session)
+        bal_g2b = float(g2b_data.get("balance") or 0.0)
+        if bal_g2b < 5.0:
+            await NotificationService.send_error_to_admins(
+                "low_reseller_balance_g2bulk",
+                f"⚠️ <b>Low Reseller Balance — سيرفر 3 (G2Bulk Games)</b>\n\n"
+                f"• Current Balance: <b>${bal_g2b:.2f} USD</b>\n"
+                f"• Alert Threshold: $5.00\n\n"
+                "<i>Please top up your G2Bulk wallet via Telegram @G2BULKBOT.</i>",
+                None,
+                window_seconds=86400,
+            )
+    except Exception as e:
+        logging.debug("Could not check G2Bulk balance: %s", e)
 
     return bal_bat
 

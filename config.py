@@ -1,4 +1,5 @@
 import os
+import socket
 
 from dotenv import load_dotenv
 
@@ -25,11 +26,33 @@ TOKEN = os.environ.get("TOKEN")
 ADMIN_ID_LIST = [int(admin_id.strip()) for admin_id in (os.environ.get("ADMIN_ID_LIST") or "").split(',') if admin_id.strip().isdigit()]
 SUPPORT_LINK = os.environ.get("SUPPORT_LINK") or "https://t.me/ahmedghx"
 ANNOUNCEMENT_CHANNEL_ID = os.environ.get("ANNOUNCEMENT_CHANNEL_ID")
+# Helper to resolve Docker container service names when running on the host machine
+def _resolve_service_host(host: str | None, default_port: int, fallback: str = "127.0.0.1") -> str:
+    """Resolve container service hostnames when running on the host workstation.
+
+    If host is a container service name (e.g. 'postgres' or 'redis') that cannot
+    be resolved via DNS (which happens when executing outside the docker network on
+    the host workstation), automatically fall back to '127.0.0.1' where docker exposes
+    the service ports.
+    """
+    if not host:
+        return fallback
+    if host in ("localhost", "127.0.0.1", "::1"):
+        return host
+    try:
+        socket.getaddrinfo(host, default_port)
+        return host
+    except socket.gaierror:
+        if host in ("postgres", "redis", "db", "database", "cache"):
+            return fallback
+        return host
+
+
 # POSTGRESQL
 DB_USER = os.environ.get("POSTGRES_USER", "postgres")
 DB_PASS = os.environ.get("POSTGRES_PASSWORD")
 DB_PORT = int(os.environ.get("DB_PORT", "5432"))
-DB_HOST = os.environ.get("DB_HOST", "postgres")
+DB_HOST = _resolve_service_host(os.environ.get("DB_HOST", "postgres"), DB_PORT, "127.0.0.1")
 DB_NAME = os.environ.get("POSTGRES_DB", "ghstore")
 PAGE_ENTRIES = int(os.environ.get("PAGE_ENTRIES", "8"))
 MULTIBOT = os.environ.get("MULTIBOT", False) == 'true'
@@ -38,7 +61,7 @@ KRYPTO_EXPRESS_API_KEY = os.environ.get("KRYPTO_EXPRESS_API_KEY")
 KRYPTO_EXPRESS_API_URL = os.environ.get("KRYPTO_EXPRESS_API_URL")
 KRYPTO_EXPRESS_API_SECRET = os.environ.get("KRYPTO_EXPRESS_API_SECRET")
 WEBHOOK_SECRET_TOKEN = os.environ.get("WEBHOOK_SECRET_TOKEN")
-REDIS_HOST = os.environ.get("REDIS_HOST", "redis")
+REDIS_HOST = _resolve_service_host(os.environ.get("REDIS_HOST", "redis"), 6379, "127.0.0.1")
 REDIS_PASSWORD = os.environ.get("REDIS_PASSWORD")
 TELEGRAM_PROXY_URL = os.environ.get("TELEGRAM_PROXY_URL")
 # VARIABLES FOR CRYPTO FORWARDING
@@ -72,6 +95,9 @@ BATSTORE_SYNC_ENABLED = os.environ.get("BATSTORE_SYNC_ENABLED", "true") == 'true
 BATSTORE_WEBHOOK_URL = os.environ.get("BATSTORE_WEBHOOK_URL")
 PRODSELLER_API_KEY = os.environ.get("PRODSELLER_API_KEY")
 PRODSELLER_SYNC_ENABLED = os.environ.get("PRODSELLER_SYNC_ENABLED", "true").lower() == "true"
+G2BULK_API_KEY = os.environ.get("G2BULK_API_KEY")
+G2BULK_API_URL = os.environ.get("G2BULK_API_URL", "https://api.g2bulk.com/v1")
+G2BULK_SYNC_ENABLED = os.environ.get("G2BULK_SYNC_ENABLED", "true").lower() == "true"
 SUPPLIER_ROUTING_STRATEGY = os.environ.get("SUPPLIER_ROUTING_STRATEGY", "auto_cheapest")
 SAM_API_BASE = os.environ.get("SAM_API_BASE")
 SAM_API_KEY = os.environ.get("SAM_API_KEY")

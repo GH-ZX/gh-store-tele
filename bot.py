@@ -47,6 +47,7 @@ from models.stars_payment import StarsPaymentAdmin
 from models.admin_audit_log import AdminAuditLogAdmin
 from models.gift_voucher import GiftVoucherAdmin
 from models.storefront_category import StorefrontCategoryAdmin
+from models.storefront_folder import StorefrontFolderAdmin
 from models.promotional_banner import PromotionalBannerAdmin
 from repositories.gift_voucher import GiftVoucherRepository
 from services.cart_recovery import CartRecoveryService, cart_recovery_cron
@@ -125,7 +126,7 @@ async def _startup() -> None:
     async with get_db_session() as session:
         await ConfigService.seed_defaults(session)
         await ConfigService.seed_from_env(session)
-    if config.BATSTORE_SYNC_ENABLED or getattr(config, "PRODSELLER_SYNC_ENABLED", True):
+    if config.BATSTORE_SYNC_ENABLED or getattr(config, "PRODSELLER_SYNC_ENABLED", True) or getattr(config, "G2BULK_SYNC_ENABLED", True):
         _create_task(_sync_all_supplier_catalogs())
     _create_task(_set_webhook_with_retry())
     try:
@@ -241,6 +242,15 @@ async def _startup() -> None:
                     forwarding_address
                 )
                 sys.exit(1)
+    try:
+        tma_host = (config.WEBHOOK_HOST or "").strip().rstrip('/')
+        if tma_host:
+            from aiogram.types import MenuButtonWebApp, WebAppInfo
+            await bot.set_chat_menu_button(
+                menu_button=MenuButtonWebApp(text="Open App", web_app=WebAppInfo(url=f"{tma_host}/app"))
+            )
+    except Exception as e:
+        logging.debug("Could not set global bot chat menu button: %s", e)
     for admin in config.ADMIN_ID_LIST:
         try:
             await bot.send_message(admin, 'Bot is working')
@@ -314,6 +324,7 @@ admin.add_model_view(SamPaymentAdmin)
 admin.add_model_view(RestockSubscriptionAdmin)
 admin.add_model_view(StarsPaymentAdmin)
 admin.add_model_view(StorefrontCategoryAdmin)
+admin.add_model_view(StorefrontFolderAdmin)
 from models.referral_withdrawal import ReferralWithdrawalAdmin
 admin.add_model_view(ReferralWithdrawalAdmin)
 admin.add_model_view(PromotionalBannerAdmin)

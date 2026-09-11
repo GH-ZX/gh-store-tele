@@ -1,6 +1,7 @@
+import re
 from typing import Any
 from pydantic import BaseModel
-from sqlalchemy import Column, Integer, String, Float, Boolean, Text, Index
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, Index, JSON
 from sqladmin import ModelView
 from starlette.requests import Request
 
@@ -11,6 +12,7 @@ from models.base import Base
 # Maps a keyword found in the product name to a category label.
 # Order matters: first match wins.
 _CATEGORY_KEYWORDS: list[tuple[str, str]] = [
+    # AI & Chatbots
     ("chatgpt", "AI & Chatbots"),
     ("chat gpt", "AI & Chatbots"),
     ("claude", "AI & Chatbots"),
@@ -19,46 +21,82 @@ _CATEGORY_KEYWORDS: list[tuple[str, str]] = [
     ("grok", "AI & Chatbots"),
     ("kiro", "AI & Chatbots"),
     ("manus", "AI & Chatbots"),
+    ("cursor", "AI & Chatbots"),
+    ("lovable", "AI & Chatbots"),
+    ("lovalbe", "AI & Chatbots"),
+    ("magic patterns", "AI & Chatbots"),
+    ("factory", "AI & Chatbots"),
     ("api", "AI & Chatbots"),
     ("codex", "AI & Chatbots"),
     ("elevenlabs", "AI & Chatbots"),
     ("wispr", "AI & Chatbots"),
     ("gamma", "AI & Chatbots"),
+    # VPN & Security
     ("vpn", "VPN & Security"),
     ("nord", "VPN & Security"),
     ("surfshark", "VPN & Security"),
     ("hma", "VPN & Security"),
     ("proton", "VPN & Security"),
+    ("avira", "VPN & Security"),
+    # Streaming & Entertainment
     ("netflix", "Streaming & Entertainment"),
+    ("hbo max", "Streaming & Entertainment"),
+    ("hbomax", "Streaming & Entertainment"),
+    ("paramount", "Streaming & Entertainment"),
+    ("spotify", "Streaming & Entertainment"),
     ("peacock", "Streaming & Entertainment"),
     ("shahid", "Streaming & Entertainment"),
     ("apple tv", "Streaming & Entertainment"),
     ("amazon prime", "Streaming & Entertainment"),
+    ("prime video", "Streaming & Entertainment"),
+    # Social Media
     ("snapchat", "Social Media"),
+    # Productivity & Collaboration
     ("notion", "Productivity"),
     ("miro", "Productivity"),
+    ("linear", "Productivity"),
+    ("brain.fm", "Productivity"),
+    ("trading view", "Productivity"),
+    ("tradingview", "Productivity"),
+    # Design & Creative
     ("figma", "Design & Creative"),
     ("framer", "Design & Creative"),
     ("capcut", "Design & Creative"),
     ("canva", "Design & Creative"),
     ("adobe", "Design & Creative"),
     ("autodesk", "Design & Creative"),
+    ("envato", "Design & Creative"),
+    ("mobbin", "Design & Creative"),
+    ("meitu", "Design & Creative"),
+    ("supercut", "Design & Creative"),
+    ("descript", "Design & Creative"),
+    ("wink", "Design & Creative"),
+    # Office & Productivity
     ("microsoft office", "Office & Productivity"),
     ("microsoft 365", "Office & Productivity"),
     ("office 365", "Office & Productivity"),
+    # Software Licenses & Developer Keys
     ("windows", "Software Keys"),
     ("jetbrains", "Software Keys"),
     ("replit", "Software Keys"),
+    ("railway", "Software Keys"),
+    ("warp", "Software Keys"),
+    # Education & Learning
     ("wordwall", "Education"),
     ("coursera", "Education"),
+    ("cousera", "Education"),
+    ("edx", "Education"),
+    ("duolingo", "Education"),
+    ("quillbot", "Education"),
     ("quizlet", "Education"),
     ("amboss", "Education"),
     ("uptodate", "Education"),
     ("scribd", "Education"),
     ("ilovepdf", "Education"),
+    # Communication
     ("zoom", "Communication"),
+    # Accounts & Email
     ("gmail", "Accounts & Email"),
-    ("lovalbe", "Other"),
 ]
 
 
@@ -88,6 +126,8 @@ _PRODUCT_ICON_MAP: list[tuple[str, str, str | None]] = [
     ("perplexity", "🔍", "5465366406979267933"),
     # Streaming & Video
     ("netflix", "🎬", "5465366406979267934"),
+    ("hbo", "🍿", "5465366406979267936"),
+    ("paramount", "⛰️", "5465366406979267934"),
     ("peacock", "🦚", "5465366406979267935"),
     ("shahid", "🍿", "5465366406979267936"),
     ("apple tv", "🍎", "5465366406979267937"),
@@ -101,6 +141,7 @@ _PRODUCT_ICON_MAP: list[tuple[str, str, str | None]] = [
     ("surfshark", "🦈", "5465366406979267943"),
     ("expressvpn", "⚡", "5465366406979267944"),
     ("proton", "🔒", "5465366406979267945"),
+    ("avira", "🛡️", "5465366406979267942"),
     ("hma", "🫏", "5465366406979267946"),
     ("vpn", "🛡️", "5465366406979267947"),
     # Music & Audio
@@ -114,9 +155,21 @@ _PRODUCT_ICON_MAP: list[tuple[str, str, str | None]] = [
     ("figma", "📐", "5465366406979267954"),
     ("framer", "🖼️", "5465366406979267955"),
     ("notion", "📝", "5465366406979267956"),
+    ("miro", "📋", "5465366406979267956"),
+    ("linear", "🎯", "5465366406979267956"),
+    ("tradingview", "📈", "5465366406979267956"),
+    ("trading view", "📈", "5465366406979267956"),
     ("capcut", "✂️", "5465366406979267957"),
     ("github", "🐙", "5465366406979267958"),
     ("telegram", "✈️", "5465366406979267959"),
+    ("windows", "🪟", None),
+    ("office", "💼", None),
+    ("coursera", "🎓", None),
+    ("duolingo", "🦉", None),
+    ("zoom", "💬", None),
+    ("cursor", "⚡", "5465366406979267930"),
+    ("lovable", "❤️", "5465366406979267926"),
+    ("lovalbe", "❤️", "5465366406979267926"),
 ]
 
 
@@ -127,7 +180,6 @@ def auto_detect_icon(name: str) -> tuple[str, str | None]:
         if kw in lower:
             return fallback_emoji, custom_id
     return "⚡", None
-
 
 def format_product_icon(product, for_button: bool = False) -> str:
     """Format icon: HTML custom animated emoji for text/captions, plain emoji for keyboard buttons."""
@@ -157,7 +209,10 @@ class Product(Base):
     id = Column(Integer, primary_key=True)
     product_id = Column(Integer, unique=True, nullable=False, index=True)
     name = Column(String, nullable=False)
-    custom_name = Column(String, nullable=True)  # Admin-overridden clean display name
+    custom_name = Column(String, nullable=True)  # Admin-overridden clean display name (English/general)
+    custom_name_ar = Column(String, nullable=True, default=None)  # Admin-overridden Arabic display name
+    custom_group = Column(String, nullable=True, default=None)  # Admin-overridden brand folder / subcategory (English)
+    custom_group_ar = Column(String, nullable=True, default=None)  # Admin-overridden brand folder / subcategory (Arabic)
     description = Column(Text, nullable=True)
     description_ar = Column(Text, nullable=True)
     emoji = Column(String, nullable=True)
@@ -180,6 +235,7 @@ class Product(Base):
     # Reseller-specific pricing
     reseller_price_usd = Column(Float, nullable=True, default=None)
     reseller_margin_pct = Column(Float, nullable=True, default=None)
+    extra_meta = Column(JSON, nullable=True, default=None)
 
     def __repr__(self):
         return f"Product[{self.product_id}] {self.name} (supplier={self.supplier})"
@@ -190,6 +246,9 @@ class ProductDTO(BaseModel):
     product_id: int | None = None
     name: str | None = None
     custom_name: str | None = None
+    custom_name_ar: str | None = None
+    custom_group: str | None = None
+    custom_group_ar: str | None = None
     description: str | None = None
     description_ar: str | None = None
     emoji: str | None = None
@@ -212,6 +271,7 @@ class ProductDTO(BaseModel):
     # Reseller-specific pricing
     reseller_price_usd: float | None = None
     reseller_margin_pct: float | None = None
+    extra_meta: dict | list | None = None
 
 
 class ProductAdmin(ModelView, model=Product):
@@ -224,6 +284,9 @@ class ProductAdmin(ModelView, model=Product):
         Product.product_id,
         Product.name,
         Product.custom_name,
+        Product.custom_name_ar,
+        Product.custom_group,
+        Product.custom_group_ar,
         Product.emoji,
         Product.custom_emoji_id,
         Product.category,
@@ -240,7 +303,10 @@ class ProductAdmin(ModelView, model=Product):
     column_labels = {
         Product.product_id: "Product ID",
         Product.name: "Raw Name",
-        Product.custom_name: "Custom Display Name",
+        Product.custom_name: "Custom Display Name (EN)",
+        Product.custom_name_ar: "Custom Display Name (AR)",
+        Product.custom_group: "Folder / Subcategory (EN)",
+        Product.custom_group_ar: "Folder / Subcategory (AR)",
         Product.category: "Category",
         Product.cost_usd: "Cost (USD)",
         Product.sell_price_usd: "Sell (USD)",

@@ -48,9 +48,11 @@ const tg = window.Telegram?.WebApp;
       if (tg.isVersionAtLeast && tg.isVersionAtLeast('7.7')) {
         try { tg.disableVerticalSwipes?.(); } catch (e) {}
       }
-      if (tg.isVersionAtLeast && tg.isVersionAtLeast('8.0')) {
-        try { tg.requestFullscreen?.(); } catch (e) {}
+      // Native Telegram BackButton is permanently hidden; app uses clean in-site back buttons
+      if (tg.BackButton) {
+        try { tg.BackButton.hide(); } catch (e) {}
       }
+      // Fullscreen mode disabled per user configuration
       if (tg.enableClosingConfirmation) tg.enableClosingConfirmation();
       if (tg.SettingsButton) {
         try {
@@ -110,8 +112,8 @@ const tg = window.Telegram?.WebApp;
 
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (t && (t.platform === 'ios' || t.platform === 'android'));
       const isFs = !!t?.isFullscreen;
-      if (isFs || isMobile) {
-        top = Math.max(top, 56);
+      if (isFs) {
+        top = Math.max(top, 52);
       }
       if (typeof document !== 'undefined') {
         document.body && document.body.classList.toggle('tg-fullscreen', isFs);
@@ -167,9 +169,7 @@ const tg = window.Telegram?.WebApp;
       navStack.push({ name, onBack });
       const t = getTg();
       if (t?.BackButton) {
-        t.BackButton.show();
-        t.BackButton.offClick(handleNativeBack);
-        t.BackButton.onClick(handleNativeBack);
+        try { t.BackButton.hide(); } catch (e) {}
       }
     }
 
@@ -181,9 +181,8 @@ const tg = window.Telegram?.WebApp;
         }
       }
       const t = getTg();
-      if (navStack.length === 0 && t?.BackButton) {
-        t.BackButton.hide();
-        t.BackButton.offClick(handleNativeBack);
+      if (t?.BackButton) {
+        try { t.BackButton.hide(); } catch (e) {}
       }
     }
     function handleNativeBack() {
@@ -718,6 +717,7 @@ const tg = window.Telegram?.WebApp;
             : `Order #${d.order_id} · ${d.items_count} items purchased successfully`;
           const keysBox = document.getElementById('success-delivered-keys');
           if (keysBox) keysBox.innerHTML = renderStructuredCredentials(d.goods);
+          renderSuccessInstructions(d);
 
           document.querySelectorAll('.tab-view').forEach(el => el.classList.remove('active'));
           const successView = document.getElementById('view-order-success');
@@ -1658,9 +1658,6 @@ const tg = window.Telegram?.WebApp;
       setText('banner-badge-text', d.banner_badge);
       setText('banner-title-text', d.banner_title);
       setText('banner-sub-text', d.banner_sub);
-      setText('pwa-banner-title', d.pwa_title);
-      setText('pwa-banner-sub', d.pwa_sub);
-      setText('pwa-banner-btn', d.pwa_btn);
 
       setText('title-collections', d.collections);
       setText('label-view-grid', d.view_grid);
@@ -2118,29 +2115,245 @@ const tg = window.Telegram?.WebApp;
       } catch (e) {}
     }
     function renderDynamicBanners(banners) {
-      if (!banners || !banners.length) return;
+      const wrapper = document.getElementById('promotional-banners-wrapper') || document.getElementById('storefront-hero-banner');
+      const heroBanner = document.getElementById('storefront-hero-banner');
+      if (!banners || !banners.length) {
+        if (wrapper) wrapper.style.display = 'none';
+        if (heroBanner) heroBanner.style.display = 'none';
+        return;
+      }
+      currentAdminBanners = banners;
       const b = banners[0];
-      const title = (currentAppLanguage === 'ar' && b.title_ar) ? b.title_ar : (b.title_en || b.title_ar);
-      const sub = (currentAppLanguage === 'ar' && b.subtitle_ar) ? b.subtitle_ar : (b.subtitle_en || b.subtitle_ar);
-      const badge = (currentAppLanguage === 'ar' && b.badge_ar) ? b.badge_ar : (b.badge_en || b.badge_ar);
+      const isAr = (currentAppLanguage === 'ar');
+      const title = (isAr && b.title_ar) ? b.title_ar : (b.title_en || b.title_ar || '');
+      const sub = (isAr && b.subtitle_ar) ? b.subtitle_ar : (b.subtitle_en || b.subtitle_ar || '');
+      const badge = (isAr && b.badge_ar) ? b.badge_ar : (b.badge_en || b.badge_ar || '');
+
+      if (!title && !sub) {
+        if (wrapper) wrapper.style.display = 'none';
+        if (heroBanner) heroBanner.style.display = 'none';
+        return;
+      }
 
       const titleEl = document.getElementById('banner-title-text');
       const subEl = document.getElementById('banner-sub-text');
       const badgeEl = document.getElementById('banner-badge-text');
 
-      if (titleEl && title) titleEl.innerText = title;
-      if (subEl && sub) subEl.innerText = sub;
-      if (badgeEl && badge) badgeEl.innerText = badge;
+      if (titleEl) {
+        titleEl.innerText = title;
+        titleEl.style.display = title ? 'block' : 'none';
+      }
+      if (subEl) {
+        subEl.innerText = sub;
+        subEl.style.display = sub ? 'block' : 'none';
+      }
+      if (badgeEl) {
+        badgeEl.innerText = badge;
+        badgeEl.style.display = badge ? 'inline-block' : 'none';
+      }
 
-      const container = document.getElementById('hero-banner-container');
-      if (container) {
-        if (b.product_id) {
-          container.style.cursor = 'pointer';
-          container.onclick = () => openProductDetail(b.product_id);
-        } else if (b.target_category) {
-          container.style.cursor = 'pointer';
-          container.onclick = () => openCollection(b.target_category);
+      if (heroBanner) {
+        heroBanner.style.display = 'block';
+        heroBanner.style.cursor = 'pointer';
+        heroBanner.onclick = () => handleBannerClick(b);
+      }
+      if (wrapper) wrapper.style.display = 'block';
+    }
+
+    function handleBannerClick(b) {
+      if (!b) return;
+      haptic('light');
+      const targetType = String(b.target_type || '').trim().toLowerCase();
+      if (targetType === 'product' && b.product_id) {
+        openProductDetail(b.product_id);
+      } else if (targetType === 'category' && b.target_category) {
+        openCollection(b.target_category);
+      } else if (targetType === 'tab' && b.target_url) {
+        const tab = b.target_url.trim().toLowerCase();
+        if (['wallet', 'orders', 'settings', 'store'].includes(tab)) {
+          switchTab(tab);
+        } else if (tab === 'support') {
+          openSupportContact();
         }
+      } else if (targetType === 'url' && b.target_url) {
+        const u = b.target_url.trim();
+        if (tg?.openLink) {
+          tg.openLink(u);
+        } else {
+          window.open(u, '_blank');
+        }
+      } else if (b.product_id) {
+        openProductDetail(b.product_id);
+      } else if (b.target_category) {
+        openCollection(b.target_category);
+      }
+    }
+
+    let previousTabBeforeSearch = 'store';
+
+    function openSearchPage() {
+      haptic('light');
+      previousTabBeforeSearch = activeTab || 'store';
+
+      document.querySelectorAll('.tab-view').forEach(el => el.classList.remove('active'));
+      const searchView = document.getElementById('view-search');
+      if (searchView) searchView.classList.add('active');
+
+      const isAr = (currentAppLanguage === 'ar');
+      const arrowEl = document.getElementById('search-page-back-icon');
+      if (arrowEl) arrowEl.innerText = isAr ? '→' : '←';
+      const backLabel = document.getElementById('btn-back-search');
+      if (backLabel) backLabel.innerText = isAr ? 'رجوع' : 'Back';
+
+      const inp = document.getElementById('search-page-input');
+      const emptyState = document.getElementById('search-page-empty-state');
+      const resultsBox = document.getElementById('search-page-results');
+      const clearBtn = document.getElementById('search-page-clear-btn');
+
+      if (inp) {
+        if (!inp.value.trim()) {
+          if (emptyState) emptyState.style.display = 'flex';
+          if (resultsBox) resultsBox.style.display = 'none';
+          if (clearBtn) clearBtn.style.display = 'none';
+        } else {
+          handleSearchPageInput();
+        }
+        setTimeout(() => {
+          try { inp.focus(); } catch (e) {}
+        }, 80);
+      }
+
+      pushNav('search_page', closeSearchPage);
+    }
+
+    function closeSearchPage() {
+      haptic('light');
+      const inp = document.getElementById('search-page-input');
+      if (inp) {
+        inp.value = '';
+        try { inp.blur(); } catch (e) {}
+      }
+
+      const searchView = document.getElementById('view-search');
+      if (searchView) searchView.classList.remove('active');
+
+      switchTab(previousTabBeforeSearch || 'store');
+
+      if (navStack.length > 0 && navStack[navStack.length - 1].name === 'search_page') {
+        navStack.pop();
+      }
+    }
+
+    function clearSearchPageInput() {
+      haptic('light');
+      const inp = document.getElementById('search-page-input');
+      if (inp) {
+        inp.value = '';
+        try { inp.focus(); } catch (e) {}
+      }
+      const clearBtn = document.getElementById('search-page-clear-btn');
+      if (clearBtn) clearBtn.style.display = 'none';
+      const emptyState = document.getElementById('search-page-empty-state');
+      if (emptyState) emptyState.style.display = 'flex';
+      const resultsBox = document.getElementById('search-page-results');
+      if (resultsBox) resultsBox.style.display = 'none';
+    }
+
+    function handleSearchPageInput() {
+      const inp = document.getElementById('search-page-input');
+      const rawQ = (inp?.value || '').trim().toLowerCase();
+      const clearBtn = document.getElementById('search-page-clear-btn');
+      const emptyState = document.getElementById('search-page-empty-state');
+      const resultsBox = document.getElementById('search-page-results');
+      const listContainer = document.getElementById('search-page-products-list');
+      const countBar = document.getElementById('search-results-count-bar');
+      const isAr = (currentAppLanguage === 'ar');
+      const d = I18N[currentAppLanguage] || I18N.ar;
+
+      if (!rawQ) {
+        if (clearBtn) clearBtn.style.display = 'none';
+        if (emptyState) emptyState.style.display = 'flex';
+        if (resultsBox) resultsBox.style.display = 'none';
+        return;
+      }
+
+      if (clearBtn) clearBtn.style.display = 'block';
+      if (emptyState) emptyState.style.display = 'none';
+      if (resultsBox) resultsBox.style.display = 'block';
+
+      let queryTokens = [rawQ];
+      for (const [k, aliases] of Object.entries(SEARCH_ALIASES)) {
+        if (rawQ.includes(k) || k.includes(rawQ)) {
+          queryTokens.push(...aliases);
+        }
+      }
+
+      let matched = allProducts.filter(p => {
+        const nameStr = ((p.clean_name || '') + ' ' + (p.name || '') + ' ' + (p.custom_name || '') + ' ' + (p.custom_name_ar || '') + ' ' + (p.variant_title_en || '') + ' ' + (p.variant_title_ar || '')).toLowerCase();
+        const descStr = ((p.description || '') + ' ' + (p.description_ar || '')).toLowerCase();
+        const catStr = ((p.category || '') + ' ' + (p.custom_group || '') + ' ' + (p.custom_group_ar || '')).toLowerCase();
+        return queryTokens.some(tok => nameStr.includes(tok) || descStr.includes(tok) || catStr.includes(tok));
+      });
+
+      matched = filterAndSortProducts(matched);
+
+      if (countBar) {
+        countBar.innerText = isAr
+          ? `${matched.length} منتج مطابق للبحث`
+          : `${matched.length} product(s) found`;
+      }
+
+      if (!matched.length) {
+        if (listContainer) {
+          listContainer.innerHTML = `
+            <div style="text-align: center; padding: 40px 20px; color: var(--hint);">
+              <div style="font-size: 32px; margin-bottom: 8px;">🔍</div>
+              <div style="font-size: 14px; font-weight: 700; color: var(--text);">${isAr ? 'لا توجد نتائج مطابقة' : 'No matching results'}</div>
+              <div style="font-size: 12px; margin-top: 4px;">${isAr ? 'جرب البحث باسم خدمة أخرى مثل جيميني أو نتفلكس.' : 'Try searching for another service like Gemini or Netflix.'}</div>
+            </div>
+          `;
+        }
+        return;
+      }
+
+      if (listContainer) {
+        listContainer.innerHTML = matched.map(p => {
+          const isFav = wishlistSet.has(Number(p.id));
+          const stockInfo = checkProductEffectiveStock(p);
+          const isOutOfStock = stockInfo.isOutOfStock;
+          const isActivation = (p.delivery_type === 'activation');
+          const durText = (isAr ? p.duration_ar : p.duration_en) || null;
+          const stockText = (!isOutOfStock && p.stock) ? `${d.in_stock} (${p.stock})` : ((!isOutOfStock) ? d.in_stock : '');
+          const metaLine = productMetaLine({ isOutOfStock, isActivation, duration: durText, multiCount: 0, stockText });
+
+          const favSvg = `
+            <svg class="fav-icon-svg ${isFav ? 'active' : ''}" viewBox="0 0 24 24" width="18" height="18">
+              <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+            </svg>
+          `;
+
+          const displayTitle = isAr
+            ? (p.custom_name_ar || p.variant_title_ar || p.custom_name || p.variant_title_en || p.clean_name || p.name)
+            : (p.custom_name || p.variant_title_en || p.variant_title_ar || p.clean_name || p.name);
+          const thumb = productThumb(p);
+
+          return `
+            <div class="product-row" onclick="openProductDetail(${Number(p.id)})">
+              <div class="prod-row-top">
+                <div class="prod-thumb">${thumbImg(thumb, displayTitle)}</div>
+                <div class="prod-left">
+                  <div class="prod-title-wrap">
+                    <span class="prod-title" title="${escAttr(displayTitle)}">${displayTitle}</span>
+                    ${renderDurationBadge(durText)}
+                  </div>
+                  ${metaLine}
+                </div>
+                ${renderPriceBoxHTML(p, false, favSvg, d.view_details)}
+              </div>
+              ${renderAdminProductBar(p)}
+            </div>
+          `;
+        }).join('');
       }
     }
 
@@ -2149,12 +2362,10 @@ const tg = window.Telegram?.WebApp;
         const grid = document.getElementById('catalogs-grid');
         if (grid) {
           grid.innerHTML = `
-            <div class="skeleton-grid">
-              <div class="skeleton-box"></div>
-              <div class="skeleton-box"></div>
-              <div class="skeleton-box"></div>
-              <div class="skeleton-box"></div>
-            </div>
+            <div class="skeleton-card-item"><div class="skeleton-shimmer"></div><div class="skeleton-thumb-circle"></div><div class="skeleton-text-group"><div class="skeleton-bar title-bar"></div><div class="skeleton-bar sub-bar"></div></div></div>
+            <div class="skeleton-card-item"><div class="skeleton-shimmer"></div><div class="skeleton-thumb-circle"></div><div class="skeleton-text-group"><div class="skeleton-bar title-bar"></div><div class="skeleton-bar sub-bar"></div></div></div>
+            <div class="skeleton-card-item"><div class="skeleton-shimmer"></div><div class="skeleton-thumb-circle"></div><div class="skeleton-text-group"><div class="skeleton-bar title-bar"></div><div class="skeleton-bar sub-bar"></div></div></div>
+            <div class="skeleton-card-item"><div class="skeleton-shimmer"></div><div class="skeleton-thumb-circle"></div><div class="skeleton-text-group"><div class="skeleton-bar title-bar"></div><div class="skeleton-bar sub-bar"></div></div></div>
           `;
         }
       }
@@ -2163,7 +2374,7 @@ const tg = window.Telegram?.WebApp;
         const d = await res.json();
         allProducts = d.products || [];
         categoriesList = d.categories || [];
-        if (d.store_images) window._catalogStoreImages = d.store_images;
+        if (d.folders) window._catalogFolders = d.folders;
         if (d.store_images) window._catalogStoreImages = d.store_images;
         try { localStorage.setItem('ghstore_catalog_cache_v3', JSON.stringify(d)); } catch (e) {}
         if (d.store_logo_url) applyStoreLogo(d.store_logo_url);
@@ -2219,15 +2430,15 @@ const tg = window.Telegram?.WebApp;
         let displayPreview = '';
         let imageUrl = '';
 
-        if (typeof catItem === 'object' && catItem.image_url) {
-          displayTitle = stripEmojis((currentAppLanguage === 'ar' && catItem.name_ar) ? catItem.name_ar : (catItem.name_en || catName)) || catName;
+        if (typeof catItem === 'object') {
+          const tEn = catItem.name_en || catItem.name || catName;
+          const tAr = catItem.name_ar || tEn;
+          displayTitle = stripEmojis(currentAppLanguage === 'ar' ? tAr : tEn) || catName;
           displayPreview = (currentAppLanguage === 'ar' && catItem.preview_ar) ? catItem.preview_ar : (catItem.preview_en || '');
           imageUrl = (catItem.image_url || storeImg('category_placeholder', '/static/img/cat-other.svg')).replace(/"/g, '');
         } else {
-          const fallback = DEFAULT_CATALOG_META[catName] || {};
-          displayTitle = stripEmojis((currentAppLanguage === 'ar' && fallback.arTitle) ? fallback.arTitle : (fallback.enTitle || catName)) || catName;
-          displayPreview = (currentAppLanguage === 'ar' && fallback.arPreview) ? fallback.arPreview : (fallback.enPreview || '');
-          imageUrl = fallback.image || storeImg('category_placeholder', '/static/img/cat-other.svg');
+          displayTitle = catName;
+          imageUrl = storeImg('category_placeholder', '/static/img/cat-other.svg');
         }
 
 
@@ -2295,31 +2506,51 @@ const tg = window.Telegram?.WebApp;
       document.getElementById('catalogs-collection-mode').style.display = 'none';
       document.getElementById('products-catalog-mode').style.display = 'block';
 
-      let catObj = categoriesList.find(c => (typeof c === 'object' ? c.name : c) === catName);
+      let catObj = categoriesList.find(c => (typeof c === 'object' ? (c.name === catName || c.name_en === catName || c.name_ar === catName) : c === catName));
       let dispTitle = catName;
       if (catObj && typeof catObj === 'object') {
-        dispTitle = stripEmojis((currentAppLanguage === 'ar' ? catObj.name_ar : catObj.name_en) || catName) || catName;
-      } else if (DEFAULT_CATALOG_META[catName]) {
-        dispTitle = (currentAppLanguage === 'ar' ? DEFAULT_CATALOG_META[catName].arTitle : DEFAULT_CATALOG_META[catName].enTitle) || catName;
+        const tEn = catObj.name_en || catObj.name || catName;
+        const tAr = catObj.name_ar || tEn;
+        dispTitle = stripEmojis(currentAppLanguage === 'ar' ? tAr : tEn) || catName;
       }
       document.getElementById('active-collection-title').innerText = dispTitle;
 
       let filtered = allProducts.filter(p => p.category === catName);
       filtered = filterAndSortProducts(filtered);
       renderProductItems(filtered);
+      const catAdminBar = document.getElementById('admin-category-actions-bar');
+      if (catAdminBar) {
+        catAdminBar.style.display = (userData && userData.is_admin) ? 'flex' : 'none';
+      }
 
       pushNav('collection', returnToCollections);
+    }
+
+    function getActiveSearchQuery() {
+      const el = document.getElementById('search-page-input') || document.getElementById('store-search-input');
+      return (el?.value || '').trim();
     }
 
     function returnToCollections() {
       haptic('light');
       activeCatalog = null;
-      document.getElementById('store-search-input').value = '';
-      document.getElementById('store-clear-btn').style.display = 'none';
-      document.getElementById('service-variants-mode').style.display = 'none';
-      document.getElementById('products-catalog-mode').style.display = 'none';
-      document.getElementById('catalogs-collection-mode').style.display = 'block';
+      const sInp = document.getElementById('store-search-input');
+      if (sInp) sInp.value = '';
+      const sInp2 = document.getElementById('search-page-input');
+      if (sInp2) sInp2.value = '';
+      const sClr = document.getElementById('store-clear-btn');
+      if (sClr) sClr.style.display = 'none';
+      const sClr2 = document.getElementById('search-page-clear-btn');
+      if (sClr2) sClr2.style.display = 'none';
+
+      const sVariants = document.getElementById('service-variants-mode');
+      if (sVariants) sVariants.style.display = 'none';
+      const sProds = document.getElementById('products-catalog-mode');
+      if (sProds) sProds.style.display = 'none';
+      const sCats = document.getElementById('catalogs-collection-mode');
+      if (sCats) sCats.style.display = 'block';
       activeVariantFamilyKey = null;
+
       if (navStack.length > 0 && navStack[navStack.length - 1].name === 'collection') {
         navStack.pop();
         if (navStack.length === 0 && tg?.BackButton) tg.BackButton.hide();
@@ -2334,16 +2565,18 @@ const tg = window.Telegram?.WebApp;
       const activeEl = document.getElementById('filter-' + filterKey);
       if (activeEl) activeEl.classList.add('active');
 
-      if (filterKey === 'all' && !document.getElementById('store-search-input').value.trim()) {
+      if (filterKey === 'all' && !getActiveSearchQuery()) {
         returnToCollections();
         return;
       }
 
-      document.getElementById('catalogs-collection-mode').style.display = 'none';
-      document.getElementById('products-catalog-mode').style.display = 'block';
+      const sCats = document.getElementById('catalogs-collection-mode');
+      if (sCats) sCats.style.display = 'none';
+      const sProds = document.getElementById('products-catalog-mode');
+      if (sProds) sProds.style.display = 'block';
 
       let baseList = activeCatalog ? allProducts.filter(p => p.category === activeCatalog) : allProducts;
-      const q = (document.getElementById('store-search-input').value || '').trim().toLowerCase();
+      const q = getActiveSearchQuery().toLowerCase();
       if (q) {
         baseList = baseList.filter(p =>
           (p.clean_name || p.name).toLowerCase().includes(q) ||
@@ -2353,7 +2586,6 @@ const tg = window.Telegram?.WebApp;
           (p.category || '').toLowerCase().includes(q)
         );
       }
-
       const filtered = filterAndSortProducts(baseList);
       document.getElementById('active-collection-title').innerText = filterKey === 'wishlist'
         ? (currentAppLanguage === 'ar' ? 'المفضلة' : 'Favorites')
@@ -2361,8 +2593,7 @@ const tg = window.Telegram?.WebApp;
       renderProductItems(filtered);
 
       if (tg?.BackButton) {
-        tg.BackButton.show();
-        tg.BackButton.onClick(returnToCollections);
+        try { tg.BackButton.hide(); } catch (e) {}
       }
     }
 
@@ -2392,10 +2623,11 @@ const tg = window.Telegram?.WebApp;
 
     function applySearchQuery(term) {
       haptic('light');
-      const input = document.getElementById('store-search-input');
+      openSearchPage();
+      const input = document.getElementById('search-page-input');
       if (input) {
         input.value = term;
-        handleSearch();
+        handleSearchPageInput();
       }
     }
     let logSearchTimer = null;
@@ -2470,11 +2702,19 @@ const tg = window.Telegram?.WebApp;
         pushNav('search_results', returnToCollections);
       } else {
         clearBtn.style.display = 'none';
-        if (activeCatalogFilter === 'all') returnToCollections();
-        else applyCatalogFilter(activeCatalogFilter);
+        if (autoBox) autoBox.style.display = 'none';
+        if (document.getElementById('search-expandable-box')?.classList.contains('expanded')) {
+          if (activeCatalog) {
+            let filtered = allProducts.filter(p => p.category === activeCatalog);
+            filtered = filterAndSortProducts(filtered);
+            renderProductItems(filtered);
+          }
+        } else {
+          if (activeCatalogFilter === 'all') returnToCollections();
+          else applyCatalogFilter(activeCatalogFilter);
+        }
       }
     }
-
     function selectSearchAutocomplete(productId) {
       haptic('medium');
       const autoBox = document.getElementById('search-autocomplete-dropdown');
@@ -2570,13 +2810,7 @@ const tg = window.Telegram?.WebApp;
     }
 
     function getDualCurrencyPreview(amountUsd) {
-      const num = Number(amountUsd);
-      if (num === null || num === undefined || isNaN(num)) return '';
-      const pref = getCurrentCurrencyPref();
-      const rate = getSypRate();
-      if (pref === 'SYP' || !(rate > 0)) return '';
-      const syp = Math.round(num * rate);
-      return `<span class="prod-dual-price">≈ ${syp.toLocaleString()} ${currentAppLanguage === 'ar' ? 'ل.س' : 'SYP'}</span>`;
+      return '';
     }
     // Navigation State & Index-based Registry for Dedicated Variants Page
     let activeVariantFamilyKey = null;
@@ -2590,7 +2824,7 @@ const tg = window.Telegram?.WebApp;
       const brands = [
         ['chatgpt', 'ChatGPT Plus'],
         ['claude', 'Claude API & Pro'],
-        ['gemini', 'Google Gemini Advanced'],
+        ['gemini', 'Google Gemini'],
         ['netflix', 'Netflix Premium'],
         ['canva', 'Canva Pro'],
         ['spotify', 'Spotify Premium'],
@@ -2796,18 +3030,19 @@ const tg = window.Telegram?.WebApp;
         const lbl = isAr ? 'نفد المخزون' : 'Out of stock';
         return `<div class="prod-meta oos"><i class="dot"></i><span>${lbl}</span></div>`;
       }
-      const delivery = o.isActivation
-        ? (isAr ? 'تفعيل مخصص' : 'Activation')
-        : (isAr ? 'تسليم فوري' : 'Instant');
       const stock = o.stockText || (isAr ? 'متوفر' : 'In stock');
-      return `<div class="prod-meta"><i class="dot"></i><span>${stock}</span><span class="sep">·</span><span>${delivery}</span></div>`;
+      if (o.isActivation) {
+        const delivery = isAr ? 'تفعيل مخصص' : 'Activation';
+        return `<div class="prod-meta"><i class="dot"></i><span>${stock}</span><span class="sep">·</span><span>${delivery}</span></div>`;
+      }
+      return `<div class="prod-meta"><i class="dot"></i><span>${stock}</span></div>`;
     }
     function productAdminBtn(pid) {
       if (!(userData && userData.is_admin)) return '';
       const lbl = (currentAppLanguage === 'ar') ? 'تعديل' : 'Edit';
       return `<button class="prod-admin-edit" title="${lbl}" onclick="openAdminProductEditor(${pid}, event)">✎</button>`;
     }
-    // Category Products Listing: Groups multi-variant products into clean family cards
+    // Category Products Listing: Groups multi-variant products into clean folder cards
     function renderProductItems(products) {
       const container = document.getElementById('catalog-products-list');
       if (!container) return;
@@ -2816,11 +3051,12 @@ const tg = window.Telegram?.WebApp;
         return;
       }
       const d = I18N[currentAppLanguage] || I18N.ar;
+      const isAr = (currentAppLanguage === 'ar');
 
-      // Group by family within category
+      // Group by folder: backend folder_key first, brand-family fallback second
       const familyMap = new Map();
       products.forEach(p => {
-        const famKey = (p.category || 'Other') + ':::' + getProductFamilyKey(p);
+        const famKey = p.folder_key || getProductFamilyKey(p) || 'Other';
         if (!familyMap.has(famKey)) {
           familyMap.set(famKey, []);
         }
@@ -2830,20 +3066,32 @@ const tg = window.Telegram?.WebApp;
       _serviceFamilyRegistry = [];
       let regIdx = 0;
       let html = '';
+      const sortByDurationThenPrice = (a, b) => {
+        const dw = (Number(a.duration_weight || 100) - Number(b.duration_weight || 100));
+        if (dw !== 0) return dw;
+        return (Number(a.price) || 0) - (Number(b.price) || 0);
+      };
       for (const [famKey, items] of familyMap.entries()) {
-        // Prioritize in-stock offerings from either server first
+        // In-stock offerings first, then shortest duration, then cheapest
         items.sort((a, b) => {
           const aStock = checkProductEffectiveStock(a);
           const bStock = checkProductEffectiveStock(b);
           if (aStock.isOutOfStock !== bStock.isOutOfStock) {
             return aStock.isOutOfStock ? 1 : -1;
           }
-          return (a.price || 0) - (b.price || 0);
+          return sortByDurationThenPrice(a, b);
         });
         const primary = items[0];
         const isMulti = items.length > 1;
         const currentIdx = regIdx++;
-        const groupTitle = isMulti ? getProductFamilyKey(primary) : (primary.custom_name || primary.name || primary.clean_name);
+        const folderTitle = isAr
+          ? (primary.custom_group_ar || primary.folder_title_ar || primary.custom_group || primary.folder_title_en || getProductFamilyKey(primary))
+          : (primary.custom_group || primary.folder_title_en || primary.folder_title_ar || getProductFamilyKey(primary));
+        const groupTitle = isMulti
+          ? folderTitle
+          : (isAr
+            ? (primary.custom_name_ar || primary.variant_title_ar || primary.custom_name || primary.clean_name || primary.name)
+            : (primary.custom_name || primary.variant_title_en || primary.clean_name || primary.name));
         _serviceFamilyRegistry.push({
           famKey: famKey,
           title: groupTitle,
@@ -2854,7 +3102,7 @@ const tg = window.Telegram?.WebApp;
         const isOutOfStock = !anyInStock;
 
         const isActivation = (primary.delivery_type === 'activation');
-        const durText = (currentAppLanguage === 'ar' ? primary.duration_ar : primary.duration_en) || null;
+        const durText = (isAr ? primary.duration_ar : primary.duration_en) || null;
         const stockText = (!isOutOfStock && primary.stock) ? `${d.in_stock} (${primary.stock})` : ((!isOutOfStock) ? d.in_stock : '');
         const metaLine = productMetaLine({
           isOutOfStock, isActivation,
@@ -2869,31 +3117,54 @@ const tg = window.Telegram?.WebApp;
           </svg>
         `;
 
-        const displayTitle = isMulti
-          ? getProductFamilyKey(primary)
-          : (primary.custom_name || primary.name || primary.clean_name);
-
-        const clickAction = isMulti
-          ? `openServiceVariantsByIndex(${currentIdx})`
-          : `openProductDetail(${Number(primary.id)})`;
-        const thumb = productThumb(primary);
-
-        html += `
-          <div class="product-row" onclick="${clickAction}">
+        if (isMulti) {
+          // ---- Clean Service Folder Card (multi-plan brand) ----
+          const folderIcon = primary.folder_icon || primary.emoji || '📁';
+          const isIconUrl = /^https?:\/\//.test(String(folderIcon)) || String(folderIcon).startsWith('/');
+          const thumbHtml = isIconUrl
+            ? thumbImg(folderIcon, folderTitle)
+            : `<span class="folder-thumb-emoji">${folderIcon}</span>`;
+          const planBadge = `📁 ${items.length} ${isAr ? 'باقات متوفرة' : 'Plans Available'}`;
+          const chevronArrow = isAr ? '‹' : '›';
+          html += `
+          <div class="product-row folder-card-row" onclick="openServiceVariantsByIndex(${currentIdx})">
+            <div class="prod-row-top">
+              <div class="prod-thumb folder-thumb">${thumbHtml}</div>
+              <div class="prod-left">
+                <div class="prod-title-wrap">
+                  <span class="prod-title folder-title" title="${escAttr(folderTitle)}">${folderTitle}</span>
+                  <span class="prod-options-badge">${planBadge}</span>
+                  ${(userData && userData.is_admin) ? `<button class="admin-edit-badge-btn" onclick="openAdminFolderFromCard('${escAttr(famKey)}', event)" style="margin-inline-start: 6px;">${isAr ? 'تعديل' : 'Edit'}</button>` : ''}
+                </div>
+              </div>
+              <div class="folder-chevron-action">
+                <span class="folder-chevron-arrow">${chevronArrow}</span>
+              </div>
+            </div>
+            ${renderAdminProductBar(primary)}
+          </div>
+        `;
+        } else {
+          // ---- Clean single product row: opens detail directly ----
+          const displayTitle = groupTitle;
+          const thumb = productThumb(primary);
+          html += `
+          <div class="product-row" onclick="openProductDetail(${Number(primary.id)})">
             <div class="prod-row-top">
               <div class="prod-thumb">${thumbImg(thumb, displayTitle)}</div>
               <div class="prod-left">
                 <div class="prod-title-wrap">
                   <span class="prod-title" title="${escAttr(displayTitle)}">${displayTitle}</span>
-                  ${isMulti ? renderOptionsBadge(items.length) : renderDurationBadge(durText)}
+                  ${renderDurationBadge(durText)}
                 </div>
                 ${metaLine}
               </div>
-              ${renderPriceBoxHTML(primary, isMulti, favSvg, isMulti ? (currentAppLanguage === 'ar' ? 'عرض الباقات ‹' : 'Options ›') : d.view_details)}
+              ${renderPriceBoxHTML(primary, false, favSvg, d.view_details)}
             </div>
             ${renderAdminProductBar(primary)}
           </div>
         `;
+        }
       }
       container.innerHTML = html;
     }
@@ -2905,14 +3176,28 @@ const tg = window.Telegram?.WebApp;
       if (!entry) return;
       activeVariantFamilyKey = entry.famKey;
 
+      const isAr = (currentAppLanguage === 'ar');
+      const _fPrimary = entry.items[0] || {};
+      const folderTitle = isAr
+        ? (_fPrimary.folder_title_ar || _fPrimary.folder_title_en || entry.title)
+        : (_fPrimary.folder_title_en || _fPrimary.folder_title_ar || entry.title);
       const titleEl = document.getElementById('active-service-title');
-      if (titleEl) titleEl.innerText = entry.title || 'باقات الخدمة';
+      if (titleEl) titleEl.innerText = folderTitle || 'باقات الخدمة';
 
       const backLabelEl = document.getElementById('btn-back-variants');
       if (backLabelEl) {
-        backLabelEl.innerText = (currentAppLanguage === 'ar')
-          ? (activeCatalog ? 'الرجوع للتصنيف' : 'الرجوع للبحث')
-          : (activeCatalog ? 'Back to Category' : 'Back to Search');
+        let catName = activeCatalog || '';
+        if (activeCatalog) {
+          const catObj = categoriesList.find(c => (typeof c === 'object' ? (c.name === activeCatalog || c.name_en === activeCatalog || c.name_ar === activeCatalog) : c === activeCatalog));
+          if (catObj && typeof catObj === 'object') {
+            const tEn = catObj.name_en || catObj.name || activeCatalog;
+            const tAr = catObj.name_ar || tEn;
+            catName = stripEmojis(isAr ? tAr : tEn);
+          }
+        }
+        backLabelEl.innerText = activeCatalog
+          ? (isAr ? `الرجوع لتصنيف ${catName}` : `Back to ${catName}`)
+          : (isAr ? 'الرجوع للبحث' : 'Back to Search');
       }
       const backArrow = (currentAppLanguage === 'ar') ? '→' : '←';
       const arrowEl = document.getElementById('icon-back-variants');
@@ -2924,7 +3209,15 @@ const tg = window.Telegram?.WebApp;
       document.getElementById('service-variants-mode').style.display = 'block';
       window.scrollTo(0, 0);
 
-      const siblings = entry.items.slice().sort((a, b) => (a.price || 0) - (b.price || 0));
+      const adminFolderBar = document.getElementById('admin-folder-edit-bar');
+      if (adminFolderBar) {
+        adminFolderBar.style.display = (userData && userData.is_admin) ? 'block' : 'none';
+      }
+      const siblings = entry.items.slice().sort((a, b) => {
+        const dw = (Number(a.duration_weight || 100) - Number(b.duration_weight || 100));
+        if (dw !== 0) return dw;
+        return (Number(a.price) || 0) - (Number(b.price) || 0);
+      });
       const container = document.getElementById('service-variants-products-list');
       if (container) {
         const d = I18N[currentAppLanguage] || I18N.ar;
@@ -2935,7 +3228,7 @@ const tg = window.Telegram?.WebApp;
           const isOutOfStock = stockInfo.isOutOfStock;
 
           const isActivation = (p.delivery_type === 'activation');
-          const durText = (currentAppLanguage === 'ar' ? p.duration_ar : p.duration_en) || null;
+          const durText = (isAr ? p.duration_ar : p.duration_en) || null;
           const stockText = (!isOutOfStock && p.stock) ? `${d.in_stock} (${p.stock})` : ((!isOutOfStock) ? d.in_stock : '');
           const metaLine = productMetaLine({ isOutOfStock, isActivation, duration: durText, multiCount: 0, stockText });
 
@@ -2945,7 +3238,9 @@ const tg = window.Telegram?.WebApp;
             </svg>
           `;
 
-          const displayTitle = p.custom_name || p.name;
+          const displayTitle = isAr
+            ? (p.custom_name_ar || p.variant_title_ar || p.custom_name || p.variant_title_en || p.clean_name || p.name)
+            : (p.custom_name || p.variant_title_en || p.variant_title_ar || p.clean_name || p.name);
           const thumb = productThumb(p);
 
           return `
@@ -2980,14 +3275,18 @@ const tg = window.Telegram?.WebApp;
     function returnFromVariantsToPrevious() {
       haptic('light');
       activeVariantFamilyKey = null;
-      document.getElementById('service-variants-mode').style.display = 'none';
+      const sVariants = document.getElementById('service-variants-mode');
+      if (sVariants) sVariants.style.display = 'none';
 
       if (activeCatalog) {
-        document.getElementById('products-catalog-mode').style.display = 'block';
-      } else if (document.getElementById('store-search-input').value.trim()) {
-        document.getElementById('products-catalog-mode').style.display = 'block';
+        const sProds = document.getElementById('products-catalog-mode');
+        if (sProds) sProds.style.display = 'block';
+      } else if (getActiveSearchQuery()) {
+        const sProds = document.getElementById('products-catalog-mode');
+        if (sProds) sProds.style.display = 'block';
       } else {
-        document.getElementById('catalogs-collection-mode').style.display = 'block';
+        const sCats = document.getElementById('catalogs-collection-mode');
+        if (sCats) sCats.style.display = 'block';
       }
 
       if (navStack.length > 0 && navStack[navStack.length - 1].name === 'service_variants') {
@@ -3001,7 +3300,9 @@ const tg = window.Telegram?.WebApp;
       selectedProduct = allProducts.find(p => Number(p.id) === Number(productId));
       if (!selectedProduct) return;
       selectedQty = 1;
-      appliedCoupon = null;
+      delete selectedProduct.selected_item_id;
+      delete selectedProduct.catalogue_name;
+      delete selectedProduct.verified_player_name;
       const d = I18N[currentAppLanguage] || I18N.en || I18N.ar;
 
       try {
@@ -3014,8 +3315,10 @@ const tg = window.Telegram?.WebApp;
           const el = document.getElementById(id);
           if (el) el.innerText = txt;
         };
-
-        const displayTitle = selectedProduct.clean_name || selectedProduct.name;
+        const isAr = (currentAppLanguage === 'ar');
+        const displayTitle = isAr
+          ? (selectedProduct.custom_name_ar || selectedProduct.variant_title_ar || selectedProduct.custom_name || selectedProduct.clean_name || selectedProduct.name)
+          : (selectedProduct.custom_name || selectedProduct.variant_title_en || selectedProduct.clean_name || selectedProduct.name);
         setTxt('prod-hero-name', displayTitle);
         try {
           const heroImg = document.getElementById('prod-hero-img');
@@ -3046,10 +3349,15 @@ const tg = window.Telegram?.WebApp;
         const stockInfo = checkProductEffectiveStock(selectedProduct);
         const isOutOfStock = stockInfo.isOutOfStock;
 
-        setTxt('prod-delivery-badge', isInstant
-          ? (currentAppLanguage === 'ar' ? 'تسليم تلقائي' : 'Automated Delivery')
-          : (currentAppLanguage === 'ar' ? 'تفعيل مخصص' : 'Custom Activation'));
-
+        const delBadge = document.getElementById('prod-delivery-badge');
+        if (delBadge) {
+          if (!isInstant) {
+            delBadge.innerText = (currentAppLanguage === 'ar' ? 'تفعيل مخصص' : 'Custom Activation');
+            delBadge.style.display = 'inline-block';
+          } else {
+            delBadge.style.display = 'none';
+          }
+        }
         let stockText = d.in_stock;
         if (isOutOfStock) {
           stockText = d.out_of_stock;
@@ -3103,6 +3411,21 @@ const tg = window.Telegram?.WebApp;
 
         const restockBox = document.getElementById('restock-alert-box');
         const buyBtn = document.getElementById('btn-inapp-purchase');
+        const addCartBtn = document.getElementById('btn-add-to-cart');
+        const isG2BulkProduct = selectedProduct.supplier === 'g2bulk';
+
+        if (addCartBtn) {
+          // G2Bulk denominations and player fields must be submitted atomically;
+          // the generic cart has no place to persist those product-specific inputs.
+          addCartBtn.style.display = isG2BulkProduct ? 'none' : 'flex';
+        }
+        const qtyControl = document.getElementById('product-quantity-control');
+        const isDirectTopup = isG2BulkProduct && (selectedProduct.delivery_type === 'direct_topup' || selectedProduct.delivery_type === 'game_recharge');
+        if (qtyControl) qtyControl.style.display = isDirectTopup ? 'none' : 'flex';
+        if (isDirectTopup) {
+          selectedQty = 1;
+          setTxt('prod-qty-val', '1');
+        }
 
         if (isOutOfStock) {
           if (restockBox) restockBox.style.display = 'block';
@@ -3113,8 +3436,8 @@ const tg = window.Telegram?.WebApp;
         }
 
         updateWishlistUI();
+        if (typeof renderProductDetailVariants === 'function') renderProductDetailVariants();
         updateDetailPagePrice();
-        renderProductDetailVariants();
       } catch (err) {
         console.error("Setup product detail error:", err);
       }
@@ -3139,23 +3462,34 @@ const tg = window.Telegram?.WebApp;
       if (storeView) storeView.classList.add('active');
 
       if (activeVariantFamilyKey) {
-        document.getElementById('service-variants-mode').style.display = 'block';
-        document.getElementById('products-catalog-mode').style.display = 'none';
-        document.getElementById('catalogs-collection-mode').style.display = 'none';
+        const sVariants = document.getElementById('service-variants-mode');
+        if (sVariants) sVariants.style.display = 'block';
+        const sProds = document.getElementById('products-catalog-mode');
+        if (sProds) sProds.style.display = 'none';
+        const sCats = document.getElementById('catalogs-collection-mode');
+        if (sCats) sCats.style.display = 'none';
       } else if (activeCatalog) {
-        document.getElementById('products-catalog-mode').style.display = 'block';
-        document.getElementById('service-variants-mode').style.display = 'none';
-        document.getElementById('catalogs-collection-mode').style.display = 'none';
-      } else if (document.getElementById('store-search-input').value.trim()) {
-        document.getElementById('products-catalog-mode').style.display = 'block';
-        document.getElementById('service-variants-mode').style.display = 'none';
-        document.getElementById('catalogs-collection-mode').style.display = 'none';
+        const sProds = document.getElementById('products-catalog-mode');
+        if (sProds) sProds.style.display = 'block';
+        const sVariants = document.getElementById('service-variants-mode');
+        if (sVariants) sVariants.style.display = 'none';
+        const sCats = document.getElementById('catalogs-collection-mode');
+        if (sCats) sCats.style.display = 'none';
+      } else if (getActiveSearchQuery()) {
+        const sProds = document.getElementById('products-catalog-mode');
+        if (sProds) sProds.style.display = 'block';
+        const sVariants = document.getElementById('service-variants-mode');
+        if (sVariants) sVariants.style.display = 'none';
+        const sCats = document.getElementById('catalogs-collection-mode');
+        if (sCats) sCats.style.display = 'none';
       } else {
-        document.getElementById('catalogs-collection-mode').style.display = 'block';
-        document.getElementById('products-catalog-mode').style.display = 'none';
-        document.getElementById('service-variants-mode').style.display = 'none';
+        const sCats = document.getElementById('catalogs-collection-mode');
+        if (sCats) sCats.style.display = 'block';
+        const sProds = document.getElementById('products-catalog-mode');
+        if (sProds) sProds.style.display = 'none';
+        const sVariants = document.getElementById('service-variants-mode');
+        if (sVariants) sVariants.style.display = 'none';
       }
-
       if (tg?.MainButton) {
         tg.MainButton.offClick(executeProductBuy);
         tg.MainButton.offClick(goToWalletFromMainBtn);
@@ -3227,7 +3561,7 @@ const tg = window.Telegram?.WebApp;
     let detailQuoteSeq = 0;
     async function updateDetailPagePrice() {
       if (!selectedProduct) return;
-      const unit = (userData?.is_reseller && selectedProduct.reseller_price !== undefined && selectedProduct.reseller_price !== null)
+      const unit = (selectedProduct.supplier !== 'g2bulk' && userData?.is_reseller && selectedProduct.reseller_price !== undefined && selectedProduct.reseller_price !== null)
         ? Number(selectedProduct.reseller_price)
         : (selectedProduct.price || 0.0);
       const sym = selectedProduct.sym || '$';
@@ -3236,7 +3570,6 @@ const tg = window.Telegram?.WebApp;
       const buyLabel = document.getElementById('btn-buy-action-label');
       const priceTag = document.getElementById('btn-price-tag');
       const totalTag = document.getElementById('prod-total-price');
-      const discTag = document.getElementById('prod-discount-tag');
       const alertBox = document.getElementById('insufficient-funds-alert');
 
       // Instant local estimate
@@ -3249,14 +3582,20 @@ const tg = window.Telegram?.WebApp;
       const seq = ++detailQuoteSeq;
       let quote = null;
       try {
+        const quoteBody = {
+          tg_id: userId,
+          items: [{
+            product_id: selectedProduct.id,
+            quantity: selectedQty,
+            selected_item_id: selectedProduct.selected_item_id || undefined,
+            catalogue_name: selectedProduct.catalogue_name || undefined,
+          }],
+          coupon_code: appliedCoupon?.code || undefined
+        };
         const res = await fetch('/api/price-quote', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            tg_id: userId,
-            items: [{ product_id: selectedProduct.id, quantity: selectedQty }],
-            coupon_code: appliedCoupon?.code || undefined
-          })
+          body: JSON.stringify(quoteBody)
         });
         const payload = await res.json();
         if (seq !== detailQuoteSeq) return; // stale async result
@@ -3418,6 +3757,300 @@ const tg = window.Telegram?.WebApp;
       const customInput = document.getElementById('custom-topup-input');
       if (customInput) customInput.value = amountUsd.toFixed(2);
       switchTab('wallet');
+    }
+
+    // ==============================================
+    // 🎮 GAME DENOMINATION SELECTOR & VERIFICATION UI
+    // ==============================================
+    let activeVariantItem = null;
+
+    function renderProductDetailVariants() {
+      if (!selectedProduct) return;
+      const container = document.getElementById('detail-variants-container');
+      const listEl = document.getElementById('detail-variants-list');
+      const badgeEl = document.getElementById('variants-count-badge');
+      if (!container || !listEl) return;
+
+      const isAr = (currentAppLanguage === 'ar');
+      const meta = selectedProduct.extra_meta || {};
+      const items = meta.items || [];
+
+      // Render Dynamic Game Account Fields
+      renderProductGameFields();
+
+      // Render Dynamic Voucher Instructions Manual
+      renderProductVoucherManual();
+
+      if (!items || items.length === 0) {
+        container.style.display = 'none';
+        return;
+      }
+
+      container.style.display = 'block';
+      if (badgeEl) {
+        badgeEl.style.display = 'inline-block';
+        badgeEl.innerText = `${items.length} ${isAr ? 'فئة متاحة' : 'Options'}`;
+      }
+
+      // Default to the first available item or the current selection.
+      if (!selectedProduct.selected_item_id || !items.some(it => String(it.id) === String(selectedProduct.selected_item_id))) {
+        activeVariantItem = items.find(it => it.stock === undefined || it.stock === null || Number(it.stock) > 0) || items[0];
+        selectedProduct.selected_item_id = activeVariantItem.id;
+        selectedProduct.catalogue_name = activeVariantItem.name;
+      } else {
+        activeVariantItem = items.find(it => String(it.id) === String(selectedProduct.selected_item_id)) || items[0];
+      }
+      const sym = selectedProduct.sym || '$';
+      const isReseller = !!(userData && userData.is_reseller);
+      const selectedPrice = isReseller
+        ? (activeVariantItem.reseller_price || activeVariantItem.price)
+        : activeVariantItem.price;
+      if (selectedPrice !== undefined && selectedPrice !== null) {
+        selectedProduct.price = Number(selectedPrice);
+      }
+      if (activeVariantItem.cost !== undefined && activeVariantItem.cost !== null) {
+        selectedProduct.cost_usd = Number(activeVariantItem.cost);
+      }
+
+      listEl.innerHTML = items.map(item => {
+        const isSelected = (String(item.id) === String(selectedProduct.selected_item_id));
+        const itemPrice = isReseller ? (item.reseller_price || item.price) : item.price;
+        const priceFormatted = Number(itemPrice || 0).toFixed(2);
+        const itemName = escAttr(item.name || '');
+        const isOutOfStock = item.stock !== undefined && item.stock !== null && Number(item.stock) <= 0;
+        const stockLabel = isOutOfStock
+          ? (isAr ? 'نفدت الكمية' : 'Out of stock')
+          : (item.stock !== undefined && item.stock !== null ? ` · ${item.stock} متاح` : '');
+
+        return `
+          <div class="detail-variant-card${isSelected ? ' active' : ''}${isOutOfStock ? ' disabled' : ''}"${isOutOfStock ? '' : ` onclick="selectProductDetailVariant('${item.id}')"`}>
+            <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
+              <div class="variant-radio-circle">${isOutOfStock ? '×' : '✓'}</div>
+              <div style="min-width: 0;">
+                <div class="variant-card-title">${itemName}</div>
+                ${item.face_value ? `<div style="font-size: 11px; color: var(--hint);">القيمة: ${escAttr(String(item.face_value))}</div>` : ''}
+                ${stockLabel ? `<div style="font-size: 10px; color: ${isOutOfStock ? '#ef4444' : 'var(--hint)'};">${escAttr(stockLabel)}</div>` : ''}
+              </div>
+            </div>
+            <div class="variant-card-price">${isOutOfStock ? (isAr ? 'نفدت' : 'Unavailable') : `${priceFormatted}${sym}`}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function selectProductDetailVariant(itemId) {
+      haptic('selection');
+      if (!selectedProduct) return;
+      const items = selectedProduct.extra_meta?.items || [];
+      const chosen = items.find(it => String(it.id) === String(itemId));
+      if (!chosen) return;
+
+      activeVariantItem = chosen;
+      selectedProduct.selected_item_id = chosen.id;
+      selectedProduct.catalogue_name = chosen.name;
+      const isReseller = !!(userData && userData.is_reseller);
+      const chosenPrice = isReseller ? (chosen.reseller_price || chosen.price) : chosen.price;
+      selectedProduct.price = Number(chosenPrice || selectedProduct.price);
+      if (chosen.cost) selectedProduct.cost_usd = Number(chosen.cost);
+
+      renderProductDetailVariants();
+      updateDetailPagePrice();
+    }
+
+    function renderProductGameFields() {
+      const container = document.getElementById('detail-game-fields-container');
+      if (!container) return;
+      if (!selectedProduct || selectedProduct.supplier !== 'g2bulk' || (selectedProduct.delivery_type !== 'direct_topup' && selectedProduct.delivery_type !== 'game_recharge')) {
+        container.style.display = 'none';
+        return;
+      }
+
+      container.style.display = 'block';
+      const isAr = (currentAppLanguage === 'ar');
+      const meta = selectedProduct.extra_meta || {};
+      const reqFields = meta.required_fields || ['userid'];
+      const notes = meta.notes || '';
+      const servers = meta.servers || {};
+
+      const notesEl = document.getElementById('game-fields-notes');
+      if (notesEl) {
+        if (notes && String(notes).trim()) {
+          notesEl.style.display = 'block';
+          notesEl.innerText = `ℹ️ ${notes}`;
+        } else {
+          notesEl.style.display = 'none';
+        }
+      }
+
+      const pIdInp = document.getElementById('game-player-id-input');
+      if (pIdInp && !pIdInp.value) pIdInp.value = '';
+
+      const verifyStatus = document.getElementById('player-verify-status');
+      if (verifyStatus) {
+        verifyStatus.style.display = 'none';
+        verifyStatus.innerHTML = '';
+      }
+
+      // Server / Region ID
+      const sGrp = document.getElementById('group-server-id');
+      const sSel = document.getElementById('game-server-id-select');
+      const sInp = document.getElementById('game-server-id-input');
+
+      if (reqFields.includes('serverid') || Object.keys(servers).length > 0) {
+        if (sGrp) sGrp.style.display = 'block';
+        if (Object.keys(servers).length > 0) {
+          if (sSel) {
+            sSel.style.display = 'block';
+            let opts = `<option value="">${isAr ? '-- اختر السيرفر / المنطقة --' : '-- Select Server / Region --'}</option>`;
+            for (const [k, v] of Object.entries(servers)) {
+              opts += `<option value="${escAttr(String(v))}">${escAttr(String(k))}</option>`;
+            }
+            sSel.innerHTML = opts;
+          }
+          if (sInp) sInp.style.display = 'none';
+        } else {
+          if (sSel) sSel.style.display = 'none';
+          if (sInp) {
+            sInp.style.display = 'block';
+            sInp.placeholder = isAr ? 'معرف السيرفر (مثال: 2001)' : 'Zone ID (e.g. 2001)';
+          }
+        }
+      } else {
+        if (sGrp) sGrp.style.display = 'none';
+      }
+
+      // Character name
+      const charGrp = document.getElementById('group-charname');
+      if (charGrp) {
+        charGrp.style.display = reqFields.includes('charname') ? 'block' : 'none';
+      }
+    }
+
+    function onPlayerInputChanged() {
+      const verifyStatus = document.getElementById('player-verify-status');
+      if (verifyStatus) {
+        verifyStatus.style.display = 'none';
+      }
+      if (selectedProduct) {
+        delete selectedProduct.verified_player_name;
+      }
+    }
+
+    async function triggerPlayerVerification() {
+      haptic('light');
+      if (!selectedProduct) return;
+      const isAr = (currentAppLanguage === 'ar');
+      const pIdInp = document.getElementById('game-player-id-input');
+      const pIdVal = pIdInp ? pIdInp.value.trim() : '';
+      if (!pIdVal) {
+        showToast(isAr ? '⚠️ يرجى إدخال معرف اللاعب أولاً' : '⚠️ Please enter Player ID first');
+        if (pIdInp) pIdInp.focus();
+        return;
+      }
+
+      let sVal = '';
+      const sGrp = document.getElementById('group-server-id');
+      if (sGrp && sGrp.style.display !== 'none') {
+        const sSel = document.getElementById('game-server-id-select');
+        const sInp = document.getElementById('game-server-id-input');
+        if (sSel && sSel.style.display !== 'none') sVal = sSel.value.trim();
+        else if (sInp && sInp.style.display !== 'none') sVal = sInp.value.trim();
+        const reqFields = selectedProduct.extra_meta?.required_fields || [];
+        if (reqFields.includes('serverid') && !sVal) {
+          showToast(isAr ? '⚠️ يرجى اختيار أو إدخال السيرفر' : '⚠️ Please select or enter Server ID');
+          return;
+        }
+      }
+
+      const charInp = document.getElementById('game-charname-input');
+      const charVal = charInp ? charInp.value.trim() : '';
+
+      const btnVerify = document.getElementById('btn-verify-player');
+      const lblVerify = document.getElementById('label-btn-verify');
+      const statusBox = document.getElementById('player-verify-status');
+
+      if (lblVerify) lblVerify.innerText = isAr ? 'جاري التحقق...' : 'Checking...';
+      if (btnVerify) btnVerify.disabled = true;
+
+      const gameCode = selectedProduct.extra_meta?.game_code || selectedProduct.reseller_key_override || 'aoem';
+
+      try {
+        const res = await fetch('/api/games/check-player', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tg_id: userId,
+            game_code: gameCode,
+            user_id: pIdVal,
+            server_id: sVal || undefined,
+            charname: charVal || undefined
+          })
+        });
+        const d = await res.json();
+        if (btnVerify) btnVerify.disabled = false;
+        if (lblVerify) lblVerify.innerText = isAr ? 'تحقق' : 'Verify';
+
+        if (statusBox) {
+          statusBox.style.display = 'block';
+          if (d.valid) {
+            haptic('success');
+            statusBox.style.background = 'rgba(16, 185, 129, 0.15)';
+            statusBox.style.color = '#10b981';
+            statusBox.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+            statusBox.innerHTML = `✅ ${isAr ? 'اسم اللاعب داخل اللعبة' : 'Player Nickname'}: <b>${escAttr(d.name || d.openid || 'حساب مؤكد')}</b>`;
+            selectedProduct.verified_player_name = d.name || '';
+          } else {
+            haptic('error');
+            statusBox.style.background = 'rgba(239, 68, 68, 0.12)';
+            statusBox.style.color = '#ef4444';
+            statusBox.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+            statusBox.innerHTML = `❌ ${escAttr(d.message || (isAr ? 'معرف اللاعب غير صحيح، يرجى التأكد من الـ ID والسيرفر' : 'Invalid Player ID'))}`;
+          }
+        }
+      } catch (e) {
+        if (btnVerify) btnVerify.disabled = false;
+        if (lblVerify) lblVerify.innerText = isAr ? 'تحقق' : 'Verify';
+        if (statusBox) {
+          statusBox.style.display = 'block';
+          statusBox.style.background = 'rgba(239, 68, 68, 0.12)';
+          statusBox.style.color = '#ef4444';
+          statusBox.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+          statusBox.innerHTML = `❌ ${isAr ? 'تعذر الاتصال بالخادم للتحقق، يرجى المحاولة لاحقاً' : 'Could not reach verification server'}`;
+        }
+      }
+    }
+
+    function renderProductVoucherManual() {
+      const container = document.getElementById('detail-voucher-manual-container');
+      const listEl = document.getElementById('detail-voucher-steps-list');
+      const linkEl = document.getElementById('link-voucher-official-site');
+      if (!container || !listEl) return;
+
+      if (!selectedProduct || selectedProduct.supplier !== 'g2bulk' || selectedProduct.delivery_type !== 'voucher') {
+        container.style.display = 'none';
+        return;
+      }
+
+      container.style.display = 'block';
+      const isAr = (currentAppLanguage === 'ar');
+      const meta = selectedProduct.extra_meta || {};
+      const rawSteps = isAr ? (meta.instructions_ar || meta.instructions_en) : (meta.instructions_en || meta.instructions_ar);
+      const steps = normalizeInstructionSteps(rawSteps);
+
+      if (linkEl) {
+        if (meta.redemption_url) {
+          linkEl.style.display = 'inline-block';
+          linkEl.href = meta.redemption_url;
+        } else {
+          linkEl.style.display = 'none';
+        }
+      }
+
+      if (steps && steps.length > 0) {
+        listEl.innerHTML = instructionStepsHTML(steps);
+      } else {
+        listEl.innerHTML = `<div style="font-size: 12px; color: var(--hint);">${isAr ? 'يصلك كود القسيمة فورياً بعد الشراء مباشرة.' : 'Digital voucher code delivered instantly.'}</div>`;
+      }
     }
 
     // ==============================================
@@ -3798,31 +4431,6 @@ const tg = window.Telegram?.WebApp;
       else window.open(tgShareLink, '_blank');
     }
 
-    // Add to Home Screen (Bot API 8.0)
-    function promptAddToHomeScreen() {
-      haptic('pop');
-      if (tg?.addToHomeScreen) {
-        tg.addToHomeScreen();
-      } else {
-        showToast(currentAppLanguage === 'ar' ? 'انقر على القائمة بالأعلى (⋮) واختر "إضافة إلى الشاشة الرئيسية"' : 'Tap menu (⋮) and select "Add to Home Screen"');
-      }
-    }
-
-    function checkHomeScreenCapability() {
-      try {
-        if (tg?.checkHomeScreenStatus && tg.isVersionAtLeast && tg.isVersionAtLeast('8.0')) {
-          tg.checkHomeScreenStatus((status) => {
-            const banner = document.getElementById('home-screen-banner');
-            if (banner && status === 'missed') {
-              banner.style.display = 'flex';
-            }
-          });
-        }
-      } catch (e) {
-        console.debug('HomeScreen status check unsupported:', e);
-      }
-    }
-
     // IN-APP CHECKOUT (POST /api/buy)
     async function executeProductBuy() {
       if (!selectedProduct || !userId) {
@@ -3857,6 +4465,54 @@ const tg = window.Telegram?.WebApp;
         product_id: selectedProduct.id,
         quantity: selectedQty
       };
+
+      if (selectedProduct.selected_item_id) payload.selected_item_id = selectedProduct.selected_item_id;
+      if (selectedProduct.catalogue_name) payload.catalogue_name = selectedProduct.catalogue_name;
+
+      if (selectedProduct.supplier === 'g2bulk' && (selectedProduct.delivery_type === 'direct_topup' || selectedProduct.delivery_type === 'game_recharge')) {
+        const pIdInp = document.getElementById('game-player-id-input');
+        const pIdVal = pIdInp ? pIdInp.value.trim() : '';
+        if (!pIdVal) {
+          if (buyBtn) { buyBtn.disabled = false; updateDetailPagePrice(); }
+          if (tg?.MainButton) tg.MainButton.hideProgress();
+          showToast(currentAppLanguage === 'ar' ? '⚠️ يرجى إدخال معرف اللاعب (Player ID) أولاً!' : '⚠️ Please enter your Player ID first!');
+          if (pIdInp) pIdInp.focus();
+          return;
+        }
+        const sGrp = document.getElementById('group-server-id');
+        let sVal = '';
+        if (sGrp && sGrp.style.display !== 'none') {
+          const sSel = document.getElementById('game-server-id-select');
+          const sInp = document.getElementById('game-server-id-input');
+          if (sSel && sSel.style.display !== 'none') sVal = sSel.value.trim();
+          else if (sInp && sInp.style.display !== 'none') sVal = sInp.value.trim();
+          const reqFields = selectedProduct.extra_meta?.required_fields || [];
+          if (reqFields.includes('serverid') && !sVal) {
+            if (buyBtn) { buyBtn.disabled = false; updateDetailPagePrice(); }
+            if (tg?.MainButton) tg.MainButton.hideProgress();
+            showToast(currentAppLanguage === 'ar' ? '⚠️ يرجى تحديد أو إدخال السيرفر / المنطقة!' : '⚠️ Please select or enter the Server ID!');
+            return;
+          }
+        }
+        const charInp = document.getElementById('game-charname-input');
+        const charVal = charInp ? charInp.value.trim() : '';
+
+        payload.player_id = pIdVal;
+        if (sVal) payload.server_id = sVal;
+        if (charVal) payload.charname = charVal;
+      }
+
+      if (selectedProduct.supplier === 'g2bulk' && selectedProduct.delivery_type === 'voucher') {
+        const pIdInp = document.getElementById('game-player-id-input');
+        const sSel = document.getElementById('game-server-id-select');
+        const sInp = document.getElementById('game-server-id-input');
+        const charInp = document.getElementById('game-charname-input');
+        if (pIdInp && pIdInp.value.trim()) payload.player_id = pIdInp.value.trim();
+        if (sSel && sSel.value) payload.server_id = sSel.value.trim();
+        else if (sInp && sInp.value.trim()) payload.server_id = sInp.value.trim();
+        if (charInp && charInp.value.trim()) payload.charname = charInp.value.trim();
+      }
+
       if (appliedCoupon?.code) payload.coupon_code = appliedCoupon.code;
 
       try {
@@ -3884,6 +4540,7 @@ const tg = window.Telegram?.WebApp;
             : `Order #${d.order_id} · ${d.product_name} (${d.quantity}×)`;
           const keysBox = document.getElementById('success-delivered-keys');
           if (keysBox) keysBox.innerHTML = renderStructuredCredentials(d.goods);
+          renderSuccessInstructions(d);
 
           if (tg?.MainButton) {
             tg.MainButton.offClick(executeProductBuy);
@@ -3905,6 +4562,67 @@ const tg = window.Telegram?.WebApp;
         haptic('error');
         showToast(currentAppLanguage === 'ar' ? 'خطأ في الاتصال. يرجى إعادة المحاولة.' : 'Connection error. Please retry.');
         updateDetailPagePrice();
+      }
+    }
+    // Normalize backend instructions (array or newline-separated string) into step list
+    function normalizeInstructionSteps(raw) {
+      if (!raw) return [];
+      if (Array.isArray(raw)) return raw.map(s => String(s || '').trim()).filter(Boolean);
+      return String(raw).split(/\r?\n/).map(s => String(s || '').trim()).filter(Boolean);
+    }
+
+    function instructionStepsHTML(steps) {
+      return steps.map((step, idx) => `<div class="instr-step"><span class="instr-step-num">${idx + 1}</span><span class="instr-step-text">${step}</span></div>`).join('');
+    }
+
+    // Post-purchase activation steps on the order-success view (below the keys)
+    function renderSuccessInstructions(d) {
+      const card = document.getElementById('success-instructions-card');
+      const stepsBox = document.getElementById('success-instructions-steps');
+      if (!card || !stepsBox) return;
+      const isAr = (currentAppLanguage === 'ar');
+      const raw = isAr ? (d.instructions_ar || d.instructions_en) : (d.instructions_en || d.instructions_ar);
+      const steps = normalizeInstructionSteps(raw);
+      if (!steps.length) {
+        card.style.display = 'none';
+        stepsBox.innerHTML = '';
+        return;
+      }
+      try { window._lastSuccessInstructions = steps.slice(); } catch (e) {}
+      const labelEl = document.getElementById('label-success-instructions');
+      if (labelEl) labelEl.innerText = isAr ? 'خطوات التفعيل والاستخدام' : 'Activation Steps';
+      stepsBox.innerHTML = instructionStepsHTML(steps);
+      card.style.display = 'block';
+    }
+
+    // One-tap copy of delivered keys + activation steps, then toast
+    function copyAllKeysWithInstructions() {
+      haptic('light');
+      const isAr = (currentAppLanguage === 'ar');
+      const keysBox = document.getElementById('success-delivered-keys');
+      const keysText = keysBox ? (keysBox.innerText || '').trim() : '';
+      const steps = (window._lastSuccessInstructions && window._lastSuccessInstructions.length)
+        ? window._lastSuccessInstructions
+        : normalizeInstructionSteps((document.getElementById('success-instructions-steps') || {}).innerText || '');
+      let out = '';
+      if (keysText) out += (isAr ? '🔑 بيانات الطلب:\n' : '🔑 Order credentials:\n') + keysText;
+      if (steps.length) {
+        if (out) out += '\n\n';
+        out += (isAr ? '📋 خطوات التفعيل:\n' : '📋 Activation steps:\n') + steps.map((s, i) => `${i + 1}. ${s}`).join('\n');
+      }
+      if (!out) {
+        showToast(isAr ? 'لا توجد بيانات للنسخ' : 'Nothing to copy');
+        return;
+      }
+      const done = () => showToast(isAr ? 'تم نسخ البيانات مع التعليمات ✓' : 'Credentials + steps copied ✓');
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(out).then(done, () => fallbackCopy(out));
+        } else {
+          fallbackCopy(out);
+        }
+      } catch (e) {
+        fallbackCopy(out);
       }
     }
 
@@ -5032,13 +5750,65 @@ const tg = window.Telegram?.WebApp;
       if (!prod) return;
       haptic('pop');
       document.getElementById('admin-edit-prod-id').value = prod.id;
-      document.getElementById('admin-edit-prod-name').value = prod.clean_name || '';
+      document.getElementById('admin-edit-prod-name').value = prod.custom_name || prod.variant_title_en || prod.clean_name || '';
+      const nameArEl = document.getElementById('admin-edit-prod-name-ar');
+      if (nameArEl) nameArEl.value = prod.custom_name_ar || prod.variant_title_ar || '';
+
+      const isAr = (currentAppLanguage === 'ar');
+      const folderSelect = document.getElementById('admin-edit-prod-folder-select');
+      const newFolderWrap = document.getElementById('admin-edit-prod-new-folder-wrap');
+      if (newFolderWrap) newFolderWrap.style.display = 'none';
+      const newEnInp = document.getElementById('admin-edit-prod-folder-new-en');
+      if (newEnInp) newEnInp.value = '';
+      const newArInp = document.getElementById('admin-edit-prod-folder-new-ar');
+      if (newArInp) newArInp.value = '';
+
+      if (folderSelect) {
+        let catFolders = (window._catalogFolders || []).filter(f => f.category === prod.category);
+        if (!catFolders.length) {
+          const seenKeys = new Set();
+          allProducts.filter(p => p.category === prod.category).forEach(p => {
+            const k = p.folder_key || p.custom_group;
+            if (k && !seenKeys.has(k)) {
+              seenKeys.add(k);
+              catFolders.push({
+                key: k,
+                title_en: p.custom_group || p.folder_title_en || k,
+                title_ar: p.custom_group_ar || p.folder_title_ar || p.custom_group || p.folder_title_en || k,
+                icon: p.folder_icon || p.emoji || '📁'
+              });
+            }
+          });
+        }
+
+        let optsHtml = `<option value="__none__">${isAr ? '(بدون مجلد / منتج مباشر)' : '(No folder / Direct product)'}</option>`;
+        catFolders.forEach(f => {
+          const fTitle = isAr ? (f.title_ar || f.title_en) : (f.title_en || f.title_ar);
+          optsHtml += `<option value="${escAttr(f.key || f.title_en)}" data-en="${escAttr(f.title_en)}" data-ar="${escAttr(f.title_ar || f.title_en)}">${f.icon || '📁'} ${fTitle}</option>`;
+        });
+        optsHtml += `<option value="__new__">➕ ${isAr ? 'إنشاء مجلد جديد في هذا التصنيف...' : 'Create New Folder in this Category...'}</option>`;
+        folderSelect.innerHTML = optsHtml;
+
+        const curKey = prod.folder_key || prod.custom_group;
+        if (curKey) {
+          const matchedOpt = Array.from(folderSelect.options).find(o => o.value === curKey || o.getAttribute('data-en') === prod.custom_group || o.value === prod.custom_group);
+          if (matchedOpt) folderSelect.value = matchedOpt.value;
+          else folderSelect.value = '__none__';
+        } else {
+          folderSelect.value = '__none__';
+        }
+      }
       document.getElementById('admin-edit-prod-cat').value = prod.category || '';
       document.getElementById('admin-edit-prod-price').value = prod.price || '';
       const resPriceInp = document.getElementById('admin-edit-prod-reseller-price');
       if (resPriceInp) resPriceInp.value = (prod.reseller_price_usd !== null && prod.reseller_price_usd !== undefined) ? prod.reseller_price_usd : '';
-      document.getElementById('admin-edit-prod-stock').value = (prod.stock !== null && prod.stock !== undefined) ? prod.stock : '';
+      const stockDisplayInp = document.getElementById('admin-edit-prod-stock-display');
+      if (stockDisplayInp) {
+        stockDisplayInp.value = (prod.stock !== null && prod.stock !== undefined) ? `${prod.stock} متوفر (تزامن API)` : 'تلقائي (حسب المورد)';
+      }
       document.getElementById('admin-edit-prod-hidden').checked = !!prod.hidden;
+      const folderHiddenEl = document.getElementById('admin-edit-folder-hidden');
+      if (folderHiddenEl) folderHiddenEl.checked = false;
       document.getElementById('admin-product-modal').style.display = 'flex';
     }
     function closeAdminProductModal() {
@@ -5049,12 +5819,27 @@ const tg = window.Telegram?.WebApp;
       const pid = parseInt(document.getElementById('admin-edit-prod-id')?.value);
       if (!pid) return;
       const customName = document.getElementById('admin-edit-prod-name')?.value;
+      const customNameAr = document.getElementById('admin-edit-prod-name-ar')?.value;
+
+      const folderSel = document.getElementById('admin-edit-prod-folder-select');
+      let customFolder = null;
+      let customFolderAr = null;
+      if (folderSel) {
+        if (folderSel.value === '__new__') {
+          customFolder = document.getElementById('admin-edit-prod-folder-new-en')?.value?.trim() || null;
+          customFolderAr = document.getElementById('admin-edit-prod-folder-new-ar')?.value?.trim() || customFolder;
+        } else if (folderSel.value !== '__none__') {
+          const selOpt = folderSel.options[folderSel.selectedIndex];
+          customFolder = selOpt?.getAttribute('data-en') || selOpt?.value || null;
+          customFolderAr = selOpt?.getAttribute('data-ar') || customFolder;
+        }
+      }
       const cat = document.getElementById('admin-edit-prod-cat')?.value;
       const price = parseFloat(document.getElementById('admin-edit-prod-price')?.value);
       const resPriceVal = document.getElementById('admin-edit-prod-reseller-price')?.value?.trim();
       const resPrice = (resPriceVal && resPriceVal !== '') ? parseFloat(resPriceVal) : null;
-      const stockStr = document.getElementById('admin-edit-prod-stock')?.value;
       const hidden = document.getElementById('admin-edit-prod-hidden')?.checked;
+      const hideEntireFolder = document.getElementById('admin-edit-folder-hidden')?.checked;
       haptic('light');
       try {
         const res = await fetch('/api/admin/product/update', {
@@ -5064,24 +5849,69 @@ const tg = window.Telegram?.WebApp;
             admin_tg_id: userId,
             product_id: pid,
             custom_name: customName,
+            custom_name_ar: customNameAr,
+            custom_group: customFolder,
+            custom_group_ar: customFolderAr,
             category: cat,
             sell_price_usd: isNaN(price) ? null : price,
             reseller_price_usd: (resPrice !== null && !isNaN(resPrice)) ? resPrice : null,
-            stock: stockStr === '' ? null : parseInt(stockStr),
-            hidden: hidden
+            hidden: hidden,
+            hide_entire_folder: hideEntireFolder
           })
         });
         const d = await res.json();
         if (d.status === 'ok') {
-          showToast('تم تحديث بيانات المنتج بنجاح!');
+          showToast('تم حفظ التعديلات في قاعدة البيانات بنجاح!');
           closeAdminProductModal();
+          try { localStorage.removeItem('ghstore_catalog_cache_v3'); } catch (e) {}
+          if (hidden || hideEntireFolder) {
+            const varMode = document.getElementById('service-variants-mode');
+            if (varMode && varMode.style.display !== 'none') {
+              returnFromVariantsToPrevious();
+            }
+            const detView = document.getElementById('view-product-detail');
+            if (detView && detView.classList.contains('active')) {
+              closeProductDetailPage();
+            }
+          }
           await fetchCatalogData();
         } else {
-          showToast('فشل تحديث المنتج');
+          showToast(d.error || 'فشل تحديث المنتج');
         }
       } catch (e) {
         showToast('خطأ في الاتصال بالخادم');
       }
+    }
+
+    function onAdminProdFolderSelectChange() {
+      const sel = document.getElementById('admin-edit-prod-folder-select');
+      const newWrap = document.getElementById('admin-edit-prod-new-folder-wrap');
+      if (!sel || !newWrap) return;
+      if (sel.value === '__new__') {
+        newWrap.style.display = 'block';
+        document.getElementById('admin-edit-prod-folder-new-en')?.focus();
+      } else {
+        newWrap.style.display = 'none';
+      }
+    }
+
+    function openAdminCreateFolderModal() {
+      if (!activeCatalog) return;
+      haptic('pop');
+      document.getElementById('admin-edit-folder-id').value = '';
+      document.getElementById('admin-edit-folder-key').value = '';
+      document.getElementById('admin-edit-folder-title-en').value = '';
+      document.getElementById('admin-edit-folder-title-ar').value = '';
+      document.getElementById('admin-edit-folder-cat').value = activeCatalog;
+      document.getElementById('admin-edit-folder-icon').value = '📁';
+      document.getElementById('admin-edit-folder-sort').value = '10';
+      document.getElementById('admin-edit-folder-hidden-check').checked = false;
+      document.getElementById('admin-folder-modal').style.display = 'flex';
+    }
+
+    function openAdminCurrentCategoryEditor() {
+      if (!activeCatalog) return;
+      openAdminCategoryEditor(null, activeCatalog);
     }
 
     // Live Category Editor Modal
@@ -5125,6 +5955,7 @@ const tg = window.Telegram?.WebApp;
           body: JSON.stringify({
             admin_tg_id: userId,
             category_id: cid,
+            name: nameEn,
             name_ar: nameAr,
             name_en: nameEn,
             image_url: img,
@@ -5138,12 +5969,252 @@ const tg = window.Telegram?.WebApp;
         if (d.status === 'ok') {
           showToast('تم تحديث بيانات التصنيف بنجاح!');
           closeAdminCategoryModal();
+          try { localStorage.removeItem('ghstore_catalog_cache_v3'); } catch (e) {}
           await fetchCatalogData();
         } else {
-          showToast('فشل تحديث التصنيف');
+          showToast(d.error || 'فشل تحديث التصنيف');
         }
       } catch (e) {
         showToast('خطأ في الاتصال بالخادم');
+      }
+    }
+
+    // Live Brand Folder / Subcategory Editor Modal
+    function openAdminCurrentFolderEditor() {
+      if (!activeVariantFamilyKey) return;
+      const entry = _serviceFamilyRegistry.find(e => e.famKey === activeVariantFamilyKey);
+      if (!entry || !entry.items.length) return;
+      const primary = entry.items[0];
+      openAdminFolderModalWithData(primary);
+    }
+
+    function openAdminFolderFromCard(famKey, e) {
+      if (e) e.stopPropagation();
+      const entry = _serviceFamilyRegistry.find(e => e.famKey === famKey);
+      if (!entry || !entry.items.length) return;
+      const primary = entry.items[0];
+      openAdminFolderModalWithData(primary);
+    }
+
+    function openAdminFolderModalWithData(primary) {
+      haptic('pop');
+      document.getElementById('admin-edit-folder-key').value = primary.folder_key || '';
+      document.getElementById('admin-edit-folder-title-en').value = primary.custom_group || primary.folder_title_en || '';
+      document.getElementById('admin-edit-folder-title-ar').value = primary.custom_group_ar || primary.folder_title_ar || '';
+      document.getElementById('admin-edit-folder-cat').value = primary.category || activeCatalog || '';
+      document.getElementById('admin-edit-folder-icon').value = primary.folder_icon || primary.emoji || '📁';
+      document.getElementById('admin-edit-folder-sort').value = primary.folder_priority || 50;
+      document.getElementById('admin-edit-folder-hidden-check').checked = false;
+      document.getElementById('admin-folder-modal').style.display = 'flex';
+    }
+
+    function closeAdminFolderModal() {
+      document.getElementById('admin-folder-modal').style.display = 'none';
+    }
+
+    async function submitAdminFolderUpdate() {
+      const key = document.getElementById('admin-edit-folder-key')?.value;
+      if (!key) return;
+      const titleEn = document.getElementById('admin-edit-folder-title-en')?.value?.trim();
+      const titleAr = document.getElementById('admin-edit-folder-title-ar')?.value?.trim();
+      const cat = document.getElementById('admin-edit-folder-cat')?.value?.trim();
+      const icon = document.getElementById('admin-edit-folder-icon')?.value?.trim() || '📁';
+      const sort = parseInt(document.getElementById('admin-edit-folder-sort')?.value || 50);
+      const isHidden = document.getElementById('admin-edit-folder-hidden-check')?.checked;
+
+      haptic('light');
+      try {
+        const res = await fetch('/api/admin/folder/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            admin_tg_id: userId,
+            key: key,
+            category: cat,
+            title_en: titleEn,
+            title_ar: titleAr,
+            icon: icon,
+            sort_order: sort,
+            hidden: isHidden,
+            hide_products: isHidden
+          })
+        });
+        const d = await res.json();
+        if (d.status === 'ok') {
+          showToast('تم حفظ بيانات المجلد في قاعدة البيانات بنجاح!');
+          closeAdminFolderModal();
+          try { localStorage.removeItem('ghstore_catalog_cache_v3'); } catch (e) {}
+          if (isHidden) {
+            const varMode = document.getElementById('service-variants-mode');
+            if (varMode && varMode.style.display !== 'none') {
+              returnFromVariantsToPrevious();
+            }
+          }
+          await fetchCatalogData();
+        } else {
+          showToast(d.error || 'فشل تحديث بيانات المجلد');
+        }
+      } catch (e) {
+        showToast('خطأ في الاتصال بالخادم');
+      }
+    }
+
+    // Live Promotional Banner / Ad Editor Modal
+    let currentAdminBanners = [];
+
+    async function openAdminBannerModal(bannerId = null) {
+      haptic('pop');
+      populateAdminBannerDropdowns();
+
+      document.getElementById('admin-edit-banner-id').value = bannerId || '';
+      const delBtn = document.getElementById('btn-admin-banner-delete');
+      if (delBtn) delBtn.style.display = bannerId ? 'block' : 'none';
+
+      if (bannerId && currentAdminBanners.length) {
+        const b = currentAdminBanners.find(it => it.id === bannerId);
+        if (b) {
+          document.getElementById('admin-banner-title-ar').value = b.title_ar || '';
+          document.getElementById('admin-banner-title-en').value = b.title_en || '';
+          document.getElementById('admin-banner-sub-ar').value = b.subtitle_ar || '';
+          document.getElementById('admin-banner-badge-ar').value = b.badge_ar || '';
+          document.getElementById('admin-banner-img').value = b.image_url || '';
+          document.getElementById('admin-banner-target-type').value = b.target_type || 'category';
+          onBannerTargetTypeChange();
+          if (b.target_type === 'category' && b.target_category) {
+            document.getElementById('admin-banner-target-cat').value = b.target_category;
+          } else if (b.target_type === 'product' && b.product_id) {
+            document.getElementById('admin-banner-target-prod').value = b.product_id;
+          } else if (b.target_type === 'tab' && b.target_url) {
+            document.getElementById('admin-banner-target-tab').value = b.target_url;
+          } else if (b.target_type === 'url' && b.target_url) {
+            document.getElementById('admin-banner-target-url').value = b.target_url;
+          }
+          document.getElementById('admin-banner-active').checked = !!b.is_active;
+        }
+      } else {
+        document.getElementById('admin-banner-title-ar').value = '';
+        document.getElementById('admin-banner-title-en').value = '';
+        document.getElementById('admin-banner-sub-ar').value = '';
+        document.getElementById('admin-banner-badge-ar').value = '';
+        document.getElementById('admin-banner-img').value = '';
+        document.getElementById('admin-banner-target-type').value = 'category';
+        onBannerTargetTypeChange();
+        document.getElementById('admin-banner-active').checked = true;
+      }
+      document.getElementById('admin-banner-modal').style.display = 'flex';
+    }
+
+    function closeAdminBannerModal() {
+      document.getElementById('admin-banner-modal').style.display = 'none';
+    }
+
+    function populateAdminBannerDropdowns() {
+      const catSelect = document.getElementById('admin-banner-target-cat');
+      if (catSelect) {
+        catSelect.innerHTML = categoriesList.map(c => {
+          const name = typeof c === 'object' ? c.name : c;
+          const title = (currentAppLanguage === 'ar' && c.name_ar) ? c.name_ar : (c.name_en || name);
+          return `<option value="${escAttr(name)}">${title}</option>`;
+        }).join('');
+      }
+      const prodSelect = document.getElementById('admin-banner-target-prod');
+      if (prodSelect) {
+        prodSelect.innerHTML = allProducts.map(p => {
+          const title = (currentAppLanguage === 'ar' ? (p.variant_title_ar || p.custom_name_ar) : p.variant_title_en) || p.name;
+          return `<option value="${p.id}">${p.id} - ${escAttr(title)}</option>`;
+        }).join('');
+      }
+    }
+
+    function onBannerTargetTypeChange() {
+      const val = document.getElementById('admin-banner-target-type')?.value || 'category';
+      const grpCat = document.getElementById('admin-banner-group-category');
+      const grpProd = document.getElementById('admin-banner-group-product');
+      const grpTab = document.getElementById('admin-banner-group-tab');
+      const grpUrl = document.getElementById('admin-banner-group-url');
+      if (grpCat) grpCat.style.display = (val === 'category') ? 'block' : 'none';
+      if (grpProd) grpProd.style.display = (val === 'product') ? 'block' : 'none';
+      if (grpTab) grpTab.style.display = (val === 'tab') ? 'block' : 'none';
+      if (grpUrl) grpUrl.style.display = (val === 'url') ? 'block' : 'none';
+    }
+
+    async function submitAdminBannerSave() {
+      const bId = document.getElementById('admin-edit-banner-id')?.value;
+      const titleAr = document.getElementById('admin-banner-title-ar')?.value?.trim();
+      const titleEn = document.getElementById('admin-banner-title-en')?.value?.trim() || titleAr;
+      if (!titleAr && !titleEn) {
+        showToast('يرجى إدخال عنوان الإعلان');
+        return;
+      }
+      const subAr = document.getElementById('admin-banner-sub-ar')?.value?.trim();
+      const badgeAr = document.getElementById('admin-banner-badge-ar')?.value?.trim();
+      const img = document.getElementById('admin-banner-img')?.value?.trim();
+      const targetType = document.getElementById('admin-banner-target-type')?.value || 'category';
+      let targetCat = null, prodId = null, targetUrl = null;
+      if (targetType === 'category') {
+        targetCat = document.getElementById('admin-banner-target-cat')?.value;
+      } else if (targetType === 'product') {
+        prodId = parseInt(document.getElementById('admin-banner-target-prod')?.value);
+      } else if (targetType === 'tab') {
+        targetUrl = document.getElementById('admin-banner-target-tab')?.value;
+      } else if (targetType === 'url') {
+        targetUrl = document.getElementById('admin-banner-target-url')?.value?.trim();
+      }
+      const isActive = document.getElementById('admin-banner-active')?.checked;
+
+      haptic('light');
+      try {
+        const res = await fetch('/api/admin/banner/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            admin_tg_id: userId,
+            id: bId ? parseInt(bId) : null,
+            title_ar: titleAr,
+            title_en: titleEn,
+            subtitle_ar: subAr,
+            subtitle_en: subAr,
+            badge_ar: badgeAr,
+            badge_en: badgeAr,
+            image_url: img,
+            target_type: targetType,
+            target_category: targetCat,
+            product_id: prodId,
+            target_url: targetUrl,
+            is_active: isActive
+          })
+        });
+        const d = await res.json();
+        if (d.status === 'ok') {
+          showToast('تم حفظ ونشر الإعلان بنجاح!');
+          closeAdminBannerModal();
+          await fetchCatalogData();
+        } else {
+          showToast('فشل حفظ الإعلان');
+        }
+      } catch (e) {
+        showToast('خطأ في الاتصال بالخادم');
+      }
+    }
+
+    async function deleteCurrentAdminBanner() {
+      const bId = document.getElementById('admin-edit-banner-id')?.value;
+      if (!bId) return;
+      haptic('warning');
+      try {
+        const res = await fetch('/api/admin/banner/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_tg_id: userId, id: parseInt(bId) })
+        });
+        const d = await res.json();
+        if (d.status === 'ok') {
+          showToast('تم حذف الإعلان');
+          closeAdminBannerModal();
+          await fetchCatalogData();
+        }
+      } catch (e) {
+        showToast('فشل حذف الإعلان');
       }
     }
 
@@ -5595,6 +6666,7 @@ const tg = window.Telegram?.WebApp;
           setText('admin-bal-total-suppliers-pill', `إجمالي: $${Number(sw.total_supplier_usd || 0).toFixed(2)}`);
           setText('sup-card-bat-bal', `$${Number(sw.batstore_usd || 0).toFixed(2)} USD`);
           setText('sup-card-prod-bal', `$${Number(sw.prodseller_usd || 0).toFixed(2)} USDT`);
+          setText('sup-card-g2b-bal', `$${Number(sw.g2bulk_usd || 0).toFixed(2)} USD`);
           setText('suppliers-view-total-bal', `$${Number(sw.total_supplier_usd || 0).toFixed(2)} USD`);
           if (showUserToast) showToast((currentAppLanguage === 'ar') ? '✅ تم تحديث الأرصدة بنجاح' : '✅ Balances updated');
         }
@@ -5857,6 +6929,7 @@ const tg = window.Telegram?.WebApp;
               setVal('admin-wallet-users-total', `$${(d.admin_stats.total_user_balances || d.admin_stats.total_users_balance || 0.0).toFixed(2)}`);
               setVal('sup-card-bat-bal', `$${(sw.batstore_usd || 0.0).toFixed(2)} USD`);
               setVal('sup-card-prod-bal', `$${(sw.prodseller_usd || 0.0).toFixed(2)} USDT`);
+              setVal('sup-card-g2b-bal', `$${(sw.g2bulk_usd || 0.0).toFixed(2)} USD`);
               setVal('suppliers-view-total-bal', `$${(sw.total_supplier_usd || 0.0).toFixed(2)} USD`);
             }
           }
@@ -5932,18 +7005,14 @@ const tg = window.Telegram?.WebApp;
 
         // Profile VIP Badge: ONLY display if a real discount is applied (>0% and not Standard)
         const vipBox = document.getElementById('user-vip-pill-box');
-        const topVipTag = document.getElementById('top-vip-tag');
         const hasVipDiscount = d.vip_discount > 0 && d.vip_tier && d.vip_tier !== 'Standard';
 
         if (!d.is_admin && hasVipDiscount) {
           vipBox.innerHTML = `<span class="vip-tag">${d.vip_tier} (${currentAppLanguage === 'ar' ? 'خصم' : 'Discount'} ${d.vip_discount}%)</span>`;
           vipBox.style.display = 'block';
-          topVipTag.innerText = d.vip_tier;
-          topVipTag.style.display = 'inline-block';
         } else {
           vipBox.innerHTML = '';
           vipBox.style.display = 'none';
-          topVipTag.style.display = 'none';
         }
 
         // VIP Progress Bar & Gamification
@@ -6095,15 +7164,6 @@ const tg = window.Telegram?.WebApp;
 
       const cardSpent = document.getElementById('settings-card-spent');
       if (cardSpent) cardSpent.innerText = formatBalance(userData.total_spent || 0);
-      const topVipTag = document.getElementById('top-vip-tag');
-      if (userData.is_admin) {
-        if (topVipTag) topVipTag.style.display = 'none';
-      } else if (userData.vip_discount > 0 && userData.vip_tier && userData.vip_tier !== 'Standard') {
-        topVipTag.innerText = userData.vip_tier;
-        topVipTag.style.display = 'inline-block';
-      } else {
-        topVipTag.style.display = 'none';
-      }
     }
 
     // One-Time Admin Config with Pen Button Edit / Lock Mechanism
@@ -6563,17 +7623,21 @@ const tg = window.Telegram?.WebApp;
         if (prodSyncEl) prodSyncEl.checked = !!prod.sync_enabled;
         const prodKeyState = document.getElementById('sup-card-prod-key-state');
         if (prodKeyState) prodKeyState.innerText = prod.api_key_configured ? `محفوظ (${prod.api_key_masked})` : 'غير مهيأ';
+        // Server 3 G2Bulk Games & Vouchers
+        const g2b = d.g2bulk || {};
+        const g2bCountEl = document.getElementById('sup-card-g2b-count');
+        if (g2bCountEl) g2bCountEl.innerText = `${g2b.product_count || 0} منتج مرتبط`;
+        const g2bSyncEl = document.getElementById('sup-card-g2b-sync');
+        if (g2bSyncEl) g2bSyncEl.checked = !!g2b.sync_enabled;
+        const g2bKeyState = document.getElementById('sup-card-g2b-key-state');
+        if (g2bKeyState) g2bKeyState.innerText = g2b.api_key_configured ? `محفوظ (${g2b.api_key_masked})` : 'غير مهيأ';
 
         // Routing & Failover
-        const routingEl = document.getElementById('sup-page-routing-select');
-        if (routingEl && d.routing_strategy) routingEl.value = d.routing_strategy;
-        const failoverEl = document.getElementById('sup-page-failover');
-        if (failoverEl) failoverEl.checked = (d.auto_failover !== false);
-
         if (d.balances) {
           const sw = d.balances;
           setText('sup-card-bat-bal', `$${Number(sw.batstore_usd || 0).toFixed(2)} USD`);
           setText('sup-card-prod-bal', `$${Number(sw.prodseller_usd || 0).toFixed(2)} USDT`);
+          setText('sup-card-g2b-bal', `$${Number(sw.g2bulk_usd || 0).toFixed(2)} USD`);
           setText('suppliers-view-total-bal', `$${Number(sw.total_supplier_usd || 0).toFixed(2)} USD`);
         }
         // Update live balances across all views
@@ -6681,16 +7745,62 @@ const tg = window.Telegram?.WebApp;
       }
     }
 
+    async function testG2BulkKeyLiveInSuppliersPage() {
+      haptic('light');
+      const keyVal = document.getElementById('sup-card-g2b-key')?.value?.trim() || '';
+      const statusEl = document.getElementById('sup-card-g2b-status');
+      const btn = document.getElementById('btn-test-g2bulk');
+      if (btn) btn.disabled = true;
+      if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.style.color = 'var(--hint)';
+        statusEl.innerText = 'جاري الاتصال بسيرفر G2Bulk وفحص الرصيد...';
+      }
+      try {
+        const res = await fetch('/api/admin/g2bulk/test-balance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_tg_id: userId, api_key: keyVal })
+        });
+        const d = await res.json();
+        if (!res.ok || d.error) {
+          if (statusEl) {
+            statusEl.style.color = '#ef4444';
+            statusEl.innerText = `خطأ في الاتصال: ${d.error || 'المفتاح غير صالح'}`;
+          }
+          showToast(d.error || 'فشل فحص سيرفر 3');
+          return;
+        }
+        const bal = Number(d.balance || 0).toFixed(2);
+        if (statusEl) {
+          statusEl.style.color = '#10b981';
+          statusEl.innerText = `سيرفر 3 متصل بنجاح: الرصيد $${bal} USD · المستخدم: ${d.username || 'G2Bulk'}`;
+        }
+        const balEl = document.getElementById('sup-card-g2b-bal');
+        if (balEl) balEl.innerText = `$${bal} USD`;
+        showToast(`رصيد سيرفر 3: $${bal}`);
+      } catch (e) {
+        if (statusEl) {
+          statusEl.style.color = '#ef4444';
+          statusEl.innerText = `خطأ: ${e.message}`;
+        }
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
     async function saveSuppliersPageSettings() {
       haptic('medium');
       const batKey = document.getElementById('sup-card-bat-key')?.value?.trim() || '';
       const prodKey = document.getElementById('sup-card-prod-key')?.value?.trim() || '';
+      const g2bKey = document.getElementById('sup-card-g2b-key')?.value?.trim() || '';
       const strategy = document.getElementById('sup-page-routing-select')?.value || 'auto_cheapest';
       const batSync = document.getElementById('sup-card-bat-sync')?.checked;
       const prodSync = document.getElementById('sup-card-prod-sync')?.checked;
+      const g2bSync = document.getElementById('sup-card-g2b-sync')?.checked;
       const failover = document.getElementById('sup-page-failover')?.checked;
 
-      showToast('جاري حفظ إعدادات السيرفرين...');
+      showToast('جاري حفظ إعدادات الموردين الثلاثة...');
       try {
         const res = await fetch('/api/admin/supplier/config', {
           method: 'POST',
@@ -6699,9 +7809,11 @@ const tg = window.Telegram?.WebApp;
             admin_tg_id: userId,
             batstore_api_key: batKey,
             prodseller_api_key: prodKey,
+            g2bulk_api_key: g2bKey,
             routing_strategy: strategy,
             batstore_sync_enabled: batSync,
             prodseller_sync_enabled: prodSync,
+            g2bulk_sync_enabled: g2bSync,
             auto_failover: failover
           })
         });
@@ -6710,7 +7822,7 @@ const tg = window.Telegram?.WebApp;
           showToast(d.error || 'فشل الحفظ');
           return;
         }
-        showToast('تم حفظ كافة إعدادات ومفاتيح السيرفرين بنجاح');
+        showToast('تم حفظ إعدادات ومفاتيح الموردين الثلاثة بنجاح');
         await loadAdminSuppliersDetails();
       } catch (e) {
         showToast(e.message);
@@ -6722,9 +7834,9 @@ const tg = window.Telegram?.WebApp;
       const btn = document.getElementById('btn-sup-page-sync');
       if (btn) {
         btn.disabled = true;
-        btn.innerText = 'جاري مزامنة المنتجات من السيرفرين...';
+        btn.innerText = 'جاري مزامنة المنتجات من الموردين الثلاثة...';
       }
-      showToast('جاري جلب ومزامنة المنتجات من كلا الموردين...');
+      showToast('جاري جلب ومزامنة المنتجات من الموردين الثلاثة...');
       try {
         const res = await fetch('/api/admin/supplier/sync', {
           method: 'POST',
@@ -6738,8 +7850,9 @@ const tg = window.Telegram?.WebApp;
         }
         const b = d.result?.batstore || {};
         const p = d.result?.prodseller || {};
+        const g = d.result?.g2bulk || {};
         const tot = d.result?.total_products || 0;
-        showToast(`تمت المزامنة بنجاح: BatStore (${b.created || 0}+/${b.updated || 0}) · ProdSeller (${p.created || 0}+/${p.updated || 0}) · الإجمالي: ${tot}`);
+        showToast(`تمت المزامنة بنجاح: BatStore (${b.created || 0}+/${b.updated || 0}) · ProdSeller (${p.created || 0}+/${p.updated || 0}) · G2Bulk (${g.created || 0}+/${g.updated || 0}) · الإجمالي: ${tot}`);
         await fetchCatalogData();
         await loadAdminSuppliersDetails();
       } catch (e) {
@@ -6747,7 +7860,7 @@ const tg = window.Telegram?.WebApp;
       } finally {
         if (btn) {
           btn.disabled = false;
-          btn.innerText = 'مزامنة وتحديث كافة المنتجات من كلا الموردين الآن';
+          btn.innerText = 'مزامنة وتحديث كافة المنتجات من الموردين الثلاثة الآن';
         }
       }
     }
@@ -7322,6 +8435,23 @@ const tg = window.Telegram?.WebApp;
         if (adminFinBox) adminFinBox.style.display = 'none';
         if (adminActionsBox) adminActionsBox.style.display = 'none';
         if (customerActionsBox) customerActionsBox.style.display = 'flex';
+      }
+
+      // Persistent post-purchase activation steps (hide when none)
+      const instrCard = document.getElementById('order-detail-instructions-card');
+      const instrSteps = document.getElementById('order-detail-instructions-steps');
+      if (instrCard && instrSteps) {
+        const rawInstr = isAr ? (order.instructions_ar || order.instructions_en) : (order.instructions_en || order.instructions_ar);
+        const steps = normalizeInstructionSteps(rawInstr);
+        if (steps.length) {
+          const instrLabel = document.getElementById('label-order-detail-instructions');
+          if (instrLabel) instrLabel.innerText = isAr ? 'خطوات التفعيل والاستخدام' : 'Activation Steps';
+          instrSteps.innerHTML = instructionStepsHTML(steps);
+          instrCard.style.display = 'block';
+        } else {
+          instrSteps.innerHTML = '';
+          instrCard.style.display = 'none';
+        }
       }
     }
 
@@ -7997,7 +9127,6 @@ const tg = window.Telegram?.WebApp;
       loadTrendingSearches();
       loadUserData();
       initSSE();
-      checkHomeScreenCapability();
       handleStartParam();
       return true;
     }

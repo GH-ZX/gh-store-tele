@@ -12,7 +12,7 @@ import uuid
 
 from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InputMediaPhoto
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InputMediaPhoto, WebAppInfo
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -170,7 +170,7 @@ async def batstore_product_detail(callback: CallbackQuery,
         "activation": "Custom Activation ⏳",
     }
     delivery = delivery_labels.get(delivery_raw, delivery_raw.title())
-    is_oos = RestockNotificationService.is_batstore_out_of_stock(product)
+    is_g2bulk = getattr(product, "supplier", "") == "g2bulk"
     if is_oos:
         await RestockNotificationService.auto_subscribe_if_out_of_stock(
             telegram_id=callback.from_user.id,
@@ -192,6 +192,14 @@ async def batstore_product_detail(callback: CallbackQuery,
         stock=f"🔴 0 {get_text(language, BotEntity.USER, 'batstore_out_of_stock')}\n\n{get_text(language, BotEntity.USER, 'restock_auto_subscribed_notice')}" if is_oos else (product.stock if product.stock is not None else 0),
         balance=f"{balance:.2f}",
     )
+    if is_g2bulk:
+        items = (getattr(product, "extra_meta", None) or {}).get("items") or []
+        caption += (
+            "\n\n🎮 <b>G2Bulk Games</b>\n"
+            f"Available denominations: {len(items)}\n"
+            "Open the Games Store in the Mini App to choose a denomination "
+            "and enter your Player ID."
+        )
 
     if is_oos:
         is_sub = await RestockNotificationService.is_subscribed(
@@ -213,13 +221,28 @@ async def batstore_product_detail(callback: CallbackQuery,
         )
     else:
         max_qty = _max_qty(product, balance)
-        for qty in range(1, min(10, max_qty) + 1):
-            kb.button(
-                text=str(qty),
-                callback_data=BatStoreCallback.create(
-                    level=13, product_id=product.product_id,
-                    category_name=cat_name, quantity=qty).pack())
-        kb.adjust(5)
+        if is_g2bulk:
+            app_host = str(getattr(config, "WEBHOOK_HOST", "") or "").rstrip("/")
+            if app_host:
+                kb.button(
+                    text="🎮 Open Games Store / فتح متجر الألعاب",
+                    web_app=WebAppInfo(url=f"{app_host}/app")
+                )
+            else:
+                kb.button(
+                    text="🎮 Open Games Store / فتح متجر الألعاب",
+                    callback_data=BatStoreCallback.create(
+                        level=12, product_id=product.product_id,
+                        category_name=cat_name).pack()
+                )
+        else:
+            for qty in range(1, min(10, max_qty) + 1):
+                kb.button(
+                    text=str(qty),
+                    callback_data=BatStoreCallback.create(
+                        level=13, product_id=product.product_id,
+                        category_name=cat_name, quantity=qty).pack())
+            kb.adjust(5)
     kb.row(InlineKeyboardButton(
         text=get_text(language, BotEntity.COMMON, "back_button"),
         callback_data=BatStoreCallback.create(level=11, category_name=cat_name).pack()))

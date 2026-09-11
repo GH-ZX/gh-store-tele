@@ -52,24 +52,76 @@ async def all_types(**kwargs):
         callback_data = AllCategoriesCallback.create(1)
     new_data = callback_data.model_copy(update={"level": 1, "item_type": None})
     media, kb_builder = await CategoryService.get_buttons(new_data, state, session, language)
-    import config
-    tma_host = (config.WEBHOOK_HOST or "").strip().rstrip('/')
-    uid = message.from_user.id if message.from_user else 0
-    if tma_host and uid:
-        from services.telegram_auth import generate_session_token
-        from aiogram.types import WebAppInfo, InlineKeyboardButton
-        auth_tok = generate_session_token(uid)
-        tma_url = f"{tma_host}/app?tg_id={uid}&auth_token={auth_tok}"
-        kb_builder.row(InlineKeyboardButton(
-            text="🛍️ تصفح وشراء المنتجات عبر المتجر السريع" if language == Language.AR else "🛍️ Explore Products in Mini App",
-            web_app=WebAppInfo(url=tma_url)
-        ))
     caption = media.caption if hasattr(media, 'caption') else str(media)
     if isinstance(message, Message):
         await message.answer(text=caption, reply_markup=kb_builder.as_markup())
     else:
         callback: CallbackQuery = message
         await safe_edit_message(callback, media, kb_builder.as_markup())
+
+
+async def return_to_main_menu(**kwargs):
+    """Return directly to the bot's main menu / home page when back button is pressed at root categories."""
+    callback: CallbackQuery = kwargs.get("callback")
+    session: AsyncSession = kwargs.get("session")
+    language: Language = kwargs.get("language")
+    state: FSMContext = kwargs.get("state")
+    if state:
+        await state.clear()
+
+    telegram_id = callback.from_user.id
+    user = await UserRepository.get_by_tgid(telegram_id, session)
+    balance = round((user.top_up_amount or 0.0) - (user.consume_records or 0.0), 2) if user else 0.0
+    from services.user import get_vip_tier_info
+    tier_label, discount_pct = get_vip_tier_info(user.consume_records if user else 0, getattr(user, "custom_discount_pct", None) if user else None)
+    is_admin = telegram_id in config.ADMIN_ID_LIST
+
+    import config as _cfg
+    tma_host = (_cfg.WEBHOOK_HOST or "").strip().rstrip('/')
+    from services.telegram_auth import generate_session_token
+    auth_token = generate_session_token(telegram_id)
+    tma_url = f"{tma_host}/app?tg_id={telegram_id}&auth_token={auth_token}" if tma_host else ""
+
+    is_ar = (language == Language.AR)
+    user_name = callback.from_user.first_name or callback.from_user.username or ("العميل" if is_ar else "Customer")
+
+    if is_ar:
+        welcome_caption = (
+            f"👋 أهلاً بك <b>{user_name}</b> في متجر <b>GH Store</b> المعتمد!\n\n"
+            f"💎 <b>رتبتك:</b> {tier_label}\n"
+            f"💰 <b>الرصيد المتاح:</b> <code>${balance:.2f} USD</code>\n\n"
+            f"🛍️ يمكنك تصفح المنتجات الرقمية، شحن الرصيد، ومتابعة طلباتك فورياً عبر المتجر السريع أدناه:"
+        )
+        btn_shop = "Open App"
+        btn_wallet = "💳 شحن الرصيد"
+        btn_orders = "📦 طلباتي وعملياتي"
+        btn_admin = "👑 لوحة المشرف"
+    else:
+        welcome_caption = (
+            f"👋 Welcome <b>{user_name}</b> to <b>GH Store</b>!\n\n"
+            f"💎 <b>Your Rank:</b> {tier_label}\n"
+            f"💰 <b>Available Balance:</b> <code>${balance:.2f} USD</code>\n\n"
+            f"🛍️ Explore our full digital catalog, manage your balance, and track orders directly in the WebApp below:"
+        )
+        btn_shop = "Open App"
+        btn_wallet = "💳 Top Up Balance"
+        btn_orders = "📦 My Orders"
+        btn_admin = "👑 Admin Panel"
+
+    from aiogram import types
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    inline_kb = InlineKeyboardBuilder()
+    if tma_url:
+        inline_kb.button(text=btn_shop, web_app=types.WebAppInfo(url=tma_url))
+        inline_kb.button(text=btn_wallet, web_app=types.WebAppInfo(url=f"{tma_url}&startapp=wallet"))
+        inline_kb.button(text=btn_orders, web_app=types.WebAppInfo(url=f"{tma_url}&startapp=orders"))
+        if is_admin:
+            inline_kb.button(text=btn_admin, web_app=types.WebAppInfo(url=f"{tma_url}&startapp=admin_radar"))
+        inline_kb.adjust(1, 2)
+
+    from utils.utils import safe_edit_message, get_bot_photo_id
+    media = InputMediaPhoto(media=get_bot_photo_id(), caption=welcome_caption)
+    await safe_edit_message(callback, media, inline_kb.as_markup())
 
 
 async def all_categories(**kwargs):
@@ -205,7 +257,7 @@ async def navigate_categories(callback: CallbackQuery,
         pass
 
     levels = {
-        0: all_types,
+        0: return_to_main_menu,
         1: all_categories,
         2: show_subcategories_in_category,
         3: select_quantity,
@@ -213,7 +265,6 @@ async def navigate_categories(callback: CallbackQuery,
         5: add_to_cart,
         # BatStore levels handled inside all_categories / show_subcategories_in_category
     }
-
     current_level_function = levels.get(current_level)
     if current_level_function is None:
         return
@@ -276,7 +327,8 @@ async def _batstore_products_in_category(callback, callback_data, state, session
     for p in slice_:
         is_oos = RestockNotificationService.is_batstore_out_of_stock(p)
         icon = p.emoji or "⚡"
-        label = f"{icon} {p.name}"
+        p_name = (p.custom_name_ar if language == Language.AR and p.custom_name_ar else (p.custom_name or p.name))
+        label = f"{icon} {p_name}"
         if p.sell_price_usd is not None:
             label = f"{label} — {p.sell_price_usd:.2f}{sym}"
         if is_oos:
@@ -306,10 +358,30 @@ async def _batstore_products_in_category(callback, callback_data, state, session
                 callback_data=AllCategoriesCallback.create(
                     level=1, batstore_category_name=cat_name, page=page + 1).pack()))
         kb.row(*nav)
+    # Deep link into the Mini App category view (startapp=cat_<name>).
+    try:
+        import config as _cfg
+        from urllib.parse import quote as _quote
+        _tma_host = (_cfg.WEBHOOK_HOST or "").strip().rstrip("/")
+        _uid = callback.from_user.id if callback.from_user else 0
+        if _tma_host and _uid:
+            from services.telegram_auth import generate_session_token as _gen_tok
+            from aiogram.types import WebAppInfo as _WebAppInfo
+            _tok = _gen_tok(_uid)
+            _cat_slug = _quote(str(cat_name), safe="")
+            kb.row(InlineKeyboardButton(
+                text="🛍️ فتح هذه الفئة في المتجر السريع" if language == Language.AR else "🛍️ Open This Category in Mini App",
+                web_app=_WebAppInfo(url=f"{_tma_host}/app?tg_id={_uid}&auth_token={_tok}&startapp=cat_{_cat_slug}"),
+            ))
+    except Exception:
+        pass
 
     kb.row(_back_to_categories(language))
+    from repositories.storefront_category import StorefrontCategoryRepository
+    c_entry = await StorefrontCategoryRepository.get_by_name(cat_name, session)
+    disp_cat_name = (c_entry.name_ar if language == Language.AR else c_entry.name_en) if c_entry else cat_name
     caption = get_text(language, BotEntity.USER, "batstore_category_products").format(
-        category=cat_name)
+        category=disp_cat_name)
     await safe_edit_message(callback, caption, kb.as_markup())
 
 
@@ -357,15 +429,17 @@ async def _batstore_product_detail(callback, callback_data, state, session, lang
     desc = re.sub(r'<tg-emoji[^>]*>([^<]*)</tg-emoji>', r'\1', desc)
     desc = desc.strip()
 
+    p_title = (product.custom_name_ar if language == Language.AR and product.custom_name_ar else (product.custom_name or product.name))
+    desc_text = (product.description_ar if language == Language.AR and product.description_ar else (product.description or product.description_ar or ""))
+    if desc_text:
+        desc = re.sub(r'<tg-emoji[^>]*>([^<]*)</tg-emoji>', r'\1', desc_text).strip()
     icon_html = format_product_icon(product)
     lines = []
     if is_oos:
-        lines.append(f"🔴 {icon_html} <b>{product.name}</b>")
+        lines.append(f"🔴 {icon_html} <b>{p_title}</b>")
         lines.append(f"<b>{get_text(language, BotEntity.USER, 'product_out_of_stock_badge')}</b>")
     else:
-        lines.append(f"{icon_html} <b>{product.name}</b>")
-    if desc:
-        lines.append(f"\n{desc}")
+        lines.append(f"{icon_html} <b>{p_title}</b>")
     lines.append(f"\n💲 Price: <b>{product.sell_price_usd:.2f}{sym}</b>")
     lines.append(f"📦 Delivery: {delivery}")
     if product.warranty_days:
@@ -408,6 +482,21 @@ async def _batstore_product_detail(callback, callback_data, state, session, lang
                     batstore_product_id=product.product_id,
                     quantity=qty).pack())
         kb.adjust(5)
+    # Deep link into the Mini App product sheet (startapp=prod_<id>).
+    try:
+        import config as _cfg2
+        _tma_host2 = (_cfg2.WEBHOOK_HOST or "").strip().rstrip("/")
+        _uid2 = callback.from_user.id if callback.from_user else 0
+        if _tma_host2 and _uid2 and product.product_id:
+            from services.telegram_auth import generate_session_token as _gen_tok2
+            from aiogram.types import WebAppInfo as _WebAppInfo2
+            _tok2 = _gen_tok2(_uid2)
+            kb.row(InlineKeyboardButton(
+                text="🛍️ فتح هذا المنتج في المتجر السريع" if language == Language.AR else "🛍️ Open This Product in Mini App",
+                web_app=_WebAppInfo2(url=f"{_tma_host2}/app?tg_id={_uid2}&auth_token={_tok2}&startapp=prod_{product.product_id}"),
+            ))
+    except Exception:
+        pass
     kb.row(InlineKeyboardButton(
         text=get_text(language, BotEntity.COMMON, "back_button"),
         callback_data=AllCategoriesCallback.create(

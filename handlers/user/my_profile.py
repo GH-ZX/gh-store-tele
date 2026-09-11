@@ -161,6 +161,20 @@ async def batstore_orders(**kwargs):
         callback.from_user.id, session, limit=10)
 
     kb_builder = InlineKeyboardBuilder()
+    # Deep link into the Mini App orders tab (startapp=orders).
+    try:
+        _tma_host = (config.WEBHOOK_HOST or "").strip().rstrip("/")
+        _uid = callback.from_user.id if callback.from_user else 0
+        if _tma_host and _uid:
+            from services.telegram_auth import generate_session_token as _gen_tok
+            from aiogram.types import WebAppInfo as _WebAppInfo, InlineKeyboardButton as _Btn
+            _tok = _gen_tok(_uid)
+            kb_builder.row(_Btn(
+                text="🧾 فتح طلباتي في المتجر السريع" if language == Language.AR else "🧾 Open My Orders in Mini App",
+                web_app=_WebAppInfo(url=f"{_tma_host}/app?tg_id={_uid}&auth_token={_tok}&startapp=orders"),
+            ))
+    except Exception:
+        pass
     if not orders:
         caption = get_text(language, BotEntity.USER, "batstore_orders_empty")
     else:

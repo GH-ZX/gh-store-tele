@@ -16,8 +16,10 @@ class PromotionalBanner(Base):
     badge_ar = Column(String, nullable=True)
     badge_en = Column(String, nullable=True)
     image_url = Column(String, nullable=True)
+    target_type = Column(String, default="category", nullable=True)  # category | product | tab | url
     target_category = Column(String, nullable=True)
     product_id = Column(Integer, nullable=True)
+    target_url = Column(String, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     sort_order = Column(Integer, default=1, nullable=False)
 
@@ -34,8 +36,10 @@ class PromotionalBannerDTO(BaseModel):
     badge_ar: str | None = None
     badge_en: str | None = None
     image_url: str | None = None
+    target_type: str = "category"
     target_category: str | None = None
     product_id: int | None = None
+    target_url: str | None = None
     is_active: bool = True
     sort_order: int = 1
 
@@ -51,6 +55,7 @@ class PromotionalBannerAdmin(ModelView, model=PromotionalBanner):
         PromotionalBanner.title_en,
         PromotionalBanner.title_ar,
         PromotionalBanner.badge_en,
+        PromotionalBanner.target_type,
         PromotionalBanner.is_active,
         PromotionalBanner.sort_order,
     ]
@@ -58,6 +63,7 @@ class PromotionalBannerAdmin(ModelView, model=PromotionalBanner):
     column_sortable_list = [PromotionalBanner.id, PromotionalBanner.sort_order, PromotionalBanner.is_active]
     form_columns = [
         "title_en", "title_ar", "subtitle_en", "subtitle_ar",
-        "badge_en", "badge_ar", "image_url", "target_category",
-        "product_id", "is_active", "sort_order"
+        "badge_en", "badge_ar", "image_url", "target_type",
+        "target_category", "product_id", "target_url",
+        "is_active", "sort_order"
     ]
