@@ -1469,8 +1469,9 @@
 
       <select class="admin-text-input" id="sup-page-routing-select" style="font-size: 12px; padding: 10px; margin-bottom: 12px; font-weight: 700;">
         <option value="auto_cheapest">التوجيه التلقائي للأرخص تكلفة لتحقيق أعلى هامش ربح</option>
-        <option value="batstore_primary">سيرفر 1 أساسي مع التحويل لسيرفر 2 عند النفاد</option>
-        <option value="prodseller_primary">سيرفر 2 أساسي مع التحويل لسيرفر 1 عند النفاد</option>
+        <option value="batstore_primary">سيرفر 1 (BatStore) أساسي مع التحويل عند النفاد</option>
+        <option value="prodseller_primary">سيرفر 2 (ProdSeller) أساسي مع التحويل عند النفاد</option>
+        <option value="g2bulk_primary">سيرفر 3 (G2Bulk) أساسي مع التحويل عند النفاد</option>
       </select>
 
       <!-- Auto-Failover Protection Switch -->
@@ -1864,19 +1865,25 @@
       </div>
 
       <!-- 3 APIs Supplier Reserves & Liquidity Grid -->
-      <div class="section-title" style="margin-top: 16px;" id="admin-reserves-sec-title">أرصدة محافظ الموردين والسيولة (3 APIs)</div>
-      <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 12px;">
+      <div class="section-title" style="margin-top: 16px;" id="admin-reserves-sec-title">أرصدة محافظ الموردين والسيولة (4 APIs)</div>
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px;">
         <!-- 1. BatStore (Server 1) -->
-        <div class="inset-card" style="padding: 12px; text-align: center; border-radius: 12px; border: 1px solid rgba(16, 185, 129, 0.3); background: linear-gradient(180deg, rgba(16, 185, 129, 0.06) 0%, var(--input-bg) 100%);">
-          <div style="font-size: 11px; font-weight: 800; color: #10b981; margin-bottom: 4px;" id="admin-reserves-s1-title">⚡ سيرفر 1 (BatStore)</div>
-          <div style="font-size: 20px; font-weight: 900; color: #10b981;" id="admin-wallet-batstore">$0.00</div>
-          <div style="font-size: 10px; color: var(--hint); margin-top: 3px;" id="admin-reserves-s1-sub">تجهيز الاشتراكات (USD)</div>
+        <div class="inset-card" style="padding: 10px; text-align: center; border-radius: 12px; border: 1px solid rgba(16, 185, 129, 0.3); background: linear-gradient(180deg, rgba(16, 185, 129, 0.06) 0%, var(--input-bg) 100%);">
+          <div style="font-size: 10px; font-weight: 800; color: #10b981; margin-bottom: 4px;" id="admin-reserves-s1-title">⚡ سيرفر 1 (BatStore)</div>
+          <div style="font-size: 16px; font-weight: 900; color: #10b981;" id="admin-wallet-batstore">$0.00</div>
+          <div style="font-size: 9px; color: var(--hint); margin-top: 3px;" id="admin-reserves-s1-sub">اشتراكات (USD)</div>
         </div>
         <!-- 2. ProdSeller (Server 2) -->
-        <div class="inset-card" style="padding: 12px; text-align: center; border-radius: 12px; border: 1px solid rgba(56, 189, 248, 0.3); background: linear-gradient(180deg, rgba(56, 189, 248, 0.06) 0%, var(--input-bg) 100%);">
-          <div style="font-size: 11px; font-weight: 800; color: #38bdf8; margin-bottom: 4px;" id="admin-reserves-s2-title">🚀 سيرفر 2 (ProdSeller)</div>
-          <div style="font-size: 20px; font-weight: 900; color: #38bdf8;" id="admin-wallet-prodseller">$0.00</div>
-          <div style="font-size: 10px; color: var(--hint); margin-top: 3px;" id="admin-reserves-s2-sub">الحسابات الفورية (USDT)</div>
+        <div class="inset-card" style="padding: 10px; text-align: center; border-radius: 12px; border: 1px solid rgba(56, 189, 248, 0.3); background: linear-gradient(180deg, rgba(56, 189, 248, 0.06) 0%, var(--input-bg) 100%);">
+          <div style="font-size: 10px; font-weight: 800; color: #38bdf8; margin-bottom: 4px;" id="admin-reserves-s2-title">🚀 سيرفر 2 (ProdSeller)</div>
+          <div style="font-size: 16px; font-weight: 900; color: #38bdf8;" id="admin-wallet-prodseller">$0.00</div>
+          <div style="font-size: 9px; color: var(--hint); margin-top: 3px;" id="admin-reserves-s2-sub">حسابات (USDT)</div>
+        </div>
+        <!-- 3. G2Bulk (Server 3) -->
+        <div class="inset-card" style="padding: 10px; text-align: center; border-radius: 12px; border: 1px solid rgba(168, 85, 247, 0.3); background: linear-gradient(180deg, rgba(168, 85, 247, 0.06) 0%, var(--input-bg) 100%);">
+          <div style="font-size: 10px; font-weight: 800; color: #c084fc; margin-bottom: 4px;" id="admin-reserves-s3-title">🎮 سيرفر 3 (G2Bulk)</div>
+          <div style="font-size: 16px; font-weight: 900; color: #c084fc;" id="admin-wallet-g2bulk">$0.00</div>
+          <div style="font-size: 9px; color: var(--hint); margin-top: 3px;" id="admin-reserves-s3-sub">ألعاب وقسائم (USD)</div>
         </div>
       </div>
 
@@ -2007,21 +2014,26 @@
             <span style="font-size: 11px; color: var(--hint);" id="admin-sup-details-link">تفاصيل ←</span>
           </div>
         </div>
-        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;">
-          <div style="background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 8px;">
-            <div style="font-size: 10px; font-weight: 700; color: var(--hint); margin-bottom: 2px;" id="admin-sup-s1-title">سيرفر 1 (بات ستور)</div>
-            <div style="font-size: 14px; font-weight: 800; color: var(--accent);" id="admin-bal-batstore">$0.00</div>
-            <div style="font-size: 9px; color: var(--hint);" id="admin-sup-s1-sub">رصيد المورد 1</div>
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px;">
+          <div style="background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 6px 4px; text-align: center;">
+            <div style="font-size: 9px; font-weight: 700; color: var(--hint); margin-bottom: 2px;" id="admin-sup-s1-title">سيرفر 1 (BatStore)</div>
+            <div style="font-size: 13px; font-weight: 800; color: var(--accent);" id="admin-bal-batstore">$0.00</div>
+            <div style="font-size: 8px; color: var(--hint);" id="admin-sup-s1-sub">اشتراكات</div>
           </div>
-          <div style="background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 8px;">
-            <div style="font-size: 10px; font-weight: 700; color: var(--hint); margin-bottom: 2px;" id="admin-sup-s2-title">سيرفر 2 (برود سيلر)</div>
-            <div style="font-size: 14px; font-weight: 800; color: #10b981;" id="admin-bal-prodseller">$0.00</div>
-            <div style="font-size: 9px; color: var(--hint);" id="admin-prodseller-tier">برونزية</div>
+          <div style="background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 6px 4px; text-align: center;">
+            <div style="font-size: 9px; font-weight: 700; color: var(--hint); margin-bottom: 2px;" id="admin-sup-s2-title">سيرفر 2 (ProdSeller)</div>
+            <div style="font-size: 13px; font-weight: 800; color: #10b981;" id="admin-bal-prodseller">$0.00</div>
+            <div style="font-size: 8px; color: var(--hint);" id="admin-prodseller-tier">حسابات</div>
           </div>
-          <div style="background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 8px;">
-            <div style="font-size: 10px; font-weight: 700; color: var(--hint); margin-bottom: 2px;" id="admin-sup-sam-title">محفظة SAM</div>
-            <div style="font-size: 13px; font-weight: 800; color: var(--success);" id="admin-bal-sam-usd">$0.00</div>
-            <div style="font-size: 10px; font-weight: 700; color: var(--warning); margin-top: 1px;" id="admin-bal-sam-syp">0 ل.س</div>
+          <div style="background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 6px 4px; text-align: center;">
+            <div style="font-size: 9px; font-weight: 700; color: var(--hint); margin-bottom: 2px;" id="admin-sup-s3-title">سيرفر 3 (G2Bulk)</div>
+            <div style="font-size: 13px; font-weight: 800; color: #c084fc;" id="admin-bal-g2bulk">$0.00</div>
+            <div style="font-size: 8px; color: var(--hint);">ألعاب</div>
+          </div>
+          <div style="background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 6px 4px; text-align: center;">
+            <div style="font-size: 9px; font-weight: 700; color: var(--hint); margin-bottom: 2px;" id="admin-sup-sam-title">محفظة SAM</div>
+            <div style="font-size: 12px; font-weight: 800; color: var(--success);" id="admin-bal-sam-usd">$0.00</div>
+            <div style="font-size: 8px; font-weight: 700; color: var(--warning); margin-top: 1px;" id="admin-bal-sam-syp">0 ل.س</div>
           </div>
         </div>
       </div>

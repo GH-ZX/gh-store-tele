@@ -1240,7 +1240,7 @@ async def admin_update_supplier_config(request: Request):
             await ConfigService.set(session, "G2BULK_API_KEY", g2b_key)
         if g2b_sync is not None:
             await ConfigService.set(session, "G2BULK_SYNC_ENABLED", "true" if g2b_sync else "false")
-        if strategy in ("auto_cheapest", "batstore_primary", "prodseller_primary"):
+        if strategy in ("auto_cheapest", "batstore_primary", "prodseller_primary", "g2bulk_primary"):
             await ConfigService.set(session, "SUPPLIER_ROUTING_STRATEGY", strategy)
         if bat_sync is not None:
             await ConfigService.set(session, "BATSTORE_SYNC_ENABLED", "true" if bat_sync else "false")

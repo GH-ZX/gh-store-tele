@@ -6656,11 +6656,13 @@ const tg = window.Telegram?.WebApp;
           setText('admin-wallet-headline-bal', `$${Number(sw.total_supplier_usd || 0).toFixed(2)}`);
           setText('admin-wallet-batstore', `$${Number(sw.batstore_usd || 0).toFixed(2)}`);
           setText('admin-wallet-prodseller', `$${Number(sw.prodseller_usd || 0).toFixed(2)}`);
+          setText('admin-wallet-g2bulk', `$${Number(sw.g2bulk_usd || 0).toFixed(2)}`);
           setText('admin-wallet-sam-usd', `$${Number(sw.sam_usd || 0).toFixed(2)}`);
           setText('admin-wallet-sam-syp', `${Math.round(Number(sw.sam_syp || 0)).toLocaleString()} ${(currentAppLanguage === 'ar' ? 'ل.س' : 'SYP')}`);
           setText('admin-wallet-users-total', `$${Number(d.admin_stats.total_user_balances || d.admin_stats.total_users_balance || 0).toFixed(2)}`);
           setText('admin-bal-batstore', `$${Number(sw.batstore_usd || 0).toFixed(2)}`);
           setText('admin-bal-prodseller', `$${Number(sw.prodseller_usd || 0).toFixed(2)}`);
+          setText('admin-bal-g2bulk', `$${Number(sw.g2bulk_usd || 0).toFixed(2)}`);
           setText('admin-bal-sam-usd', `$${Number(sw.sam_usd || 0).toFixed(2)} USD`);
           setText('admin-bal-sam-syp', `${Math.round(Number(sw.sam_syp || 0)).toLocaleString()} ل.س`);
           setText('admin-bal-total-suppliers-pill', `إجمالي: $${Number(sw.total_supplier_usd || 0).toFixed(2)}`);
@@ -6896,6 +6898,10 @@ const tg = window.Telegram?.WebApp;
                 const totalPill = document.getElementById('admin-bal-total-suppliers-pill');
                 if (batEl) batEl.innerText = `$${(sw.batstore_usd || 0.0).toFixed(2)}`;
                 if (prodEl) prodEl.innerText = `$${(sw.prodseller_usd || 0.0).toFixed(2)}`;
+                const g2bEl = document.getElementById('admin-bal-g2bulk');
+                if (g2bEl) g2bEl.innerText = `$${(sw.g2bulk_usd || 0.0).toFixed(2)}`;
+                const g2bWallEl = document.getElementById('admin-wallet-g2bulk');
+                if (g2bWallEl) g2bWallEl.innerText = `$${(sw.g2bulk_usd || 0.0).toFixed(2)}`;
                 if (samUsdEl) samUsdEl.innerText = `$${(sw.sam_usd || 0.0).toFixed(2)} USD`;
                 if (samSypEl) samSypEl.innerText = `${Math.round(sw.sam_syp || 0.0).toLocaleString()} ${currentAppLanguage === 'ar' ? 'ل.س' : 'SYP'}`;
                 if (totalPill) totalPill.innerText = `${currentAppLanguage === 'ar' ? 'إجمالي:' : 'Total:'} $${(sw.total_supplier_usd || 0.0).toFixed(2)}`;
@@ -7639,6 +7645,14 @@ const tg = window.Telegram?.WebApp;
           setText('sup-card-prod-bal', `$${Number(sw.prodseller_usd || 0).toFixed(2)} USDT`);
           setText('sup-card-g2b-bal', `$${Number(sw.g2bulk_usd || 0).toFixed(2)} USD`);
           setText('suppliers-view-total-bal', `$${Number(sw.total_supplier_usd || 0).toFixed(2)} USD`);
+        }
+        if (d.routing_strategy) {
+          const stratEl = document.getElementById('sup-page-routing-select');
+          if (stratEl) stratEl.value = d.routing_strategy;
+        }
+        if (d.auto_failover !== undefined) {
+          const failEl = document.getElementById('sup-page-failover');
+          if (failEl) failEl.checked = !!d.auto_failover;
         }
         // Update live balances across all views
         await refreshSupplierBalances(false);

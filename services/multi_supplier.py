@@ -27,6 +27,7 @@ class MultiSupplierService:
     ROUTING_AUTO_CHEAPEST = "auto_cheapest"
     ROUTING_BATSTORE_PRIMARY = "batstore_primary"
     ROUTING_PRODSELLER_PRIMARY = "prodseller_primary"
+    ROUTING_G2BULK_PRIMARY = "g2bulk_primary"
 
     @staticmethod
     async def get_routing_strategy(session: AsyncSession | Session) -> str:

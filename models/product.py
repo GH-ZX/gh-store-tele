@@ -331,6 +331,20 @@ class ProductAdmin(ModelView, model=Product):
         Product.stock
     ]
     column_default_sort = [(Product.name, True)]
+    column_searchable_list = [
+        Product.product_id,
+        Product.name,
+        Product.custom_name,
+        Product.custom_group,
+        Product.category,
+        Product.supplier,
+    ]
+    column_filters = [
+        Product.supplier,
+        Product.category,
+        Product.hidden,
+        Product.delivery_type,
+    ]
 
     form_columns = [
         "name", "custom_name", "category", "cost_usd", "sell_price_usd",
