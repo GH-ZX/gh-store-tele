@@ -2602,15 +2602,15 @@ const tg = window.Telegram?.WebApp;
       if (activeCatalogFilter === 'wishlist') {
         result = result.filter(p => wishlistSet.has(Number(p.id)));
       } else if (activeCatalogFilter === 'stock') {
-        result = result.filter(p => p.stock === null || p.stock > 0);
+        result = result.filter(p => !checkProductEffectiveStock(p).isOutOfStock);
       } else if (activeCatalogFilter === 'instant') {
         result = result.filter(p => p.delivery_type !== 'activation');
       }
 
       // Priority sort: In-stock items ALWAYS at the top, out-of-stock items sink to the very end!
       result.sort((a, b) => {
-        const aOut = (a.stock !== null && a.stock <= 0) ? 1 : 0;
-        const bOut = (b.stock !== null && b.stock <= 0) ? 1 : 0;
+        const aOut = checkProductEffectiveStock(a).isOutOfStock ? 1 : 0;
+        const bOut = checkProductEffectiveStock(b).isOutOfStock ? 1 : 0;
         if (aOut !== bOut) return aOut - bOut;
         if (activeCatalogFilter === 'lowprice') {
           return (a.price || 0) - (b.price || 0);
@@ -3214,6 +3214,9 @@ const tg = window.Telegram?.WebApp;
         adminFolderBar.style.display = (userData && userData.is_admin) ? 'block' : 'none';
       }
       const siblings = entry.items.slice().sort((a, b) => {
+        const aOut = checkProductEffectiveStock(a).isOutOfStock ? 1 : 0;
+        const bOut = checkProductEffectiveStock(b).isOutOfStock ? 1 : 0;
+        if (aOut !== bOut) return aOut - bOut;
         const dw = (Number(a.duration_weight || 100) - Number(b.duration_weight || 100));
         if (dw !== 0) return dw;
         return (Number(a.price) || 0) - (Number(b.price) || 0);
@@ -3812,7 +3815,12 @@ const tg = window.Telegram?.WebApp;
         selectedProduct.cost_usd = Number(activeVariantItem.cost);
       }
 
-      listEl.innerHTML = items.map(item => {
+      listEl.innerHTML = items.slice().sort((a, b) => {
+        const aOut = (a.stock !== undefined && a.stock !== null && Number(a.stock) <= 0) ? 1 : 0;
+        const bOut = (b.stock !== undefined && b.stock !== null && Number(b.stock) <= 0) ? 1 : 0;
+        if (aOut !== bOut) return aOut - bOut;
+        return 0;
+      }).map(item => {
         const isSelected = (String(item.id) === String(selectedProduct.selected_item_id));
         const itemPrice = isReseller ? (item.reseller_price || item.price) : item.price;
         const priceFormatted = Number(itemPrice || 0).toFixed(2);
@@ -4455,10 +4463,9 @@ const tg = window.Telegram?.WebApp;
       haptic('light');
       if (tg?.MainButton) tg.MainButton.showProgress(false);
       const buyBtn = document.getElementById('btn-inapp-purchase');
-      if (buyBtn) {
-        buyBtn.disabled = true;
-        buyBtn.innerHTML = `<span>${currentAppLanguage === 'ar' ? 'جاري معالجة الطلب...' : 'Processing Order...'}</span>`;
-      }
+      const buyLbl = document.getElementById('btn-buy-action-label');
+      if (buyBtn) buyBtn.disabled = true;
+      if (buyLbl) buyLbl.innerText = (currentAppLanguage === 'ar') ? 'جاري معالجة الطلب...' : 'Processing Order...';
 
       const payload = {
         tg_id: userId,
@@ -4551,6 +4558,9 @@ const tg = window.Telegram?.WebApp;
           document.querySelectorAll('.tab-view').forEach(el => el.classList.remove('active'));
           const successView = document.getElementById('view-order-success');
           if (successView) successView.classList.add('active');
+
+          if (buyBtn) buyBtn.disabled = false;
+          if (buyLbl) buyLbl.innerText = (I18N[currentAppLanguage] || I18N.ar).buy_now || 'شراء';
         } else {
           haptic('error');
           showToast(d.error || (currentAppLanguage === 'ar' ? 'فشل إتمام الطلب.' : 'Order failed.'));

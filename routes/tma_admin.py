@@ -1806,13 +1806,25 @@ async def admin_update_product(request: Request):
         prod = (await session_execute(stmt, session)).scalar_one_or_none()
         if not prod:
             return JSONResponse({"error": "product_not_found"}, status_code=404)
+        orig_custom_name_ar = prod.custom_name_ar
+        orig_custom_group_ar = prod.custom_group_ar
+        ar_name_changed = "custom_name_ar" in body and (body["custom_name_ar"] or "").strip() != (orig_custom_name_ar or "").strip()
         if "custom_name" in body:
-            prod.custom_name = (body["custom_name"] or "").strip() or None
-        if "custom_name_ar" in body:
+            cn = (body["custom_name"] or "").strip() or None
+            if cn != prod.custom_name:
+                prod.custom_name = cn
+                if not ar_name_changed:
+                    prod.custom_name_ar = cn
+        if ar_name_changed:
             prod.custom_name_ar = (body["custom_name_ar"] or "").strip() or None
+        ar_group_changed = "custom_group_ar" in body and (body["custom_group_ar"] or "").strip() != (orig_custom_group_ar or "").strip()
         if "custom_group" in body:
-            prod.custom_group = (body["custom_group"] or "").strip() or None
-        if "custom_group_ar" in body:
+            cg = (body["custom_group"] or "").strip() or None
+            if cg != prod.custom_group:
+                prod.custom_group = cg
+                if not ar_group_changed:
+                    prod.custom_group_ar = cg
+        if ar_group_changed:
             prod.custom_group_ar = (body["custom_group_ar"] or "").strip() or None
         if "category" in body:
             prod.category = (body["category"] or "").strip() or prod.category
@@ -1941,9 +1953,15 @@ async def admin_update_folder(request: Request):
             return JSONResponse({"error": "folder_not_found"}, status_code=404)
 
         old_title_en = folder.title_en
+        old_title_ar = folder.title_ar
+        ar_changed = "title_ar" in body and str(body["title_ar"]).strip() != str(old_title_ar or "").strip()
         if "title_en" in body and str(body["title_en"]).strip():
-            folder.title_en = str(body["title_en"]).strip()
-        if "title_ar" in body and str(body["title_ar"]).strip():
+            new_en = str(body["title_en"]).strip()
+            if new_en != old_title_en:
+                folder.title_en = new_en
+                if not ar_changed:
+                    folder.title_ar = new_en
+        if ar_changed:
             folder.title_ar = str(body["title_ar"]).strip()
         if "icon" in body:
             folder.icon = str(body["icon"]).strip() or "📁"

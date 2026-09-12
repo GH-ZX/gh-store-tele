@@ -231,82 +231,82 @@ class ProductSpecParser:
 
     BRAND_FOLDERS = [
         # AI & Chatbots
-        {"key": "chatgpt", "category": "AI & Chatbots", "title_en": "ChatGPT", "title_ar": "شات جي بي تي", "icon": "🤖", "custom_emoji_id": "5465366406979267927", "priority": 1, "patterns": [r"\bchat\s*gpt\b", r"\bgpt\b"]},
-        {"key": "gemini", "category": "AI & Chatbots", "title_en": "Google Gemini", "title_ar": "جوجل جيميني", "icon": "✨", "custom_emoji_id": "5465366406979267926", "priority": 2, "patterns": [r"\bgemini\b"]},
-        {"key": "claude", "category": "AI & Chatbots", "title_en": "Claude AI", "title_ar": "كلود آي آي", "icon": "🧠", "custom_emoji_id": "5368324170671202286", "priority": 3, "patterns": [r"\bclaude\b"]},
-        {"key": "codex", "category": "AI & Chatbots", "title_en": "Codex API", "title_ar": "كودكس", "icon": "💻", "custom_emoji_id": "5465366406979267930", "priority": 4, "patterns": [r"\bcodex\b"]},
-        {"key": "gamma", "category": "AI & Chatbots", "title_en": "Gamma AI", "title_ar": "غاما آي آي", "icon": "⚡", "custom_emoji_id": "5465366406979267929", "priority": 5, "patterns": [r"\bgamma\b"]},
-        {"key": "elevenlabs", "category": "AI & Chatbots", "title_en": "ElevenLabs", "title_ar": "إليفن لابس", "icon": "🎙️", "custom_emoji_id": "5465366406979267931", "priority": 6, "patterns": [r"\belevenlabs\b"]},
-        {"key": "grok", "category": "AI & Chatbots", "title_en": "Super Grok", "title_ar": "جروك", "icon": "⚡", "custom_emoji_id": "5465366406979267929", "priority": 7, "patterns": [r"\bgrok\b"]},
-        {"key": "cursor", "category": "AI & Chatbots", "title_en": "Cursor Pro", "title_ar": "كيرسور برو", "icon": "💻", "custom_emoji_id": "5465366406979267930", "priority": 8, "patterns": [r"\bcursor\b"]},
-        {"key": "lovable", "category": "AI & Chatbots", "title_en": "Lovable AI", "title_ar": "لوفابل", "icon": "❤️", "custom_emoji_id": "5465366406979267926", "priority": 9, "patterns": [r"\blova[bl]e\b", r"\blovalbe\b", r"\blovable\b"]},
-        {"key": "manus", "category": "AI & Chatbots", "title_en": "Manus AI", "title_ar": "مانوس", "icon": "🤖", "custom_emoji_id": "5465366406979267927", "priority": 10, "patterns": [r"\bmanus\b"]},
-        {"key": "kiro", "category": "AI & Chatbots", "title_en": "Kiro AI", "title_ar": "كيرو", "icon": "⚡", "custom_emoji_id": "5465366406979267929", "priority": 11, "patterns": [r"\bkiro\b"]},
-        {"key": "wispr", "category": "AI & Chatbots", "title_en": "Wispr Flow", "title_ar": "ويسبر فلو", "icon": "🎙️", "custom_emoji_id": "5465366406979267931", "priority": 12, "patterns": [r"\bwispr\b"]},
-        {"key": "magic_patterns", "category": "AI & Chatbots", "title_en": "Magic Patterns", "title_ar": "ماجيك باترنز", "icon": "🎨", "custom_emoji_id": "5465366406979267932", "priority": 13, "patterns": [r"\bmagic\s*patterns\b"]},
+        {"key": "chatgpt", "category": "AI & Chatbots", "title_en": "ChatGPT", "title_ar": "ChatGPT", "icon": "🤖", "custom_emoji_id": "5465366406979267927", "priority": 1, "patterns": [r"\bchat\s*gpt\b", r"\bgpt\b"]},
+        {"key": "gemini", "category": "AI & Chatbots", "title_en": "Google Gemini", "title_ar": "Google Gemini", "icon": "✨", "custom_emoji_id": "5465366406979267926", "priority": 2, "patterns": [r"\bgemini\b"]},
+        {"key": "claude", "category": "AI & Chatbots", "title_en": "Claude AI", "title_ar": "Claude AI", "icon": "🧠", "custom_emoji_id": "5368324170671202286", "priority": 3, "patterns": [r"\bclaude\b"]},
+        {"key": "codex", "category": "AI & Chatbots", "title_en": "Codex API", "title_ar": "Codex API", "icon": "💻", "custom_emoji_id": "5465366406979267930", "priority": 4, "patterns": [r"\bcodex\b"]},
+        {"key": "gamma", "category": "AI & Chatbots", "title_en": "Gamma AI", "title_ar": "Gamma AI", "icon": "⚡", "custom_emoji_id": "5465366406979267929", "priority": 5, "patterns": [r"\bgamma\b"]},
+        {"key": "elevenlabs", "category": "AI & Chatbots", "title_en": "ElevenLabs", "title_ar": "ElevenLabs", "icon": "🎙️", "custom_emoji_id": "5465366406979267931", "priority": 6, "patterns": [r"\belevenlabs\b"]},
+        {"key": "grok", "category": "AI & Chatbots", "title_en": "Super Grok", "title_ar": "Super Grok", "icon": "⚡", "custom_emoji_id": "5465366406979267929", "priority": 7, "patterns": [r"\bgrok\b"]},
+        {"key": "cursor", "category": "AI & Chatbots", "title_en": "Cursor Pro", "title_ar": "Cursor Pro", "icon": "💻", "custom_emoji_id": "5465366406979267930", "priority": 8, "patterns": [r"\bcursor\b"]},
+        {"key": "lovable", "category": "AI & Chatbots", "title_en": "Lovable AI", "title_ar": "Lovable AI", "icon": "❤️", "custom_emoji_id": "5465366406979267926", "priority": 9, "patterns": [r"\blova[bl]e\b", r"\blovalbe\b", r"\blovable\b"]},
+        {"key": "manus", "category": "AI & Chatbots", "title_en": "Manus AI", "title_ar": "Manus AI", "icon": "🤖", "custom_emoji_id": "5465366406979267927", "priority": 10, "patterns": [r"\bmanus\b"]},
+        {"key": "kiro", "category": "AI & Chatbots", "title_en": "Kiro AI", "title_ar": "Kiro AI", "icon": "⚡", "custom_emoji_id": "5465366406979267929", "priority": 11, "patterns": [r"\bkiro\b"]},
+        {"key": "wispr", "category": "AI & Chatbots", "title_en": "Wispr Flow", "title_ar": "Wispr Flow", "icon": "🎙️", "custom_emoji_id": "5465366406979267931", "priority": 12, "patterns": [r"\bwispr\b"]},
+        {"key": "magic_patterns", "category": "AI & Chatbots", "title_en": "Magic Patterns", "title_ar": "Magic Patterns", "icon": "🎨", "custom_emoji_id": "5465366406979267932", "priority": 13, "patterns": [r"\bmagic\s*patterns\b"]},
 
         # Streaming & Entertainment
-        {"key": "netflix", "category": "Streaming & Entertainment", "title_en": "Netflix", "title_ar": "نتفليكس", "icon": "🎬", "custom_emoji_id": "5465366406979267934", "priority": 1, "patterns": [r"\bnetflix\b"]},
-        {"key": "hbo_max", "category": "Streaming & Entertainment", "title_en": "HBO Max", "title_ar": "إتش بي أو ماكس", "icon": "🍿", "custom_emoji_id": "5465366406979267936", "priority": 2, "patterns": [r"\bhbo\b", r"\bhbomax\b"]},
-        {"key": "amazon_prime", "category": "Streaming & Entertainment", "title_en": "Amazon Prime Video", "title_ar": "أمازون برايم فيديو", "icon": "📦", "custom_emoji_id": "5465366406979267938", "priority": 3, "patterns": [r"\bamazon\s*prime\b", r"\bprime\s*video\b"]},
-        {"key": "apple_tv", "category": "Streaming & Entertainment", "title_en": "Apple TV+", "title_ar": "أبل تي في بلس", "icon": "🍎", "custom_emoji_id": "5465366406979267937", "priority": 4, "patterns": [r"\bapple\s*tv\b"]},
-        {"key": "peacock", "category": "Streaming & Entertainment", "title_en": "Peacock TV", "title_ar": "بي كوك تي في", "icon": "🦚", "custom_emoji_id": "5465366406979267935", "priority": 5, "patterns": [r"\bpeacock\b"]},
-        {"key": "paramount", "category": "Streaming & Entertainment", "title_en": "Paramount+", "title_ar": "باراماونت بلس", "icon": "⛰️", "custom_emoji_id": "5465366406979267934", "priority": 6, "patterns": [r"\bparamount\b"]},
-        {"key": "spotify", "category": "Streaming & Entertainment", "title_en": "Spotify Premium", "title_ar": "سبوتيفاي بريميوم", "icon": "🎵", "custom_emoji_id": "5465366406979267948", "priority": 7, "patterns": [r"\bspotify\b"]},
-        {"key": "shahid", "category": "Streaming & Entertainment", "title_en": "Shahid VIP", "title_ar": "شاهد VIP", "icon": "🍿", "custom_emoji_id": "5465366406979267936", "priority": 8, "patterns": [r"\bshahid\b"]},
+        {"key": "netflix", "category": "Streaming & Entertainment", "title_en": "Netflix", "title_ar": "Netflix", "icon": "🎬", "custom_emoji_id": "5465366406979267934", "priority": 1, "patterns": [r"\bnetflix\b"]},
+        {"key": "hbo_max", "category": "Streaming & Entertainment", "title_en": "HBO Max", "title_ar": "HBO Max", "icon": "🍿", "custom_emoji_id": "5465366406979267936", "priority": 2, "patterns": [r"\bhbo\b", r"\bhbomax\b"]},
+        {"key": "amazon_prime", "category": "Streaming & Entertainment", "title_en": "Amazon Prime Video", "title_ar": "Amazon Prime Video", "icon": "📦", "custom_emoji_id": "5465366406979267938", "priority": 3, "patterns": [r"\bamazon\s*prime\b", r"\bprime\s*video\b"]},
+        {"key": "apple_tv", "category": "Streaming & Entertainment", "title_en": "Apple TV+", "title_ar": "Apple TV+", "icon": "🍎", "custom_emoji_id": "5465366406979267937", "priority": 4, "patterns": [r"\bapple\s*tv\b"]},
+        {"key": "peacock", "category": "Streaming & Entertainment", "title_en": "Peacock TV", "title_ar": "Peacock TV", "icon": "🦚", "custom_emoji_id": "5465366406979267935", "priority": 5, "patterns": [r"\bpeacock\b"]},
+        {"key": "paramount", "category": "Streaming & Entertainment", "title_en": "Paramount+", "title_ar": "Paramount+", "icon": "⛰️", "custom_emoji_id": "5465366406979267934", "priority": 6, "patterns": [r"\bparamount\b"]},
+        {"key": "spotify", "category": "Streaming & Entertainment", "title_en": "Spotify Premium", "title_ar": "Spotify Premium", "icon": "🎵", "custom_emoji_id": "5465366406979267948", "priority": 7, "patterns": [r"\bspotify\b"]},
+        {"key": "shahid", "category": "Streaming & Entertainment", "title_en": "Shahid VIP", "title_ar": "Shahid VIP", "icon": "🍿", "custom_emoji_id": "5465366406979267936", "priority": 8, "patterns": [r"\bshahid\b"]},
 
         # Design & Creative
-        {"key": "canva", "category": "Design & Creative", "title_en": "Canva Pro", "title_ar": "كانفا برو", "icon": "🖌️", "custom_emoji_id": "5465366406979267952", "priority": 1, "patterns": [r"\bcanva\b"]},
-        {"key": "capcut", "category": "Design & Creative", "title_en": "CapCut Pro", "title_ar": "كاب كات برو", "icon": "✂️", "custom_emoji_id": "5465366406979267957", "priority": 2, "patterns": [r"\bcapcut\b"]},
-        {"key": "adobe_express", "category": "Design & Creative", "title_en": "Adobe Express", "title_ar": "أدوبي إكسبريس", "icon": "🔴", "custom_emoji_id": "5465366406979267953", "priority": 3, "patterns": [r"\badobe\b"]},
-        {"key": "autodesk", "category": "Design & Creative", "title_en": "Autodesk", "title_ar": "أوتوديسك", "icon": "📐", "custom_emoji_id": "5465366406979267954", "priority": 4, "patterns": [r"\bautodesk\b"]},
-        {"key": "figma", "category": "Design & Creative", "title_en": "Figma", "title_ar": "فيجما", "icon": "🎨", "custom_emoji_id": "5465366406979267954", "priority": 5, "patterns": [r"\bfigma\b"]},
-        {"key": "framer", "category": "Design & Creative", "title_en": "Framer", "title_ar": "فرايمر", "icon": "🖼️", "custom_emoji_id": "5465366406979267955", "priority": 6, "patterns": [r"\bframer\b"]},
-        {"key": "envato", "category": "Design & Creative", "title_en": "Envato Elements", "title_ar": "إنفاتو إليمنتس", "icon": "🍃", "custom_emoji_id": "5465366406979267952", "priority": 7, "patterns": [r"\benvato\b"]},
-        {"key": "mobbin", "category": "Design & Creative", "title_en": "Mobbin", "title_ar": "موبين", "icon": "📱", "custom_emoji_id": "5465366406979267954", "priority": 8, "patterns": [r"\bmobbin\b"]},
-        {"key": "meitu", "category": "Design & Creative", "title_en": "Meitu SVIP", "title_ar": "ميتو SVIP", "icon": "✨", "custom_emoji_id": "5465366406979267926", "priority": 9, "patterns": [r"\bmeitu\b"]},
-        {"key": "descript", "category": "Design & Creative", "title_en": "Descript", "title_ar": "ديسكريبت", "icon": "🎙️", "custom_emoji_id": "5465366406979267931", "priority": 10, "patterns": [r"\bdescript\b", r"\bsupercut\b"]},
-        {"key": "wink", "category": "Design & Creative", "title_en": "Wink AI", "title_ar": "وينك", "icon": "😉", "custom_emoji_id": "5465366406979267926", "priority": 11, "patterns": [r"\bwink\b"]},
+        {"key": "canva", "category": "Design & Creative", "title_en": "Canva Pro", "title_ar": "Canva Pro", "icon": "🖌️", "custom_emoji_id": "5465366406979267952", "priority": 1, "patterns": [r"\bcanva\b"]},
+        {"key": "capcut", "category": "Design & Creative", "title_en": "CapCut Pro", "title_ar": "CapCut Pro", "icon": "✂️", "custom_emoji_id": "5465366406979267957", "priority": 2, "patterns": [r"\bcapcut\b"]},
+        {"key": "adobe_express", "category": "Design & Creative", "title_en": "Adobe Express", "title_ar": "Adobe Express", "icon": "🔴", "custom_emoji_id": "5465366406979267953", "priority": 3, "patterns": [r"\badobe\b"]},
+        {"key": "autodesk", "category": "Design & Creative", "title_en": "Autodesk", "title_ar": "Autodesk", "icon": "📐", "custom_emoji_id": "5465366406979267954", "priority": 4, "patterns": [r"\bautodesk\b"]},
+        {"key": "figma", "category": "Design & Creative", "title_en": "Figma", "title_ar": "Figma", "icon": "🎨", "custom_emoji_id": "5465366406979267954", "priority": 5, "patterns": [r"\bfigma\b"]},
+        {"key": "framer", "category": "Design & Creative", "title_en": "Framer", "title_ar": "Framer", "icon": "🖼️", "custom_emoji_id": "5465366406979267955", "priority": 6, "patterns": [r"\bframer\b"]},
+        {"key": "envato", "category": "Design & Creative", "title_en": "Envato Elements", "title_ar": "Envato Elements", "icon": "🍃", "custom_emoji_id": "5465366406979267952", "priority": 7, "patterns": [r"\benvato\b"]},
+        {"key": "mobbin", "category": "Design & Creative", "title_en": "Mobbin", "title_ar": "Mobbin", "icon": "📱", "custom_emoji_id": "5465366406979267954", "priority": 8, "patterns": [r"\bmobbin\b"]},
+        {"key": "meitu", "category": "Design & Creative", "title_en": "Meitu SVIP", "title_ar": "Meitu SVIP", "icon": "✨", "custom_emoji_id": "5465366406979267926", "priority": 9, "patterns": [r"\bmeitu\b"]},
+        {"key": "descript", "category": "Design & Creative", "title_en": "Descript", "title_ar": "Descript", "icon": "🎙️", "custom_emoji_id": "5465366406979267931", "priority": 10, "patterns": [r"\bdescript\b", r"\bsupercut\b"]},
+        {"key": "wink", "category": "Design & Creative", "title_en": "Wink AI", "title_ar": "Wink AI", "icon": "😉", "custom_emoji_id": "5465366406979267926", "priority": 11, "patterns": [r"\bwink\b"]},
 
         # Office & Productivity
-        {"key": "office365", "category": "Office & Productivity", "title_en": "Microsoft 365 / Office", "title_ar": "مايكروسوفت 365 / أوفيس", "icon": "💼", "custom_emoji_id": None, "priority": 1, "patterns": [r"\bmicrosoft\s*365\b", r"\boffice\s*365\b", r"\bmicrosoft\s*office\b"]},
+        {"key": "office365", "category": "Office & Productivity", "title_en": "Microsoft 365 / Office", "title_ar": "Microsoft 365 / Office", "icon": "💼", "custom_emoji_id": None, "priority": 1, "patterns": [r"\bmicrosoft\s*365\b", r"\boffice\s*365\b", r"\bmicrosoft\s*office\b"]},
 
         # Productivity
-        {"key": "notion", "category": "Productivity", "title_en": "Notion", "title_ar": "نوشن", "icon": "📝", "custom_emoji_id": "5465366406979267956", "priority": 1, "patterns": [r"\bnotion\b"]},
-        {"key": "miro", "category": "Productivity", "title_en": "Miro", "title_ar": "ميرو", "icon": "📋", "custom_emoji_id": "5465366406979267956", "priority": 2, "patterns": [r"\bmiro\b"]},
-        {"key": "linear", "category": "Productivity", "title_en": "Linear", "title_ar": "لينيار", "icon": "🎯", "custom_emoji_id": "5465366406979267956", "priority": 3, "patterns": [r"\blinear\b"]},
-        {"key": "brain_fm", "category": "Productivity", "title_en": "Brain.fm", "title_ar": "برين إف إم", "icon": "🎧", "custom_emoji_id": "5465366406979267948", "priority": 4, "patterns": [r"\bbrain\.fm\b"]},
-        {"key": "tradingview", "category": "Productivity", "title_en": "TradingView", "title_ar": "تريدنج فيو", "icon": "📈", "custom_emoji_id": "5465366406979267956", "priority": 5, "patterns": [r"\btrading\s*view\b"]},
+        {"key": "notion", "category": "Productivity", "title_en": "Notion", "title_ar": "Notion", "icon": "📝", "custom_emoji_id": "5465366406979267956", "priority": 1, "patterns": [r"\bnotion\b"]},
+        {"key": "miro", "category": "Productivity", "title_en": "Miro", "title_ar": "Miro", "icon": "📋", "custom_emoji_id": "5465366406979267956", "priority": 2, "patterns": [r"\bmiro\b"]},
+        {"key": "linear", "category": "Productivity", "title_en": "Linear", "title_ar": "Linear", "icon": "🎯", "custom_emoji_id": "5465366406979267956", "priority": 3, "patterns": [r"\blinear\b"]},
+        {"key": "brain_fm", "category": "Productivity", "title_en": "Brain.fm", "title_ar": "Brain.fm", "icon": "🎧", "custom_emoji_id": "5465366406979267948", "priority": 4, "patterns": [r"\bbrain\.fm\b"]},
+        {"key": "tradingview", "category": "Productivity", "title_en": "TradingView", "title_ar": "TradingView", "icon": "📈", "custom_emoji_id": "5465366406979267956", "priority": 5, "patterns": [r"\btrading\s*view\b"]},
 
         # Software Keys
-        {"key": "windows", "category": "Software Keys", "title_en": "Windows Licenses", "title_ar": "تراخيص ويندوز", "icon": "🪟", "custom_emoji_id": None, "priority": 1, "patterns": [r"\bwindows\b"]},
-        {"key": "jetbrains", "category": "Software Keys", "title_en": "JetBrains", "title_ar": "جيت برينز", "icon": "💻", "custom_emoji_id": "5465366406979267930", "priority": 2, "patterns": [r"\bjetbrains\b"]},
-        {"key": "replit", "category": "Software Keys", "title_en": "Replit Core", "title_ar": "ريبليت كور", "icon": "💻", "custom_emoji_id": "5465366406979267930", "priority": 3, "patterns": [r"\breplit\b"]},
-        {"key": "warp", "category": "Software Keys", "title_en": "Warp / Railway", "title_ar": "أدوات المطورين", "icon": "⚙️", "custom_emoji_id": None, "priority": 4, "patterns": [r"\bwarp\b", r"\brailway\b"]},
+        {"key": "windows", "category": "Software Keys", "title_en": "Windows Licenses", "title_ar": "Windows Licenses", "icon": "🪟", "custom_emoji_id": None, "priority": 1, "patterns": [r"\bwindows\b"]},
+        {"key": "jetbrains", "category": "Software Keys", "title_en": "JetBrains", "title_ar": "JetBrains", "icon": "💻", "custom_emoji_id": "5465366406979267930", "priority": 2, "patterns": [r"\bjetbrains\b"]},
+        {"key": "replit", "category": "Software Keys", "title_en": "Replit Core", "title_ar": "Replit Core", "icon": "💻", "custom_emoji_id": "5465366406979267930", "priority": 3, "patterns": [r"\breplit\b"]},
+        {"key": "warp", "category": "Software Keys", "title_en": "Warp / Railway", "title_ar": "Warp / Railway", "icon": "⚙️", "custom_emoji_id": None, "priority": 4, "patterns": [r"\bwarp\b", r"\brailway\b"]},
 
         # Education
-        {"key": "coursera", "category": "Education", "title_en": "Coursera", "title_ar": "كورسيرا", "icon": "🎓", "custom_emoji_id": None, "priority": 1, "patterns": [r"\bcours?era\b"]},
-        {"key": "duolingo", "category": "Education", "title_en": "Duolingo Super", "title_ar": "دولينجو سوبر", "icon": "🦉", "custom_emoji_id": None, "priority": 2, "patterns": [r"\bduolingo\b"]},
-        {"key": "ilovepdf", "category": "Education", "title_en": "iLovePDF", "title_ar": "آي لوف بي دي إف", "icon": "📄", "custom_emoji_id": None, "priority": 3, "patterns": [r"\bilovepdf\b"]},
-        {"key": "quizlet", "category": "Education", "title_en": "Quizlet", "title_ar": "كويزلت", "icon": "📚", "custom_emoji_id": None, "priority": 4, "patterns": [r"\bquizlet\b"]},
-        {"key": "wordwall", "category": "Education", "title_en": "Wordwall", "title_ar": "وورد وول", "icon": "🎮", "custom_emoji_id": None, "priority": 5, "patterns": [r"\bwordwall\b"]},
-        {"key": "scribd", "category": "Education", "title_en": "Scribd", "title_ar": "سكريبيد", "icon": "📖", "custom_emoji_id": None, "priority": 6, "patterns": [r"\bscribd\b"]},
-        {"key": "edx", "category": "Education", "title_en": "edX", "title_ar": "إيديكس", "icon": "🎓", "custom_emoji_id": None, "priority": 7, "patterns": [r"\bedx\b"]},
+        {"key": "coursera", "category": "Education", "title_en": "Coursera", "title_ar": "Coursera", "icon": "🎓", "custom_emoji_id": None, "priority": 1, "patterns": [r"\bcours?era\b"]},
+        {"key": "duolingo", "category": "Education", "title_en": "Duolingo Super", "title_ar": "Duolingo Super", "icon": "🦉", "custom_emoji_id": None, "priority": 2, "patterns": [r"\bduolingo\b"]},
+        {"key": "ilovepdf", "category": "Education", "title_en": "iLovePDF", "title_ar": "iLovePDF", "icon": "📄", "custom_emoji_id": None, "priority": 3, "patterns": [r"\bilovepdf\b"]},
+        {"key": "quizlet", "category": "Education", "title_en": "Quizlet", "title_ar": "Quizlet", "icon": "📚", "custom_emoji_id": None, "priority": 4, "patterns": [r"\bquizlet\b"]},
+        {"key": "wordwall", "category": "Education", "title_en": "Wordwall", "title_ar": "Wordwall", "icon": "🎮", "custom_emoji_id": None, "priority": 5, "patterns": [r"\bwordwall\b"]},
+        {"key": "scribd", "category": "Education", "title_en": "Scribd", "title_ar": "Scribd", "icon": "📖", "custom_emoji_id": None, "priority": 6, "patterns": [r"\bscribd\b"]},
+        {"key": "edx", "category": "Education", "title_en": "edX", "title_ar": "edX", "icon": "🎓", "custom_emoji_id": None, "priority": 7, "patterns": [r"\bedx\b"]},
 
         # VPN & Security
-        {"key": "nordvpn", "category": "VPN & Security", "title_en": "NordVPN", "title_ar": "نورد في بي إن", "icon": "🛡️", "custom_emoji_id": "5465366406979267942", "priority": 1, "patterns": [r"\bnord\b"]},
-        {"key": "protonvpn", "category": "VPN & Security", "title_en": "Proton VPN", "title_ar": "بروتون في بي إن", "icon": "🔒", "custom_emoji_id": "5465366406979267945", "priority": 2, "patterns": [r"\bproton\b"]},
-        {"key": "avira", "category": "VPN & Security", "title_en": "Avira Prime", "title_ar": "أفيرا برايم", "icon": "🛡️", "custom_emoji_id": "5465366406979267942", "priority": 3, "patterns": [r"\bavira\b"]},
-        {"key": "hma", "category": "VPN & Security", "title_en": "HMA VPN", "title_ar": "إتش إم إيه في بي إن", "icon": "🫏", "custom_emoji_id": "5465366406979267946", "priority": 4, "patterns": [r"\bhma\b"]},
+        {"key": "nordvpn", "category": "VPN & Security", "title_en": "NordVPN", "title_ar": "NordVPN", "icon": "🛡️", "custom_emoji_id": "5465366406979267942", "priority": 1, "patterns": [r"\bnord\b"]},
+        {"key": "protonvpn", "category": "VPN & Security", "title_en": "Proton VPN", "title_ar": "Proton VPN", "icon": "🔒", "custom_emoji_id": "5465366406979267945", "priority": 2, "patterns": [r"\bproton\b"]},
+        {"key": "avira", "category": "VPN & Security", "title_en": "Avira Prime", "title_ar": "Avira Prime", "icon": "🛡️", "custom_emoji_id": "5465366406979267942", "priority": 3, "patterns": [r"\bavira\b"]},
+        {"key": "hma", "category": "VPN & Security", "title_en": "HMA VPN", "title_ar": "HMA VPN", "icon": "🫏", "custom_emoji_id": "5465366406979267946", "priority": 4, "patterns": [r"\bhma\b"]},
 
         # Communication
-        {"key": "zoom", "category": "Communication", "title_en": "Zoom", "title_ar": "زووم", "icon": "💬", "custom_emoji_id": None, "priority": 1, "patterns": [r"\bzoom\b"]},
+        {"key": "zoom", "category": "Communication", "title_en": "Zoom", "title_ar": "Zoom", "icon": "💬", "custom_emoji_id": None, "priority": 1, "patterns": [r"\bzoom\b"]},
 
         # Accounts & Email
-        {"key": "gmail", "category": "Accounts & Email", "title_en": "Gmail Accounts", "title_ar": "حسابات جيميل", "icon": "📧", "custom_emoji_id": None, "priority": 1, "patterns": [r"\bgmail\b"]},
+        {"key": "gmail", "category": "Accounts & Email", "title_en": "Gmail Accounts", "title_ar": "Gmail Accounts", "icon": "📧", "custom_emoji_id": None, "priority": 1, "patterns": [r"\bgmail\b"]},
 
         # Social Media
-        {"key": "snapchat", "category": "Social Media", "title_en": "Snapchat Plus", "title_ar": "سناب شات بلس", "icon": "📱", "custom_emoji_id": None, "priority": 1, "patterns": [r"\bsnapchat\b"]},
+        {"key": "snapchat", "category": "Social Media", "title_en": "Snapchat Plus", "title_ar": "Snapchat Plus", "icon": "📱", "custom_emoji_id": None, "priority": 1, "patterns": [r"\bsnapchat\b"]},
     ]
 
     @classmethod
@@ -343,7 +343,7 @@ class ProductSpecParser:
 
     @classmethod
     def get_clean_variant_title(cls, raw_name: str, custom_name: str = None, specs: dict = None) -> tuple[str, str]:
-        """Generate clean, differentiated variant titles in both English and Arabic.
+        """Generate clean, differentiated variant titles (English in all languages).
         If custom_name is explicitly set in database, it takes 100% precedence.
         """
         if custom_name and str(custom_name).strip():
@@ -354,103 +354,87 @@ class ProductSpecParser:
         raw_lower = (raw_name or "").lower()
         search_lower = f"{custom_name or ''} {raw_name or ''}".lower()
         dur_en = specs.get("duration_en") or ""
-        dur_ar = specs.get("duration_ar") or ""
         type_en = specs.get("type_en") or ""
-        type_ar = specs.get("type_ar") or ""
 
         # 1. Google Gemini Specialization
         if "gemini" in search_lower:
             if "5tb" in search_lower or "drive" in search_lower or "storage" in search_lower:
-                return (
-                    f"Gemini Pro + 5TB Cloud · {dur_en or '18 Months'}",
-                    f"جيميني برو + 5TB سحابي · {dur_ar or '18 شهراً'}"
-                )
+                title = f"Gemini Pro + 5TB Cloud · {dur_en or '18 Months'}"
+                return (title, title)
             if "pro" in search_lower or "link" in search_lower or "رابط" in search_lower:
-                return (
-                    f"Gemini Pro · {dur_en or '18 Months'} (Activation Link)",
-                    f"جيميني برو · {dur_ar or '18 شهراً'} (رابط تفعيل)"
-                )
-            return (
-                f"Gemini Pro · {dur_en or '18 Months'}",
-                f"جيميني برو · {dur_ar or '18 شهراً'}"
-            )
+                title = f"Gemini Pro · {dur_en or '18 Months'} (Activation Link)"
+                return (title, title)
+            title = f"Gemini Pro · {dur_en or '18 Months'}"
+            return (title, title)
 
         # 2. CapCut Pro Specialization
         if "capcut" in search_lower:
             d_en = dur_en or ("7 Days" if "7d" in search_lower or "7 day" in search_lower else ("6 Months" if "6m" in search_lower or "6 month" in search_lower else "1 Month"))
-            d_ar = dur_ar or ("7 أيام" if "7d" in search_lower or "7 day" in search_lower else ("6 أشهر" if "6m" in search_lower or "6 month" in search_lower else "شهر واحد"))
-            return (f"CapCut Pro · {d_en}", f"كاب كات برو · {d_ar}")
+            title = f"CapCut Pro · {d_en}"
+            return (title, title)
 
         # 3. ChatGPT Specialization
         if "chatgpt" in search_lower or "chat gpt" in search_lower:
             sub = "Private Account"
-            sub_ar = "حساب خاص"
             if "gopay" in search_lower or "go pay" in search_lower:
                 sub = "Private (GoPay)"
-                sub_ar = "خاص (GoPay)"
             elif "momo" in search_lower:
                 sub = "Private (MoMo)"
-                sub_ar = "خاص (MoMo)"
             elif "apple pay" in search_lower:
                 sub = "Private (Apple)"
-                sub_ar = "خاص (Apple)"
             d_en = dur_en or "1 Month"
-            d_ar = dur_ar or "شهر واحد"
-            return (f"ChatGPT Plus · {d_en} ({sub})", f"شات جي بي تي بلس · {d_ar} ({sub_ar})")
+            title = f"ChatGPT Plus · {d_en} ({sub})"
+            return (title, title)
 
         # 4. Netflix Specialization
         if "netflix" in search_lower:
             prof = "5 Profiles"
-            prof_ar = "5 بروفايلات"
             m_prof = re.search(r"(\d+)\s*profile", search_lower)
             if m_prof:
                 prof = f"{m_prof.group(1)} Profiles"
-                prof_ar = f"{m_prof.group(1)} بروفايلات"
             d_en = dur_en or "1 Month"
-            d_ar = dur_ar or "شهر واحد"
-            return (f"Netflix Premium 4K · {d_en} ({prof})", f"نتفليكس بريميوم 4K · {d_ar} ({prof_ar})")
+            title = f"Netflix Premium 4K · {d_en} ({prof})"
+            return (title, title)
 
         # 5. Windows Specialization
         if "windows" in search_lower:
             ver = "11 Pro" if "11" in search_lower else "10 Pro"
-            return (f"Windows {ver} · Lifetime (Retail Key)", f"ويندوز {ver} · مدى الحياة (مفتاح أصلي)")
+            title = f"Windows {ver} · Lifetime (Retail Key)"
+            return (title, title)
 
         # 6. Microsoft 365 / Office Specialization
         if "office" in search_lower or "microsoft 365" in search_lower:
             if "family" in search_lower:
-                return (f"Microsoft 365 Family · {dur_en or '1 Year'} (Invite)", f"مايكروسوفت 365 فاميلي · {dur_ar or 'سنة كاملة'} (دعوة)")
-            return (f"Microsoft Office 365 Plus · {dur_en or '1 Year'}", f"مايكروسوفت أوفيس 365 بلس · {dur_ar or 'سنة كاملة'}")
+                title = f"Microsoft 365 Family · {dur_en or '1 Year'} (Invite)"
+            else:
+                title = f"Microsoft Office 365 Plus · {dur_en or '1 Year'}"
+            return (title, title)
 
         # 7. Zoom Specialization
         if "zoom" in search_lower:
             d_en = dur_en or "1 Month"
-            d_ar = dur_ar or "شهر واحد"
-            return (f"Zoom Pro · {d_en} (100 Participants)", f"زووم برو · {d_ar} (100 مشارك)")
+            title = f"Zoom Pro · {d_en} (100 Participants)"
+            return (title, title)
 
         # 8. Claude API Specialization
         if "claude" in search_lower and ("api" in search_lower or "token" in search_lower or "$" in search_lower):
             tok = type_en or (re.search(r"(\$\d+|\d+[MmkK]?\s*Token)", raw_name, re.IGNORECASE).group(1) if re.search(r"(\$\d+|\d+[MmkK]?\s*Token)", raw_name, re.IGNORECASE) else "API")
             d_en = dur_en or ""
-            d_ar = dur_ar or ""
             suffix = f" · {d_en}" if d_en else ""
-            suffix_ar = f" · {d_ar}" if d_ar else ""
-            return (f"Claude API {tok}{suffix}", f"كلود API {tok}{suffix_ar}")
+            title = f"Claude API {tok}{suffix}"
+            return (title, title)
 
         # 9. Generic Fallback
         base_title = custom_name or specs.get("clean_name") or raw_name
         base_title = re.sub(r"[\(\[].*?[\)\]]", "", base_title).strip()
-        parts_en = [base_title]
-        parts_ar = [base_title]
+        parts = [base_title]
         if dur_en:
-            parts_en.append(dur_en)
-        if dur_ar:
-            parts_ar.append(dur_ar)
+            parts.append(dur_en)
         if type_en and type_en.lower() not in base_title.lower():
-            parts_en.append(f"({type_en})")
-        if type_ar and type_ar.lower() not in base_title.lower():
-            parts_ar.append(f"({type_ar})")
+            parts.append(f"({type_en})")
 
-        return (" · ".join(parts_en), " · ".join(parts_ar))
+        title = " · ".join(parts)
+        return (title, title)
 
     @classmethod
     def get_duration_weight(cls, duration_en: str = None, raw_name: str = None) -> int:

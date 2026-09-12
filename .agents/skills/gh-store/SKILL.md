@@ -47,20 +47,29 @@ Cloudflare Tunnel (gh-store.me) / Worker (bot.gh-store.me)
 
 ---
 
-## 2. The Dual-Fulfillment Model (Crucial Invariant)
+## 2. The Dual-Fulfillment Model and Multi-Supplier Routing (Crucial Invariant)
 
-The codebase has **two distinct fulfillment flows**:
+The codebase has **two fulfillment flows** on top of a **multi-supplier routing**
+engine (`services/multi_supplier.py`):
 
-| Feature | Static Stock (Upstream Shop) | BatStore / VenteBot Reseller (GH Store) |
+| Feature | Static Stock (Upstream Shop) | Reseller API (BatStore / ProdSeller / G2Bulk) |
 |---|---|---|
-| **Inventory Source** | Pre-loaded in `items` table | Fetched on-demand from Reseller API |
+| **Inventory Source** | Pre-loaded in `items` table | Fetched on-demand from supplier API |
 | **Stock Model** | `Item.is_sold = True` on purchase | Virtual upstream stock (`p.stock`) |
 | **Cart/Checkout** | Multi-item cart (`services/cart.py`) | Instant checkout (`services/batstore_store.py`) |
 | **Pricing** | Fixed unit price in DB | `cost_usd * (1 + margin%) + margin_fixed` |
 | **Delivery** | Immediate `private_data` string | Immediate (stock/supplier_api) or Async Activation |
 | **Order Table** | `buys` + `buyItem` | `batstore_orders` (`status: completed \| pending_fulfillment \| requires_manual_review`) |
+| **Suppliers** | — | BatStore (Server 1), ProdSeller (Server 2), G2Bulk (Server 3) |
 
-> **Rule:** Never repurpose `Item.is_sold` for BatStore products. BatStore catalog products live in `batstore_products`, synced from `GET /products` by `BatStoreService.sync_catalog()`.
+- `MultiSupplierService` routes each order via `SUPPLIER_ROUTING_STRATEGY`
+  (`auto_cheapest` by default, or forced `batstore_primary` / `prodseller_primary`
+  / `g2bulk_primary`). Auto-cheapest picks the lowest cost in stock; failures
+  fail over to the next supplier automatically.
+- **Rule:** Never repurpose `Item.is_sold` for reseller products. Reseller
+  catalog products live in `batstore_products`, synced by
+  `BatStoreService.sync_catalog()` (BatStore), `ProdSellerService` (ProdSeller),
+  and `G2BulkService` (G2Bulk).
 
 ---
 

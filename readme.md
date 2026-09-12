@@ -41,13 +41,14 @@ Built with **Python 3.12**, **Aiogram 3.31**, **FastAPI**, **SQLAlchemy 2.0 asyn
 - **Native 1-Tap Copying**: Telegram Bot API 8.0 `CopyTextButton` support in chat payments.
 
 ### ⚙️ Automated Reseller Operations
-- **BatStore & SAM Reseller Integration**: Automated product catalog synchronization, stock tracking, and supplier order placement.
+- **Multi-Supplier Integration**: Automated catalog synchronization, stock tracking, and supplier order placement with BatStore, ProdSeller, G2Bulk, and SAM APIs.
+- **Smart Supplier Routing**: Auto-cheapest selection across BatStore, ProdSeller, and G2Bulk with automatic failover to the next supplier when the primary is out of stock.
 - **Out-of-Stock Protection & Restock Alerts**: Visual stock status indicators with 1-tap notification alerts when products are replenished.
 - **Automated Order Polling**: Continuous background verification with automatic user refunds if supplier fulfillment encounters issues.
 
 ### 🛡️ Admin Control Center
 - **In-App Control Center**: Live store statistics (revenue, active users, total orders, user balances).
-- **Supplier Wallets Monitor**: Live real-time balance tracker for BatStore and SAM (USD and SYP) with on-demand refresh.
+- **Supplier Wallets Monitor**: Live real-time balance tracker for BatStore, ProdSeller, G2Bulk, and SAM (USD and SYP) with on-demand refresh.
 - **Dynamic Rates & Pricing**: Live SYP/USD exchange rate controls and global margin percentage adjustments.
 - **Web Admin Panel**: Full SQLAdmin dashboard at `/admin` for low-level database inspection and management.
 
@@ -95,6 +96,8 @@ REDIS_PASSWORD=your_redis_password
 WEBHOOK_HOST=https://bot.yourdomain.com
 KRYPTO_EXPRESS_API_KEY=your_key
 BATSTORE_API_KEY=your_key
+PRODSELLER_API_KEY=your_key
+G2BULK_API_KEY=your_key
 SAM_API_KEY=your_key
 ```
 

@@ -39,6 +39,13 @@ Full documentation for deployment, configuration, user flows, admin flows, refer
 | `KRYPTO_EXPRESS_API_KEY` | API key from KryptoExpress. | No recommended value |
 | `KRYPTO_EXPRESS_API_URL` | KryptoExpress API URL. | `https://KryptoExpress.pro/api` |
 | `KRYPTO_EXPRESS_API_SECRET` | Protects KryptoExpress callbacks from spoofing. | Any strong value |
+| `BATSTORE_API_KEY` | BatStore reseller API key (VenteBot). | Any strong value |
+| `BATSTORE_API_URL` | BatStore reseller API base URL. | Reseller API URL |
+| `PRODSELLER_API_KEY` | ProdSeller wholesale catalog API key. | `psk_...` |
+| `G2BULK_API_KEY` | G2Bulk games & vouchers wholesale API key. | From @G2BULKBOT |
+| `G2BULK_API_URL` | G2Bulk API base URL. | `https://api.g2bulk.com/v1` |
+| `SAM_API_KEY` | SAM API wallet/payments key (sam-api.pro). | `sk_...` |
+| `SAM_API_BASE` | SAM API base URL. | `https://www.sam-api.pro/api` |
 | `REDIS_PASSWORD` | Required for throttling. | Any strong value |
 | `REDIS_HOST` | Redis host. | `redis` for Docker Compose |
 | `CRYPTO_FORWARDING_MODE` | Enables automatic forwarding of deposits to your own addresses. | `"true"` or `"false"` |
@@ -113,6 +120,13 @@ WEBHOOK_SECRET_TOKEN="1234567890"
 KRYPTO_EXPRESS_API_KEY="API_KEY_HERE"
 KRYPTO_EXPRESS_API_URL="https://kryptoexpress.pro/api"
 KRYPTO_EXPRESS_API_SECRET="1234567890"
+BATSTORE_API_KEY="YOUR_BATSTORE_KEY"
+BATSTORE_API_URL="https://api.reseller"
+PRODSELLER_API_KEY="psk_..."
+G2BULK_API_KEY="YOUR_G2BULK_KEY"
+G2BULK_API_URL="https://api.g2bulk.com/v1"
+SAM_API_KEY="sk_..."
+SAM_API_BASE="https://www.sam-api.pro/api"
 REDIS_PASSWORD="1234567890"
 REDIS_HOST="localhost"
 CRYPTO_FORWARDING_MODE="false"
