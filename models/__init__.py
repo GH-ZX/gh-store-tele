@@ -8,6 +8,8 @@ model a caller imports first.
 from models.base import Base
 from models.admin_audit_log import AdminAuditLog
 from models.app_config import AppConfig
+from models.approved_equivalent import ApprovedEquivalent
+from models.approved_equivalent import ApprovedEquivalentAdmin
 from models.batstore_order import BatStoreOrder
 from models.batstore_product import BatStoreProduct
 from models.button_media import ButtonMedia
@@ -42,6 +44,8 @@ __all__ = [
     "Base",
     "AdminAuditLog",
     "AppConfig",
+    "ApprovedEquivalent",
+    "ApprovedEquivalentAdmin",
     "BatStoreOrder",
     "BatStoreProduct",
     "ButtonMedia",

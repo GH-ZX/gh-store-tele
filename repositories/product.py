@@ -68,30 +68,119 @@ class ProductRepository:
         rows = await session_execute(stmt, session)
         return [ProductDTO.model_validate(o, from_attributes=True) for o in rows.scalars().all()]
 
+    _MIN_MATCH_SCORE = 0.5
+
+    @staticmethod
+    def match_tokens(value: str | None) -> frozenset[str]:
+        """Tokenize a product name into a deterministic lowercase token set."""
+        import re
+
+        s = str(value or "").strip().lower()
+        s = s.replace("+", " plus ")
+        s = re.sub(r"[^a-z0-9\s]+", " ", s)
+        return frozenset(s.split())
+
+    @staticmethod
+    def token_overlap(a: frozenset[str], b: frozenset[str]) -> float:
+        """Ratio of shared tokens over the larger token set (0.0 .. 1.0)."""
+        if not a or not b:
+            return 0.0
+        return len(a & b) / max(len(a), len(b))
+
+    @staticmethod
+    async def find_approved_equivalent(
+        product_id: int | None,
+        session: AsyncSession | Session,
+    ) -> int | None:
+        """Return the other side of an admin-approved equivalence pair, if any.
+
+        Pairs are bidirectional by convention, so looking up either (A -> B) or
+        (B -> A) resolves to the opposing ``product_id``.
+        """
+        if not product_id:
+            return None
+        from models.approved_equivalent import ApprovedEquivalent
+
+        stmt = (
+            select(ApprovedEquivalent)
+            .where(
+                or_(
+                    ApprovedEquivalent.product_id == product_id,
+                    ApprovedEquivalent.equivalent_product_id == product_id,
+                )
+            )
+            .limit(10)
+        )
+        rows = (await session_execute(stmt, session)).scalars().all()
+        for row in rows:
+            if row.product_id == product_id:
+                return int(row.equivalent_product_id)
+            if row.equivalent_product_id == product_id:
+                return int(row.product_id)
+        return None
+
     @staticmethod
     async def find_alternate_in_stock(
         name_or_clean: str,
         target_supplier: str,
-        session: AsyncSession | Session
+        session: AsyncSession | Session,
+        product_id: int | None = None,
     ) -> ProductDTO | None:
-        """Find an in-stock equivalent product from an alternate supplier for auto-failover."""
-        clean = (name_or_clean or "").strip().lower()
-        if not clean:
+        """Find an in-stock equivalent product from an alternate supplier.
+
+        Resolution order:
+        1. Admin-approved pair (``approved_equivalents``) for ``product_id``.
+        2. Deterministic normalized-token match against visible in-stock rows of
+           ``target_supplier`` (token overlap >= ``_MIN_MATCH_SCORE``, ties broken
+           by smallest ``product_id``).
+
+        Never routes to a hidden or out-of-stock row, and never returns the
+        primary row itself.
+        """
+        if product_id is not None:
+            approved = await ProductRepository.find_approved_equivalent(product_id, session)
+            if approved is not None and approved != product_id:
+                candidate = await ProductRepository.get_by_product_id(approved, session)
+                if (
+                    candidate is not None
+                    and candidate.supplier == target_supplier
+                    and not candidate.hidden
+                    and (candidate.stock is None or candidate.stock > 0)
+                ):
+                    return candidate
+
+        source_tokens = ProductRepository.match_tokens(name_or_clean)
+        if not source_tokens:
             return None
         stmt = (
             select(Product)
             .where(
                 Product.supplier == target_supplier,
                 Product.hidden == False,
-                or_(Product.stock == None, Product.stock > 0)
+                or_(Product.stock == None, Product.stock > 0),
             )
         )
         rows = (await session_execute(stmt, session)).scalars().all()
+        best = None
+        best_score = -1.0
         for p in rows:
-            p_name = (p.custom_name or p.name or "").lower()
-            if clean in p_name or p_name in clean:
-                return ProductDTO.model_validate(p, from_attributes=True)
-        return None
+            if product_id is not None and p.product_id == product_id:
+                continue
+            p_tokens = ProductRepository.match_tokens(p.custom_name or p.name or "")
+            if not p_tokens:
+                continue
+            score = ProductRepository.token_overlap(source_tokens, p_tokens)
+            if score > best_score:
+                best, best_score = p, score
+            elif (
+                score == best_score
+                and best is not None
+                and (best.product_id or 0) > (p.product_id or 0)
+            ):
+                best = p
+        if best is None or best_score < ProductRepository._MIN_MATCH_SCORE:
+            return None
+        return ProductDTO.model_validate(best, from_attributes=True)
 
     @classmethod
     async def get_categories(cls, session: AsyncSession | Session) -> list[str]:

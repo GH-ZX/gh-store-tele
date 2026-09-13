@@ -336,6 +336,8 @@ from models.admin_audit_log import AdminAuditLogAdmin
 admin.add_model_view(AdminAuditLogAdmin)
 from models.price_audit import ProductPriceAuditAdmin
 admin.add_model_view(ProductPriceAuditAdmin)
+from models.approved_equivalent import ApprovedEquivalentAdmin
+admin.add_model_view(ApprovedEquivalentAdmin)
 app.include_router(processing_router)
 from fastapi.staticfiles import StaticFiles
 _static_dir = Path(__file__).resolve().parent / "static"

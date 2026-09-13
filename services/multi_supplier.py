@@ -131,7 +131,8 @@ class MultiSupplierService:
             alt_supplier = "batstore" if supplier == "prodseller" else "prodseller"
             alt_name = getattr(product, "custom_name", None) or product.name
             alternate = await BatStoreProductRepository.find_alternate_in_stock(
-                alt_name, alt_supplier, session
+                alt_name, alt_supplier, session,
+                product_id=getattr(product, "product_id", None),
             )
             if alternate:
                 if alt_supplier == "prodseller" and not alternate.reseller_key_override:
