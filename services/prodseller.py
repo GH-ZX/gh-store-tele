@@ -22,6 +22,7 @@ from models.batstore_product import (
     auto_categorize,
 )
 from repositories.batstore_product import BatStoreProductRepository
+from repositories.product import supplier_owns_row
 from services.config import ConfigService
 from services.custom_emoji import CustomEmojiService
 from utils.telegram import clean_tg_emojis
@@ -282,6 +283,16 @@ class ProdSellerService:
             sell_price = BatStoreService.compute_sell_price(cost, global_percent, global_fixed, None, None, global_type)
 
             existing = await BatStoreProductRepository.get_by_product_id(int_pid, session)
+            if existing is not None and not supplier_owns_row(existing, "prodseller", int_pid):
+                continue
+            if (existing is not None
+                    and (existing.reseller_key_override or "").strip() != mongo_id):
+                logging.warning(
+                    "ProdSeller id-hash collision: product_id=%s already mapped to mongo_id=%r; "
+                    "skipping mongo_id=%r to preserve the existing SKU.",
+                    int_pid, existing.reseller_key_override, mongo_id,
+                )
+                continue
             if existing is None:
                 dto = BatStoreProductDTO(
                     product_id=int_pid,

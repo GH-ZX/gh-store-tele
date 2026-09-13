@@ -31,6 +31,7 @@ from models.batstore_product import (
 from models.storefront_category import StorefrontCategory
 from models.storefront_folder import StorefrontFolder
 from repositories.batstore_product import BatStoreProductRepository
+from repositories.product import supplier_owns_row
 from services.config import ConfigService
 from services.sale_pricing import compute_reseller_price
 
@@ -832,6 +833,8 @@ class G2BulkService:
             product_id = 30000000 + int(g_id)
             stmt = select(BatStoreProduct).where(BatStoreProduct.product_id == product_id)
             existing = (await session_execute(stmt, session)).scalar_one_or_none()
+            if existing is not None and not supplier_owns_row(existing, "g2bulk", product_id):
+                continue
             if catalogue_error:
                 logging.warning("Skipping %s: catalogue request failed; preserving current product state.", g_code)
                 continue
@@ -952,6 +955,8 @@ class G2BulkService:
 
             stmt_v = select(BatStoreProduct).where(BatStoreProduct.product_id == brand_prod_id)
             existing_v = (await session_execute(stmt_v, session)).scalar_one_or_none()
+            if existing_v is not None and not supplier_owns_row(existing_v, "g2bulk", brand_prod_id):
+                continue
 
             # Prepare items array with pricing
             items_arr = []

@@ -7,6 +7,27 @@ from db import session_execute, session_flush
 from models.product import Product, ProductDTO, BatStoreProduct, BatStoreProductDTO
 
 
+def supplier_owns_row(existing, expected_supplier: str, local_id: int) -> bool:
+    """Guard against cross-supplier product_id collisions during catalog sync.
+
+    Every supplier writes into the same global (unique) product_id namespace.
+    Returns True when the existing row belongs to the syncing supplier (or has no
+    supplier tag yet, i.e. a legacy BatStore row). Otherwise warns and returns False
+    so the sync skips the row instead of silently overwriting another supplier's
+    product.
+    """
+    actual = (getattr(existing, "supplier", None) or "batstore").strip().lower()
+    expected = (expected_supplier or "batstore").strip().lower()
+    if actual == expected:
+        return True
+    logging.warning(
+        "Supplier collision: %s sync wants product_id=%s but the row belongs to supplier '%s'; "
+        "skipping to preserve data.",
+        expected, local_id, actual,
+    )
+    return False
+
+
 class ProductRepository:
     """Universal repository for digital products across all upstream suppliers."""
     _redis = None
