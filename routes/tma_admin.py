@@ -973,56 +973,16 @@ async def admin_refund_stuck_order(request: Request):
     if not order_id:
         return JSONResponse({"error": "missing_order_id"}, status_code=400)
 
-    async with get_db_session() as session:
-        order = await BatStoreOrderRepository.get_by_id(order_id, session)
-        if not order:
-            return JSONResponse({"error": "order_not_found"}, status_code=404)
-        if order.status == "refunded":
-            return JSONResponse({"error": "already_refunded"}, status_code=400)
-
-        refund_amount = round(float(order.total_sell or 0.0), 2)
-        wallet_credited = False
-        user = await UserRepository.get_by_tgid(order.telegram_id, session)
-        stars_refunded = False
-        # Check if paid via Telegram Stars
-        cust_ref = order.customer_reference or ""
-        if cust_ref.startswith("stars-") or "stars" in (order.external_order_ref or ""):
-            from repositories.stars_payment import StarsPaymentRepository
-            stmt_stars = select(StarsPayment).where(StarsPayment.telegram_id == order.telegram_id).order_by(StarsPayment.id.desc()).limit(1)
-            sp = (await session_execute(stmt_stars, session)).scalar_one_or_none()
-            if sp and sp.telegram_payment_charge_id:
-                try:
-                    await bot.refund_star_payment(
-                        user_id=order.telegram_id,
-                        telegram_payment_charge_id=sp.telegram_payment_charge_id
-                    )
-                    stars_refunded = True
-                    await bot.send_message(
-                        order.telegram_id,
-                        f"⭐ <b>تم استرداد دفع نجوم تيليجرام (Stars) بنجاح!</b>\n\nتم إرجاع النجوم لطلبك #{order.id} مباشرة إلى محفظة نجوم تيليجرام الخاصة بك."
-                    )
-                except Exception as e:
-                    logging.warning("Failed to refund star payment via Bot API: %s", e)
-
-        if not stars_refunded and user and not externally_paid(order):
-            user.top_up_amount = (user.top_up_amount or 0.0) + refund_amount
-            await UserRepository.update(user, session)
-            wallet_credited = True
-            try:
-                sym = config.CURRENCY.get_localized_symbol()
-                await bot.send_message(
-                    order.telegram_id,
-                    f"💸 <b>إشعار استرداد مالي من إدارة المتجر:</b>\n\n"
-                    f"تم استرداد مبلغ <b>${refund_amount:.2f}{sym}</b> لطلبك #{order.id} بنجاح إلى رصيدك المتاح."
-                )
-            except Exception:
-                pass
-        order.status = "refunded"
-        await BatStoreOrderRepository.update(order, session)
-        await session_commit(session)
-        invalidate_admin_stats_cache()
-
-    return {"status": "ok", "refunded_amount": refund_amount if wallet_credited else 0.0, "order_id": order_id, "wallet_credited": wallet_credited}
+    from services.order_admin import refund_unfulfilled
+    try:
+        async with get_db_session() as session:
+            order, refund_amount = await refund_unfulfilled(order_id, session)
+            await session.commit()
+            invalidate_admin_stats_cache()
+    except HTTPException as exc:
+        return JSONResponse({"error": exc.detail}, status_code=exc.status_code)
+    return {"status": "ok", "refunded_amount": refund_amount,
+            "order_id": order_id, "wallet_credited": refund_amount > 0}
 
 
 @router.post("/api/admin/g2bulk/test-balance")
@@ -1483,6 +1443,64 @@ async def admin_toggle_ban(request: Request):
     return {"status": "ok", "is_banned": user.is_banned}
 
 
+@router.post("/api/admin/sessions/revoke")
+async def admin_revoke_session(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not verify_admin(admin_id, request):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    target_tg_id = int(body.get("target_tg_id") or 0)
+    if not target_tg_id:
+        return JSONResponse({"error": "invalid_params"}, status_code=400)
+    async with get_db_session() as session:
+        user = await UserRepository.get_by_tgid(target_tg_id, session)
+        if not user:
+            return JSONResponse({"error": "user_not_found"}, status_code=404)
+        user.sessions_revoked_at = datetime.datetime.now(datetime.timezone.utc)
+        await UserRepository.update(user, session)
+        audit_log = AdminAuditLog(
+            admin_tg_id=admin_id,
+            action="revoke_sessions",
+            details={"target_user": target_tg_id}
+        )
+        session.add(audit_log)
+        await session_commit(session)
+        invalidate_admin_stats_cache()
+    return {"status": "ok", "revoked_at": user.sessions_revoked_at.isoformat() if user.sessions_revoked_at else None}
+
+
+@router.post("/api/admin/sessions/unrevoke")
+async def admin_unrevoke_session(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not verify_admin(admin_id, request):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+    target_tg_id = int(body.get("target_tg_id") or 0)
+    if not target_tg_id:
+        return JSONResponse({"error": "invalid_params"}, status_code=400)
+    async with get_db_session() as session:
+        user = await UserRepository.get_by_tgid(target_tg_id, session)
+        if not user:
+            return JSONResponse({"error": "user_not_found"}, status_code=404)
+        user.sessions_revoked_at = None
+        await UserRepository.update(user, session)
+        audit_log = AdminAuditLog(
+            admin_tg_id=admin_id,
+            action="unrevoke_sessions",
+            details={"target_user": target_tg_id}
+        )
+        session.add(audit_log)
+        await session_commit(session)
+        invalidate_admin_stats_cache()
+    return {"status": "ok"}
+
+
 @router.post("/api/admin/users/toggle-reseller")
 async def admin_toggle_reseller(request: Request):
     try:
@@ -1694,26 +1712,15 @@ async def admin_update_order_status(request: Request):
     new_status = str(body.get("status") or "").strip()
     if not order_id or not new_status:
         return JSONResponse({"error": "missing_parameters"}, status_code=400)
-    async with get_db_session() as session:
-        order = await BatStoreOrderRepository.get_by_id(order_id, session)
-        if not order:
-            return JSONResponse({"error": "order_not_found"}, status_code=404)
-        order.status = new_status
-        await BatStoreOrderRepository.update(order, session)
-
-        if new_status == "refunded":
-            user = await UserRepository.get_by_tgid(order.telegram_id, session)
-            if user:
-                user.top_up_amount = (user.top_up_amount or 0.0) + (order.total_sell or 0.0)
-                await UserRepository.update(user, session)
-                try:
-                    await bot.send_message(order.telegram_id, f"💸 تم استرداد مبلغ ${order.total_sell:.2f} لطلبك #{order.id} بنجاح.")
-                except Exception:
-                    pass
-
-        await session_commit(session)
-        invalidate_admin_stats_cache()
-    return {"status": "ok", "order_id": order_id, "new_status": new_status}
+    from services.order_admin import administrative_status
+    try:
+        async with get_db_session() as session:
+            order, _ = await administrative_status(order_id, new_status, session)
+            await session.commit()
+            invalidate_admin_stats_cache()
+            return {"status": "ok", "order_id": order_id, "new_status": order.status}
+    except HTTPException as exc:
+        return JSONResponse({"error": exc.detail}, status_code=exc.status_code)
 
 
 @router.get("/api/admin/coupons")

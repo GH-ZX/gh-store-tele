@@ -22,9 +22,10 @@ from services.config import ConfigService
 from services.notification import NotificationService
 from routes.common import is_admin_id, normalize_delivery_good
 from services.telegram_auth import (
+    decode_session_token,
     extract_and_verify_telegram_user,
     generate_session_token,
-    verify_session_token,
+    session_is_revoked,
     validate_telegram_init_data_multi,
 )
 from utils.telegram import clean_tg_emojis
@@ -909,13 +910,13 @@ async def create_auth_session(request: Request):
     # 1. Cryptographic Telegram WebApp initData validation (primary inside Telegram)
     if init_data:
         try:
-            validated = validate_telegram_init_data_multi(init_data, max_age_seconds=0)
+            validated = validate_telegram_init_data_multi(init_data)
             tg_user = validated.get("user", {})
             tg_id = int(tg_user.get("id") or 0)
             if not tg_id:
                 return JSONResponse({"error": "invalid_user_in_init_data"}, status_code=401)
 
-            token = generate_session_token(tg_id, expiry_seconds=86400 * 365)
+            token = generate_session_token(tg_id, expiry_seconds=86400)
             return {
                 "status": "ok",
                 "token": token,
@@ -928,9 +929,22 @@ async def create_auth_session(request: Request):
 
     # 2. Signed launch token validation (from bot launch button)
     if auth_token:
-        verified_tg_id = verify_session_token(auth_token)
-        if verified_tg_id:
-            fresh_token = generate_session_token(verified_tg_id, expiry_seconds=86400 * 365)
+        decoded = decode_session_token(auth_token)
+        if decoded:
+            verified_tg_id, _exp, iat = decoded
+            revoked_at = None
+            try:
+                from models.user import User
+                async with get_db_session() as session:
+                    result = await session.execute(
+                        select(User.sessions_revoked_at).where(User.telegram_id == verified_tg_id)
+                    )
+                    revoked_at = result.scalar()
+            except Exception as e:
+                logging.debug("Session revocation check failed on exchange: %s", e)
+            if session_is_revoked(iat, revoked_at):
+                return JSONResponse({"error": "session_revoked"}, status_code=401)
+            fresh_token = generate_session_token(verified_tg_id, expiry_seconds=86400)
             return {
                 "status": "ok",
                 "token": fresh_token,

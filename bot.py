@@ -288,6 +288,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 from middleware.rate_limit import RateLimitMiddleware
 app.add_middleware(RateLimitMiddleware, redis_client=redis)
+from middleware.session_revocation import SessionRevocationMiddleware
+app.add_middleware(SessionRevocationMiddleware)
 
 
 @app.middleware("http")
