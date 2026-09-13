@@ -498,7 +498,61 @@ async def tma_submit_review(request: Request):
     return {"status": "success"}
 
 
+@router.get("/api/orders")
+async def get_tma_orders(request: Request, tg_id: int | None = None, limit: int = 50):
+    """Retrieve user order history with delivery credentials, products, and status."""
+    try:
+        tg_id = extract_and_verify_telegram_user(request, tg_id)
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
+
+    async with get_db_session() as session:
+        orders_db = await BatStoreOrderRepository.get_by_telegram_id(tg_id, session, limit=limit)
+        orders_data = []
+        sym = config.CURRENCY.get_localized_symbol()
+        for o in orders_db:
+            goods_list = []
+            product_names = []
+            instructions_ar = []
+            instructions_en = []
+            warranty_days = 0
+            for d in (o.details or []):
+                if isinstance(d, dict):
+                    product_names.append(d.get("name") or "Product")
+                    warranty_days = max(warranty_days, d.get("warranty_days") or 0)
+                    for g in d.get("delivery_goods", []):
+                        clean_g = normalize_delivery_good(g)
+                        if clean_g:
+                            goods_list.append(clean_g)
+                    if d.get("instructions_ar"):
+                        instructions_ar.extend(d["instructions_ar"])
+                    if d.get("instructions_en"):
+                        instructions_en.extend(d["instructions_en"])
+
+            orders_data.append({
+                "id": o.id,
+                "status": o.status,
+                "total_sell": float(o.total_sell or 0.0),
+                "total": float(o.total_sell or 0.0),
+                "sym": sym,
+                "product_name": ", ".join(product_names) if product_names else "Order",
+                "products": ", ".join(product_names) if product_names else "Order",
+                "goods": goods_list,
+                "delivery_goods": goods_list,
+                "instructions_ar": instructions_ar,
+                "instructions_en": instructions_en,
+                "warranty_days": warranty_days,
+                "warranty_claimed": getattr(o, "warranty_claimed", False),
+                "created_at": o.created_at.strftime("%b %d, %H:%M") if o.created_at else "",
+                "timestamp": o.created_at.timestamp() if o.created_at else 0,
+                "type": "order",
+                "gifted_by_admin": any(isinstance(d, dict) and d.get("externally_paid") is True for d in (o.details or [])),
+            })
+        return {"status": "ok", "orders": orders_data}
+
+
 @router.get("/api/user-data")
+@router.get("/api/user/me")
 async def get_tma_user_data(request: Request, tg_id: int | None = None):
     from bot import bot
     try:

@@ -326,6 +326,114 @@
     }
   }
 
+  let activeActivityFilter = 'all';
+
+  function filterActivityView(filterKey) {
+    activeActivityFilter = filterKey;
+    api().haptic?.('selection');
+    ['all', 'orders', 'recharges', 'vault'].forEach(k => {
+      const chip = document.getElementById(`act-filter-${k}`);
+      if (chip) chip.classList.toggle('active', k === filterKey);
+    });
+    renderUserActivity();
+  }
+
+  function renderUserActivity() {
+    const container = document.getElementById('orders-container-box') || document.getElementById('orders-history-list');
+    if (!container) return;
+
+    const isAr = (state().currentAppLanguage === 'ar');
+    const orders = (state().userOrders || []).map(o => ({ ...o, type: 'order' }));
+    const recharges = (state().userRecharges || []).map(r => ({ ...r, type: 'recharge' }));
+    let list = [...orders, ...recharges];
+    list.sort((a, b) => (b.timestamp || b.id || 0) - (a.timestamp || a.id || 0));
+
+    if (activeActivityFilter === 'orders') {
+      list = list.filter(i => i.type === 'order');
+    } else if (activeActivityFilter === 'recharges') {
+      list = list.filter(i => i.type === 'recharge');
+    } else if (activeActivityFilter === 'vault') {
+      list = list.filter(i => i.type === 'order' && i.status === 'completed' && ((i.goods && i.goods.length) || (i.delivery_goods && i.delivery_goods.length)));
+    }
+
+    if (list.length === 0) {
+      container.innerHTML = `
+        <div style="text-align: center; padding: 40px 16px; color: var(--hint);">
+          <div style="font-size: 38px; margin-bottom: 8px;">📦</div>
+          <div style="font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 4px;">
+            ${isAr ? 'لا توجد عمليات أو طلبات سابقة' : 'No previous orders or activities'}
+          </div>
+          <p style="font-size: 13px; margin-bottom: 16px; color: var(--hint);">
+            ${isAr ? 'تصفح باقات واشتراكات المتجر واشترِ الآن برصيد محفظتك.' : 'Browse store subscriptions and purchase now with your wallet.'}
+          </p>
+          <button class="btn-action-primary" onclick="switchTab('store')" style="width: auto; padding: 0 24px; margin: 0 auto; height: 42px; font-size: 13px;">
+            ${isAr ? '🛍️ تصفح المتجر' : '🛍️ Browse Store'}
+          </button>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = list.map(it => {
+      if (it.type === 'order') {
+        const isCompleted = (it.status === 'completed');
+        const isRefunded = (it.status === 'refunded');
+        const statusClass = isCompleted ? 'status-completed' : (isRefunded ? 'status-refunded' : 'status-pending');
+        const statusLabel = isCompleted ? (isAr ? 'مكتمل ✅' : 'Completed ✅') : (isRefunded ? (isAr ? 'مسترجع ↩️' : 'Refunded ↩️') : (isAr ? 'قيد التجهيز ⏳' : 'In Progress ⏳'));
+        const goods = it.goods || it.delivery_goods || [];
+        const prodName = it.products || it.product_name || (isAr ? 'منتج رقمي' : 'Digital Product');
+        const totalNum = Number(it.total || it.total_sell || 0).toFixed(2);
+
+        return `
+          <div class="order-history-card" style="background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <span style="font-size: 12px; font-weight: 800; color: var(--accent);">#${it.id}</span>
+              <span class="activity-status-pill ${statusClass}" style="font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 8px;">${statusLabel}</span>
+            </div>
+            <div style="font-size: 14px; font-weight: 800; color: var(--text); margin-bottom: 4px;">
+              🛍️ ${escapeAttr(prodName)}
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--hint); margin-bottom: ${goods.length ? '10px' : '0'};">
+              <span>💰 $${totalNum} USD</span>
+              <span>${it.created_at || ''}</span>
+            </div>
+            ${goods.length ? `
+              <div style="background: var(--input-bg); border-radius: 10px; padding: 10px; border: 1px solid var(--border); margin-top: 6px;">
+                <div style="font-size: 11px; font-weight: 700; color: var(--accent); margin-bottom: 6px;">
+                  🔑 ${isAr ? 'بيانات الاستلام والتفعيل:' : 'Delivered Credentials:'}
+                </div>
+                ${goods.map(g => `
+                  <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; background: var(--bg); padding: 6px 10px; border-radius: 8px;">
+                    <code style="font-size: 12px; font-family: monospace; word-break: break-all; color: var(--text); user-select: all;">${escapeAttr(g)}</code>
+                    <button class="btn-copy-mini" onclick="copyCredFromBtn(this)" data-copy="${escapeAttr(g)}" style="padding: 4px 8px; font-size: 11px; flex-shrink: 0;">
+                      📋 ${isAr ? 'نسخ' : 'Copy'}
+                    </button>
+                  </div>
+                `).join('')}
+              </div>
+            ` : ''}
+          </div>
+        `;
+      } else {
+        const isPaid = (it.status === 'completed');
+        const statusLabel = isPaid ? (isAr ? 'تم الشحن ✅' : 'Completed ✅') : (isAr ? 'قيد المراجعة ⏳' : 'Pending ⏳');
+        const statusClass = isPaid ? 'status-completed' : 'status-pending';
+        return `
+          <div class="order-history-card" style="background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <span style="font-size: 13px; font-weight: 800; color: var(--text);">💳 ${escapeAttr(it.method || 'شحن رصيد')}</span>
+              <span class="activity-status-pill ${statusClass}" style="font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 8px;">${statusLabel}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--hint);">
+              <span style="font-weight: 800; color: var(--success);">+$${Number(it.amount_usd || 0).toFixed(2)} USD</span>
+              <span>${it.created_at || ''}</span>
+            </div>
+          </div>
+        `;
+      }
+    }).join('');
+  }
+
   async function loadUserData() {
     try {
       const res = await fetch('/api/user/me');
@@ -333,7 +441,10 @@
         const data = await res.json();
         state().userData = data;
         state().userId = data.telegram_id || data.tg_id;
+        if (data.orders) state().userOrders = data.orders;
+        if (data.recharges) state().userRecharges = data.recharges;
         wallet().renderWalletBalances(data);
+        if (state().activeTab === 'orders') renderUserActivity();
       }
     } catch (e) {
       console.warn('Failed to fetch user data:', e);
@@ -341,32 +452,27 @@
   }
 
   async function loadUserOrders() {
-    const listEl = document.getElementById('orders-history-list');
-    if (!listEl) return;
-    listEl.innerHTML = '<div class="loading-spinner">جاري تحميل العمليات...</div>';
+    const container = document.getElementById('orders-container-box') || document.getElementById('orders-history-list');
+    if (!container) return;
+    if (!state().userOrders || !state().userOrders.length) {
+      container.innerHTML = '<div class="loading-spinner">جاري تحميل العمليات...</div>';
+    }
 
     try {
       const res = await fetch('/api/orders');
       if (res.ok) {
         const data = await res.json();
-        const orders = data.orders || [];
-        if (orders.length === 0) {
-          listEl.innerHTML = '<div class="empty-state-card">لا توجد عمليات سابقة حتى الآن</div>';
-          return;
-        }
-        const isAr = (state().currentAppLanguage === 'ar');
-        listEl.innerHTML = orders.map(o => `
-          <div class="order-history-card">
-            <div class="order-card-header">
-              <span class="order-card-id">#${o.id}</span>
-              <span class="order-card-status status-${o.status}">${isAr ? (o.status === 'completed' ? 'مكتمل ✅' : 'قيد المعالجة ⏳') : o.status}</span>
-            </div>
-            <div class="order-card-total">$${Number(o.total_sell || 0).toFixed(2)}</div>
-          </div>
-        `).join('');
+        state().userOrders = data.orders || [];
+        renderUserActivity();
+      } else if (state().userData && state().userData.orders) {
+        state().userOrders = state().userData.orders;
+        renderUserActivity();
       }
     } catch (_) {
-      listEl.innerHTML = '<div class="empty-state-card">فشل تحميل سجل العمليات</div>';
+      if (state().userData && state().userData.orders) {
+        state().userOrders = state().userData.orders;
+        renderUserActivity();
+      }
     }
   }
 
@@ -435,6 +541,16 @@
 
     // 8. Durable Checkout Recovery on Startup
     checkout().recoverPendingCheckout?.();
+
+    // 9. Deep linking: handle startapp or start_param
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const tg = window.Telegram && window.Telegram.WebApp;
+      const startParam = urlParams.get('startapp') || urlParams.get('tgWebAppStartParam') || tg?.initDataUnsafe?.start_param || '';
+      if (startParam === 'orders' || startParam.startsWith('ord_')) {
+        switchTab('orders');
+      }
+    } catch (_) {}
   }
 
   // Attach all functions to window for backward compatibility with inline HTML attributes
@@ -453,6 +569,9 @@
   root.copyFromBtn = copyFromBtn;
   root.loadStorefrontData = loadStorefrontData;
   root.loadUserData = loadUserData;
+  root.loadUserOrders = loadUserOrders;
+  root.filterActivityView = filterActivityView;
+  root.renderUserActivity = renderUserActivity;
 
   // Storefront Proxies
   root.switchCategoryViewMode = (m) => storefront().switchCategoryViewMode?.(m);

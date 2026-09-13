@@ -1,5 +1,5 @@
 from aiogram import Router, F
-from aiogram.filters import StateFilter
+from aiogram.filters import StateFilter, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -72,14 +72,8 @@ async def top_up_balance(**kwargs):
 
 
 async def purchase_history(**kwargs):
-    callback: CallbackQuery = kwargs.get("callback")
-    callback_data: MyProfileCallback = kwargs.get("callback_data")
-    session: AsyncSession = kwargs.get("session")
-    state: FSMContext = kwargs.get("state")
-    language: Language = kwargs.get("language")
-    msg_text, kb_builder = await UserService.get_purchase_history_buttons(callback.from_user.id, callback_data,
-                                                                          state, session, language)
-    await safe_edit_message(callback, msg_text, kb_builder.as_markup())
+    # Route directly to digital orders so user never sees empty legacy 'buys'
+    await batstore_orders(**kwargs)
 
 
 async def get_purchase(**kwargs):
@@ -150,71 +144,113 @@ async def referral_system(**kwargs):
 
 
 async def batstore_orders(**kwargs):
-    callback: CallbackQuery = kwargs.get("callback")
+    event: CallbackQuery | Message | None = kwargs.get("callback") or kwargs.get("message")
+    if not event:
+        return
     session: AsyncSession = kwargs.get("session")
     language: Language = kwargs.get("language")
     from repositories.batstore_order import BatStoreOrderRepository
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     from callbacks import MyProfileCallback
+    from routes.common import normalize_delivery_good
 
+    user_tg_id = event.from_user.id if event.from_user else 0
     orders = await BatStoreOrderRepository.get_by_telegram_id(
-        callback.from_user.id, session, limit=10)
+        user_tg_id, session, limit=15)
+
+    is_admin = user_tg_id in config.ADMIN_ID_LIST
+    showing_store_orders = False
+    if is_admin and not orders:
+        from sqlalchemy import select
+        from models.order import Order
+        stmt = select(Order).order_by(Order.created_at.desc()).limit(15)
+        res = await session.execute(stmt)
+        orders = list(res.scalars().all())
+        showing_store_orders = True
 
     kb_builder = InlineKeyboardBuilder()
     # Deep link into the Mini App orders tab (startapp=orders).
     try:
         _tma_host = (config.WEBHOOK_HOST or "").strip().rstrip("/")
-        _uid = callback.from_user.id if callback.from_user else 0
-        if _tma_host and _uid:
+        if _tma_host and user_tg_id:
             from services.telegram_auth import generate_session_token as _gen_tok
             from aiogram.types import WebAppInfo as _WebAppInfo, InlineKeyboardButton as _Btn
-            _tok = _gen_tok(_uid)
+            _tok = _gen_tok(user_tg_id)
+            target_start = "admin_radar" if showing_store_orders else "orders"
+            btn_title = "📡 رادار العمليات المباشر (Mini App)" if (showing_store_orders and language == Language.AR) else ("📡 Live Operations Radar" if showing_store_orders else ("🧾 فتح طلباتي في المتجر السريع (Mini App)" if language == Language.AR else "🧾 Open Orders in Mini App"))
             kb_builder.row(_Btn(
-                text="🧾 فتح طلباتي في المتجر السريع" if language == Language.AR else "🧾 Open My Orders in Mini App",
-                web_app=_WebAppInfo(url=f"{_tma_host}/app?tg_id={_uid}&auth_token={_tok}&startapp=orders"),
+                text=btn_title,
+                web_app=_WebAppInfo(url=f"{_tma_host}/app?tg_id={user_tg_id}&auth_token={_tok}&startapp={target_start}"),
             ))
     except Exception:
         pass
+
+    is_ar = (language == Language.AR)
     if not orders:
-        caption = get_text(language, BotEntity.USER, "batstore_orders_empty")
+        caption = (
+            "📦 <b>لا توجد طلبات سابقة حتى الآن.</b>\n\n"
+            "يمكنك تصفح منتجات واشتراكات المتجر والشراء فورياً عبر المتجر السريع أدناه!"
+            if is_ar else
+            "📦 <b>No orders yet.</b>\n\n"
+            "Browse digital subscriptions and products in the Mini App below!"
+        )
     else:
-        lines = []
+        if showing_store_orders:
+            header = "👑 <b>آخر طلبات العملاء في المتجر (سجل الإدارة):</b>\n" if is_ar else "👑 <b>Recent Store Customer Orders (Admin View):</b>\n"
+        else:
+            header = "🧾 <b>سجل طلباتك ومشترياتك الرقمية:</b>\n" if is_ar else "🧾 <b>Your Digital Orders & Purchases:</b>\n"
+        lines = [header]
+        sym = config.CURRENCY.get_localized_symbol()
         for o in orders:
-            sym = config.CURRENCY.get_localized_symbol()
-            status_emoji = "✅" if o.status == "completed" else "⏳" if o.status == "pending_fulfillment" else "❌"
+            status_emoji = "✅" if o.status == "completed" else "⏳" if "pending" in o.status else "↩️" if o.status == "refunded" else "❌"
             details = o.details or []
-            product_names = ", ".join(d.get("name", "?") for d in details[:3])
-            if len(details) > 3:
-                product_names += f" +{len(details) - 3} more"
+            product_names = ", ".join(d.get("name", "?") for d in details if isinstance(d, dict)) or ("منتج رقمي" if is_ar else "Digital Service")
+            created_str = o.created_at.strftime("%Y-%m-%d %H:%M") if o.created_at else ""
+            status_label = "مكتمل" if o.status == "completed" else "قيد المعالجة" if "pending" in o.status else o.status
+            customer_info = f" (عميل: <code>{o.telegram_id}</code>)" if showing_store_orders else ""
             lines.append(
-                f"{status_emoji} #{o.id} · {product_names} · {o.total_sell:.2f}{sym}"
+                f"{status_emoji} <b>طلب #{o.id}</b> · {product_names}{customer_info}\n"
+                f"💰 <b>المبلغ:</b> ${float(o.total_sell or 0.0):.2f} {sym} | <b>الحالة:</b> {status_label}\n"
+                f"📅 <i>{created_str}</i>"
             )
             if o.status == "completed" and o.details:
                 for d in o.details:
-                    goods = d.get("delivery_goods", [])
-                    if goods:
-                        for g in goods[:5]:
-                            lines.append(f"  📦 <code>{g}</code>")
-                        if len(goods) > 5:
-                            lines.append(f"  ... +{len(goods) - 5} more")
-                        lines.append("  <i>(Tap credentials above to copy)</i>")
-            if o.status == "completed" and not getattr(o, "warranty_claimed", False):
-                has_warranty = any((d.get("warranty_days") or 0) > 0 for d in (o.details or []))
+                    if isinstance(d, dict):
+                        goods = d.get("delivery_goods", [])
+                        if goods:
+                            for g in goods[:5]:
+                                clean_g = normalize_delivery_good(g)
+                                if clean_g:
+                                    lines.append(f"  🔑 <code>{clean_g}</code>")
+                            lines.append("  <i>(اضغط على الكود أو الرابط للنسخ الفوري)</i>" if is_ar else "  <i>(Tap code above to copy)</i>")
+            if o.status == "completed" and not getattr(o, "warranty_claimed", False) and not showing_store_orders:
+                has_warranty = any((d.get("warranty_days") or 0) > 0 for d in (o.details or []) if isinstance(d, dict))
                 if has_warranty:
-                    lines.append("  🛡️ <i>Eligible for warranty replacement</i>")
+                    lines.append("  🛡️ <i>مؤهل لطلب الضمان والاستبدال</i>" if is_ar else "  🛡️ <i>Eligible for warranty replacement</i>")
                     kb_builder.button(
-                        text=f"🛡️ Claim Warranty #{o.id}",
+                        text=f"🛡️ طلب الضمان #{o.id}" if is_ar else f"🛡️ Claim Warranty #{o.id}",
                         callback_data=f"claim_warranty_{o.id}")
-        caption = "\n\n".join(lines)
-    if orders:
+            lines.append("────────────────────")
+        caption = "\n".join(lines)
+
+    if orders and not showing_store_orders:
         kb_builder.button(
-            text="⚠️ Report Order Issue",
+            text="⚠️ إبلاغ عن مشكلة في طلب" if is_ar else "⚠️ Report Order Issue",
             callback_data="report_batstore_issue")
     kb_builder.button(
         text=get_text(language, BotEntity.COMMON, "back_button"),
         callback_data=MyProfileCallback.create(level=0))
     kb_builder.adjust(1)
-    await safe_edit_message(callback, caption, kb_builder.as_markup())
+
+    if isinstance(event, CallbackQuery):
+        await safe_edit_message(event, caption, kb_builder.as_markup())
+    else:
+        await event.answer(caption, reply_markup=kb_builder.as_markup(), parse_mode="HTML")
+
+
+@my_profile_router.message(Command("orders", "my_orders", "history"), IsUserExistFilter())
+async def cmd_orders(message: Message, session: AsyncSession, language: Language):
+    await batstore_orders(message=message, session=session, language=language)
 
 
 @my_profile_router.message(IsUserExistFilter(), F.text, StateFilter(UserStates.filter_purchase_history))

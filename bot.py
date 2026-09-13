@@ -147,6 +147,7 @@ async def _startup() -> None:
         from aiogram.types import BotCommand
         commands = [
             BotCommand(command="start", description="🛍️ Open Store & Main Menu"),
+            BotCommand(command="orders", description="📦 My Orders & Purchases"),
             BotCommand(command="search", description="🔍 Find Digital Accounts & Keys"),
             BotCommand(command="redeem", description="🎟️ Redeem Gift Voucher Code"),
             BotCommand(command="help", description="💬 Support & Help"),

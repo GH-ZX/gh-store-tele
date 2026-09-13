@@ -114,9 +114,7 @@ class UserService:
 
         kb_builder.button(text=get_text(language, BotEntity.USER, "top_up_balance_button"),
                           callback_data=MyProfileCallback.create(level=1))
-        kb_builder.button(text=get_text(language, BotEntity.USER, "purchase_history_button"),
-                          callback_data=MyProfileCallback.create(level=3))
-        kb_builder.button(text=get_text(language, BotEntity.USER, "batstore_orders_button"),
+        kb_builder.button(text="🧾 طلباتي ومشترياتي" if language == Language.AR else "🧾 My Orders & History",
                           callback_data=MyProfileCallback.create(level=8))
         kb_builder.button(text=get_text(language, BotEntity.USER, "referral_button"),
                           callback_data=MyProfileCallback.create(level=7))

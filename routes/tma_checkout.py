@@ -119,6 +119,7 @@ async def tma_cart_checkout(request: Request):
     return await _durable_checkout(request, cart=True)
 
 
+
 @router.post("/api/cart/sync")
 async def tma_cart_sync(request: Request):
     """Sync client-side TMA cart to Redis for abandoned cart recovery notifications."""
@@ -373,3 +374,62 @@ async def submit_support_ticket(request: Request):
         )
         await NotificationService.send_to_admins(ticket_card, None)
     return {"status": "success", "ticket_id": ticket_id}
+
+
+@router.post("/api/orders/check")
+async def check_pending_order(request: Request):
+    """Inquire order fulfillment status by idempotency checkout key for checkout recovery."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+
+    idempotency_key = str(body.get("idempotency_key") or "").strip()
+    tg_id_param = body.get("tg_id")
+    try:
+        tg_id = extract_and_verify_telegram_user(request, int(tg_id_param) if tg_id_param else None)
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
+
+    if not idempotency_key:
+        return JSONResponse({"error": "missing_idempotency_key"}, status_code=400)
+
+    from sqlalchemy import select
+    from models.order import Order
+    from routes.common import normalize_delivery_good
+
+    async with get_db_session() as session:
+        stmt = select(Order).where(Order.telegram_id == tg_id, Order.checkout_key == idempotency_key)
+        res = await session.execute(stmt)
+        order = res.scalar_one_or_none()
+
+        if not order:
+            return JSONResponse({"status": "not_found", "order": None}, status_code=404)
+
+        goods_list = []
+        product_names = []
+        for d in (order.details or []):
+            product_names.append(d.get("name") or "Product")
+            for g in d.get("delivery_goods", []):
+                clean_g = normalize_delivery_good(g)
+                if clean_g:
+                    goods_list.append(clean_g)
+
+        return {
+            "status": "ok",
+            "order": {
+                "id": order.id,
+                "status": order.status,
+                "total_sell": float(order.total_sell or 0.0),
+                "products": ", ".join(product_names) if product_names else "Order",
+                "delivery_goods": goods_list,
+                "goods": goods_list,
+                "created_at": order.created_at.strftime("%Y-%m-%d %H:%M") if getattr(order, "created_at", None) else "",
+            }
+        }
+
+
+# Function alias for checkout recovery
+check_order_recovery = check_pending_order
+
+
