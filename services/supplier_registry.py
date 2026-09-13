@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from services.batstore import BatStoreService, BatStoreAPIError, BatStoreOutOfStockError
 from services.prodseller import ProdSellerService, ProdSellerAPIError, ProdSellerOutOfStockError
 from services.g2bulk import G2BulkService, G2BulkAPIError, G2BulkOutOfStockError
+from services.fivesim import FiveSimService, FiveSimAPIError, FiveSimOutOfStockError
 
 
 class SupplierCapability(str, Enum):
@@ -35,6 +36,7 @@ class SupplierCapability(str, Enum):
     STATUS = "status"
     CANCEL = "cancel"
     BALANCE = "balance"
+    SMS_ACTIVATION = "sms_activation"
 
 
 class SupplierCapabilityUnsupported(Exception):
@@ -335,6 +337,43 @@ class G2BulkAdapter(SupplierAdapter):
         return await G2BulkService.get_cached_balance(session, redis_client, force_refresh=force_refresh)
 
 
+class FiveSimAdapter(SupplierAdapter):
+    """5sim Virtual SMS Number Provider Adapter."""
+
+    name = "5sim"
+    display_name = "5sim SMS Activation"
+    badge = "5sim"
+    alternate_badge = "بديل (5sim)"
+    capabilities = frozenset({
+        SupplierCapability.BALANCE,
+        SupplierCapability.STATUS,
+        SupplierCapability.CANCEL,
+        SupplierCapability.SMS_ACTIVATION,
+    })
+    out_of_stock_error = FiveSimOutOfStockError
+    api_error = FiveSimAPIError
+
+    async def order_status(self, session: AsyncSession | Session, order) -> dict[str, Any]:
+        external_ref = str(order.get("external_order_ref") or order.get("activation_id") or "")
+        return await FiveSimService.check_order(external_ref)
+
+    async def cancel(self, session: AsyncSession | Session, order) -> dict[str, Any]:
+        external_ref = str(order.get("external_order_ref") or order.get("activation_id") or "")
+        return await FiveSimService.cancel_order(external_ref)
+
+    async def get_cached_balance(
+        self,
+        session: AsyncSession | Session,
+        redis_client=None,
+        force_refresh: bool = False,
+    ) -> float:
+        try:
+            profile = await FiveSimService.get_balance()
+            return float(profile.get("balance_usd", 0.0))
+        except Exception:
+            return 0.0
+
+
 class SupplierRegistry:
     """Registry mapping canonical supplier names to their capability adapters."""
 
@@ -369,3 +408,4 @@ class SupplierRegistry:
 SupplierRegistry.register(BatStoreAdapter())
 SupplierRegistry.register(ProdSellerAdapter())
 SupplierRegistry.register(G2BulkAdapter())
+SupplierRegistry.register(FiveSimAdapter())

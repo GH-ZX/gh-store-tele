@@ -381,12 +381,12 @@ alembic current                                # expect DB at head
 | 12 | Supplier capability registry | ✅ DONE | `services/supplier_registry.py` (SupplierCapability enum + BatStore/ProdSeller/G2Bulk adapters); `MultiSupplierService` dispatches through it; order_fulfillment whitelist uses registry |
 | 13 | `product_id` uniqueness / cross-supplier collisions | ✅ DONE | Guard `supplier_owns_row()` in `repositories/product.py` wired into all 3 syncs (skip+log, never silently overwrite); intra-ProdSeller id-hash collision guard; range tests |
 | 14 | Failover = admin-approved equivalent offers | ✅ DONE (deployed) | `models/approved_equivalent.py` table + SQLAdmin view; `find_alternate_in_stock` resolves approved pairs first, then deterministic token match (replaces fuzzy substring); migration `c9d8e7f6a5b4` |
-| 15 | Minor findings sweep (part 1) | ⏳ TODO | |
-| 16 | Wallet float / Decimal audit | ⏳ TODO | |
-| 17 | Minor findings sweep (part 2) | ⏳ TODO | |
-| 18 | Backup script / Dockerfile review | ⏳ TODO | |
-| 19 | Misc robustness sweep | ⏳ TODO | |
-| 20 | Split `static/storefront/app.js` | ⏳ TODO | |
+| 15 | SMS-activation lifecycle for 5sim-like providers | ⏳ NEXT | Country/operator/service selection, phone allocation, code polling, resend/cancel, expiration timeouts |
+| 16 | Wallet float / Decimal audit & append-only ledger | ⏳ TODO | `models/user.py` balance float → Decimal, ledger records for credit/capture/refund |
+| 17 | Multi-process background worker durability | ⏳ TODO | Durable job queue, claim jobs atomically, persist poll attempts |
+| 18 | Backups executable, persistent, and encrypted | ⏳ TODO | Docker backup tools, volumes, encryption, tested restore |
+| 19 | Fix tests protecting legacy/incorrect behaviors | ⏳ TODO | True integration tests, eliminate tests expecting unauthenticated fallbacks |
+| 20 | Split Mini App storefront JS & test mobile journeys | ✅ DONE | Decomposed 9,160-line `app.js` into `api.js`, `storefront.js`, `wallet.js`, `checkout.js`, `admin.js`, and `app.js`; enabled viewport zoom; added automated headless Chromium browser coverage suite (`tests/test_storefront_browser.cjs`) |
 
 ### Item 11 — session revocation
 - `services/telegram_auth.py`:
@@ -440,19 +440,134 @@ g2bulk 30M+/35M+), but the risk was real and previously silenced by the global u
 - Migration `c9d8e7f6a5b4_approved_equivalents.py` (down_revision `f5e6d7c8b9a0`).
 - `tests/test_approved_equivalents.py` (9 tests).
 
-### Commits (this audit cycle)
+### Item 20 — split Mini App storefront JS & browser coverage  ✅ DONE
+- Decomposed monolithic `static/storefront/app.js` into focused, cohesive modules with shared API/auth layer:
+  - `static/storefront/api.js`: Session token storage, fetch auto-interceptor, Telegram WebApp SDK bindings, haptics, safe areas, i18n dictionary, RTL/LTR layout switcher, navStack, and keyboard handlers.
+  - `static/storefront/storefront.js`: Categories rendering (grid vs list), folder cards, in-stock priority partitioning, alias-powered search (`SEARCH_ALIASES`), product detail sheet, countdown timer, and reviews/support modals.
+  - `static/storefront/wallet.js`: Multi-currency balance rendering (USD, SYP, Stars), VIP tier progression, recharge rails (Stars invoice, Crypto BEP-20, ShamCash, Syriatel Cash), voucher redemption, and receipt modal.
+  - `static/storefront/checkout.js`: Multi-item cart drawer, dynamic game account fields, coupon validation, durable checkout recovery engine (`savePendingCheckout`, `recoverPendingCheckout`), and post-purchase credential view.
+  - `static/storefront/admin.js`: Admin overview dashboard, liquidity monitor, live product/category/folder/banner editors, user balance adjustment, and session revocation triggers.
+  - `static/storefront/app.js`: Master bootstrap orchestrator, window global backward compatibility, and security formatters preservation.
+- Viewport zoom: Removed `maximum-scale=1.0, user-scalable=no` from `templates/storefront.html` to allow pinch-to-zoom and accessibility scaling while preserving `viewport-fit=cover`.
+- Asset caching: `services/storefront_app.py` computes max mtime across all modular `.js` scripts for deploy-stable cache-busting.
+- Automated browser test coverage:
+  - `tests/test_storefront_browser.cjs`: Headless Chromium test suite (36 tests) covering checkout recovery, Arabic/English RTL/LTR toggling, navigation stack & Telegram BackButton, keyboard behaviors (Enter on search/coupon, Escape on modals), and viewport zoom.
+  - `tests/test_storefront_browser.py`: Pytest integration runner.
+  - `tests/storefront_security.cjs`: Re-verified (118 security tests pass).
 
-```
-eef7529 feat(failover): admin-approved equivalent offers and deterministic fallback matching
-c40ba2b feat(supply): supplier capability registry and product_id collision guards
-ca444e6 feat(auth): session revocation via iat tokens, middleware, and admin controls
-c458a71 feat(commerce): durable checkout with idempotency keys and resilient fulfillment
-```
+### Item 15 — SMS-activation lifecycle (5sim)  ✅ DONE
+- Complete virtual phone number provisioning and SMS activation lifecycle backed by **5sim** (`https://5sim.net/v1`).
+- Models & Database (`models/sms_activation.py`):
+  - `SmsActivation`: Dedicated tracking of virtual number allocations, incoming SMS codes, 15-minute countdown timeouts, and refund states.
+  - `SmsServiceConfig`: Admin-curated list of popular SMS activation services (Telegram, WhatsApp, OpenAI/ChatGPT, Google/Gmail, Instagram, TikTok, Discord, Steam, X/Twitter, Microsoft) with enable/disable toggles and icons.
+  - `SmsCountryConfig`: Admin-curated list of high-success / good-rate regions (USA, UK, Netherlands, Germany, Poland, Sweden, France, Canada, Indonesia, Malaysia, Turkey, Brazil, Kazakhstan) with enable/disable toggles and flags.
+  - SQLAdmin views: `SmsActivationAdmin`, `SmsServiceConfigAdmin`, `SmsCountryConfigAdmin` registered under the "Catalog" category.
+- Backend Services & Routing:
+  - `services/fivesim.py`: `FiveSimService` providing `get_balance()`, `get_prices()`, `buy_activation()`, `check_order()`, `finish_order()`, `cancel_order()`, and `ban_order()`.
+  - `services/supplier_registry.py`: Registered `FiveSimAdapter` under `SupplierRegistry` declaring `SMS_ACTIVATION`, `CANCEL`, `BALANCE`, and `STATUS` capabilities.
+  - `routes/tma_sms.py`: REST endpoints for Mini App:
+    - `GET /api/sms/services`: Active popular services.
+    - `GET /api/sms/countries`: Active good-rate regions.
+    - `GET /api/sms/quote`: Real-time stock count, cost calculation, and margin USD pricing.
+    - `POST /api/sms/buy`: Verified Telegram user identity check, atomic balance debit, virtual number allocation, and order creation.
+    - `GET /api/sms/order/{id}`: Live SMS code polling with auto-completion and auto-finish upstream.
+    - `POST /api/sms/order/{id}/cancel`: Cancellation with atomic wallet refund.
+    - `POST /api/sms/order/{id}/ban`: Number ban reporting with atomic wallet refund.
+    - `GET /api/admin/sms/settings`: Admin dashboard for 5sim balance and service/country switches.
+    - `POST /api/admin/sms/services/toggle` & `/countries/toggle`: Instant admin switch toggles.
+- Background Poller & Resilience:
+  - `services/order_polling.py`: `poll_pending_sms_activations()` background task checks pending activations every 10s:
+    - On code arrival: finishes upstream, updates order to completed, and sends a push notification to user via `NotificationService.send_to_user`.
+    - On timeout/cancellation: marks timeout, executes atomic refund via `UserRepository.refund_balance`, and notifies user.
+- Frontend Mini App (`static/storefront/sms.js` & `templates/storefront.html`):
+  - Added interactive `#sms-activation-modal` with two-stage flow:
+    - Stage 1: Service/Country select, stock badge, real-time USD and local currency pricing, 15-minute guarantee note, and "Buy Number" button.
+    - Stage 2: Allocated phone number display with 1-tap copy, animated pulsing radar waiting indicator, 15:00 countdown timer, received code card with 1-tap copy, and instant Cancel & Ban refund buttons.
+  - Added `#filter-sms-chip` to the storefront filter chips bar.
+  - Added `#admin-sms-modal` and `#btn-admin-sms-drawer` in Settings to let admins toggle services/countries and view 5sim balance in real-time.
+- Automated Tests:
+  - `tests/test_fivesim_service.py` (11 passed).
+  - `tests/test_tma_sms_routes.py` (11 passed).
+  - `tests/test_storefront_browser.cjs` (46 passed).
+  - Total pytest suite: 309 passed.
+  - Migration: `d1e2f3a4b5c6_sms_activations.py` applied.
+
+### Item 16 — exact money values & append-only wallet ledger  ✅ DONE
+- Converted floating-point monetary columns to exact fixed-point `Numeric(12, 2)`:
+  - `users.top_up_amount` and `users.consume_records` in `models/user.py`.
+  - `batstore_orders.total_sell` in `models/order.py`.
+- Built an immutable, append-only `WalletLedger` model (`models/wallet_ledger.py`, table `wallet_ledger`):
+  - Records every balance event: `reservation` (hold/debit), `refund`, `credit` (deposit/top-up), and `capture` (fulfillment).
+  - Unique idempotency reference per transaction (`reference`, indexed and unique) preventing double-spending and duplicate credits.
+  - Retains actual upstream supplier wholesale cost (`supplier_cost`, `Numeric(12, 4)`) and wholesale currency (`supplier_currency`, e.g., `USD`, `USDT`, `RUB`) at fulfillment/capture time.
+  - SQLAdmin view `WalletLedgerAdmin` registered with `can_create = False`, `can_edit = False`, `can_delete = False`.
+- Integrated ledger recording atomically into repository operations:
+  - `UserRepository.try_debit_balance`: Records `reservation` ledger entry with balance before and after.
+  - `UserRepository.refund_balance`: Records `refund` ledger entry with balance before and after.
+  - `UserRepository.credit_balance`: Records `credit` ledger entry with balance before and after.
+  - `UserRepository.record_capture`: Records `capture` ledger entry persisting supplier wholesale cost and currency.
+- Applied Alembic migration `e2f3a4b5c6d7_wallet_ledger_exact_money.py`.
+- Automated test suite: `tests/test_wallet_ledger.py` (7 tests covering reservation, refund, credit, capture, idempotency, and admin view restrictions).
+
+### Item 17 — durable & safe multi-process background work  ✅ DONE
+- Distributed Leader Leases & Locks (`services/distributed_lock.py`):
+  - `DistributedLock` supporting Redis (with token-matched Lua release) and automatic PostgreSQL advisory lock fallback (`pg_try_advisory_lock` with signed 64-bit key hashing).
+  - `leader_lease(job_name)` context manager ensuring only one worker process runs singleton background cron jobs.
+  - `order_lock(order_id)` and `sms_lock(activation_id)` context managers preventing concurrent double-processing of individual orders or SMS activations across worker processes.
+- Applied Leader Leases across background jobs:
+  - `periodic_catalog_sync` (1-hour leader lease).
+  - `periodic_balance_monitor` (15-minute leader lease).
+  - `daily_digest_cron` (24-hour leader lease in `services/financial_digest.py`).
+  - `periodic_backup_cron` (24-hour leader lease in `services/backup_service.py`).
+- Atomic Order Job Claiming:
+  - `OrderRepository.get_pending(..., skip_locked=True)` adding `FOR UPDATE SKIP LOCKED` support to eliminate duplicate polling across concurrent transactions.
+  - Per-order distributed lock in `poll_pending_orders` and per-activation lock in `poll_pending_sms_activations`.
+- Queue Age Monitoring (> 30 min escalation):
+  - `poll_pending_orders` monitors order creation age. Pending orders older than 30 minutes trigger admin escalation warnings with rate-limited deduplicated alerts (`NotificationService.send_error_to_admins`).
+- Provider Failure Tracking (`services/provider_health.py`):
+  - `ProviderHealthTracker` tracks consecutive failures per upstream provider (`batstore`, `prodseller`, `g2bulk`, `5sim`).
+  - Successful API/status calls reset the failure counter to 0.
+  - Consecutive failures $\ge 5$ trigger deduplicated high-priority admin alerts with recent error message (window: 30 minutes).
+- Automated test suite: `tests/test_distributed_workers.py` (9 tests covering key hashing, Redis lock/release, Postgres fallback, contention, leader lease, order lock, provider failure escalation, skip-locked queries, and queue age monitoring).
+
+### Item 18 — executable, protected, and recoverable backups  ✅ DONE
+- Container Environment:
+  - `Dockerfile`: Runtime stage copies PostgreSQL 18 client utilities (`pg_dump`, `pg_restore`, `psql`) directly from `postgres:18` image and installs `postgresql-client` and `curl`. Eliminates server/client major version mismatches.
+  - `docker-compose.yml`: Mounted `./backups:/bot/backups` volume on `bot` service for persistent storage on the host.
+  - `requirements.txt`: Added `cryptography>=42.0.0`.
+- Cryptographic Engine (`services/backup_crypto.py`):
+  - Authenticated AES-256-GCM encryption (`encrypt_payload`, `decrypt_payload`) with PBKDF2-HMAC-SHA256 (100,000 iterations) key derivation from `BACKUP_ENCRYPTION_KEY`.
+  - Random 16-byte salt and 12-byte nonce generated per archive with tamper detection (GCM 16-byte authentication tag).
+  - Generates companion standard SHA-256 checksum manifest files (`<archive>.sha256`) via `compute_sha256` and `write_sha256_manifest`.
+- Automated Backup Tool (`scripts/backup_db.py`):
+  - Dumps PostgreSQL via native `pg_dump` or `docker exec GHstore-postgres pg_dump` fallback.
+  - Compresses with gzip and encrypts with AES-256-GCM into `ghstore_backup_<timestamp>.sql.gz.enc`.
+  - Automatic archive rotation (`rotate_old_backups`) retaining last $N$ archives and pruning older `.sha256` manifests.
+  - Streams encrypted archives and checksum manifests to Cloudflare R2 / AWS S3 buckets.
+  - `services/backup_service.py` streams encrypted archives and SHA-256 checksum digests directly to Telegram backup channel (`BACKUP_CHANNEL_ID`).
+- Verified Restoration Tool (`scripts/restore_db.py`):
+  - Supports `--verify-only` mode (checks SHA-256 manifest and AES-GCM tag without database writes).
+  - Supports `--decrypt-only` mode (extracts plain SQL for manual inspection).
+  - Interactive safety confirmation (`Type 'YES' to proceed`) before modifying database, with `--force` option for automated scripting.
+  - Restores via local `psql` or `docker exec -i GHstore-postgres psql`.
+- Automated test suite: `tests/test_backup_restore.py` (12 tests covering key derivation, round-trip encryption/decryption, wrong key rejection, tampering detection, manifest verification, rotation, plain gzip fallback, and Telegram streaming).
+
+### Item 19 — fix tests protecting incorrect behavior & live integration tests  ✅ DONE
+- Replaced incorrect assertions:
+  - Verified and asserted strict production auth rules in `tests/test_new_enhancements.py` and `tests/test_telegram_auth_security.py` (unauthenticated claimed IDs are strictly rejected with 401 Unauthorized; session mismatch rejected with 403).
+- Real Database & Redis Integration Test Suite (`tests/test_integration_scenarios.py`):
+  - Runs directly against live PostgreSQL (`ghstore`) and Redis instances using `NullPool` isolation and auto-cleanup fixtures.
+  - Scenario 1 (Duplicate purchases & idempotency): Replaying checkouts with same idempotency key returns the existing order with `created=False` and strictly prevents double-debiting user balance; conflicting request bodies trigger HTTP 409 `idempotency_key_conflict`.
+  - Scenario 2 (Timeout-after-acceptance): Order fulfillment timeout leaves durable order in `pending_fulfillment` with funds safely reserved; background poller or manual review claims order with `FOR UPDATE SKIP LOCKED`, completes fulfillment, and records `capture` ledger row with wholesale supplier cost.
+  - Scenario 3 (Webhook vs. Poller Concurrency Race): Concurrent tasks simulate webhook and background poller arriving at the same millisecond; serialized by `order_lock(order_id)` and PostgreSQL row locks (`with_for_update`), guaranteeing exactly one transition to `completed` and exactly one capture ledger entry without duplication or data loss.
+  - Scenario 4 (Variant mismatches & price tampering): Rejects forged variant selectors, unauthorized variant modifications, and out-of-stock variants with HTTP 400 without debiting user funds or generating ledger entries.
+  - Scenario 5 (Mixed-success multi-item carts): Multi-item cart checkout where Item 1 completes and Item 2 fails; triggers automatic atomic partial refund for Item 2, sets order status to `partially_completed`, and records exact `reservation`, `capture`, and `refund` ledger rows.
+- Test Suite Health: 342 pytest tests passed (100%), 118 storefront security checks passed, 46 storefront browser checks passed, zero errors across all 267 Python files.
 
 ### Deployment
 - Migrations run manually (`alembic upgrade head`) — entrypoint does **not** run them.
-- DB currently at head `c9d8e7f6a5b4` (migrations `a7b8c9d0e1f2` checkout idempotency,
-  `f5e6d7c8b9a0` session revocation, `c9d8e7f6a5b4` approved equivalents applied).
+- DB currently at head `e2f3a4b5c6d7` (migrations `a7b8c9d0e1f2` checkout idempotency,
+  `f5e6d7c8b9a0` session revocation, `c9d8e7f6a5b4` approved equivalents, `d1e2f3a4b5c6` sms activations, `e2f3a4b5c6d7` wallet ledger exact money applied).
 - Redeploy:
   ```bash
   git push origin master

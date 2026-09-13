@@ -1,7 +1,7 @@
 import datetime
 from pydantic import BaseModel
 from sqladmin import ModelView
-from sqlalchemy import Column, Integer, BigInteger, Float, Text, DateTime, JSON, Boolean, Index, String, UniqueConstraint
+from sqlalchemy import Column, Integer, BigInteger, Float, Numeric, Text, DateTime, JSON, Boolean, Index, String, UniqueConstraint
 
 from models.base import Base
 
@@ -19,7 +19,7 @@ class Order(Base):
     )
     id = Column(Integer, primary_key=True)
     telegram_id = Column(BigInteger, nullable=False, index=True)
-    total_sell = Column(Float, nullable=False, default=0.0)
+    total_sell = Column(Numeric(12, 2, asdecimal=False), nullable=False, default=0.0)
     status = Column(Text, nullable=False, default="completed")
     external_order_ref = Column(Text, nullable=True)
     customer_reference = Column(Text, nullable=True)

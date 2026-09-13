@@ -6,6 +6,8 @@ from db import get_db_session, session_commit, session_execute
 from repositories.batstore_order import BatStoreOrderRepository
 from services.batstore import BatStoreService
 from services.notification import NotificationService
+from services.provider_health import ProviderHealthTracker
+from services.distributed_lock import leader_lease, order_lock, sms_lock
 
 _POLL_INTERVAL = 60
 _MAX_ATTEMPTS = 10
@@ -58,8 +60,10 @@ async def poll_one_order(order_id, session):
             continue
         try:
             status, goods = await asyncio.wait_for(FulfillmentService.supplier_status(item, session), timeout=15)
+            ProviderHealthTracker.record_success(item.get("supplier"))
         except Exception as exc:
             logging.warning("Supplier polling failed for order %s item %s: %s", order_id, index, exc)
+            await ProviderHealthTracker.record_failure(item.get("supplier"), str(exc))
             await session.rollback()
             continue
         status = str(status).lower()
@@ -81,18 +85,39 @@ async def poll_one_order(order_id, session):
 
 
 async def poll_pending_orders():
+    from datetime import datetime, timezone
     while True:
         try:
             async with get_db_session() as session:
                 await drain_retry_order_queue(session)
                 pending = await BatStoreOrderRepository.get_pending(session)
+                now_utc = datetime.now(timezone.utc)
+                # Queue age monitoring (> 30 min escalation)
+                for order in pending:
+                    if getattr(order, "created_at", None):
+                        created = order.created_at.replace(tzinfo=timezone.utc) if order.created_at.tzinfo is None else order.created_at
+                        age_sec = (now_utc - created).total_seconds()
+                        if age_sec > 1800:
+                            logging.warning("Order #%s has exceeded max queue age (age=%.1fm)", order.id, age_sec / 60)
+                            await NotificationService.send_error_to_admins(
+                                f"stalled_order_{order.id}",
+                                f"⚠️ <b>تنبيه تأخر معالجة الطلب #{order.id}</b>\n\n"
+                                f"الطلب معلق في طابور التوريد منذ <b>{int(age_sec / 60)} دقيقة</b>.\n"
+                                f"الحالة: <code>{order.status}</code>\n"
+                                "يرجى مراجعة تفاصيل التوريد أو التحقق من المزود.",
+                                None,
+                                window_seconds=3600,
+                            )
                 order_ids = [order.id for order in pending]
             for order_id in order_ids:
-                try:
-                    async with get_db_session() as session:
-                        await poll_one_order(order_id, session)
-                except Exception:
-                    logging.exception("Order polling failed for %s", order_id)
+                async with order_lock(order_id, ttl_seconds=60) as acquired:
+                    if not acquired:
+                        continue
+                    try:
+                        async with get_db_session() as session:
+                            await poll_one_order(order_id, session)
+                    except Exception:
+                        logging.exception("Order polling failed for %s", order_id)
         except Exception:
             logging.exception("poll_pending_orders error")
         await asyncio.sleep(_POLL_INTERVAL)
@@ -227,16 +252,20 @@ async def periodic_catalog_sync():
     while True:
         await asyncio.sleep(3600)
         if config.BATSTORE_SYNC_ENABLED or getattr(config, "PRODSELLER_SYNC_ENABLED", True) or getattr(config, "G2BULK_SYNC_ENABLED", True):
-            try:
-                async with get_db_session() as session:
-                    from services.multi_supplier import MultiSupplierService
-                    res = await MultiSupplierService.sync_all_suppliers(session)
-                    await check_warranty_expiries(session)
-                    from services.subscription_tracker import SubscriptionTrackerService
-                    from repositories.batstore_product import BatStoreProductRepository
-                    await SubscriptionTrackerService.check_expiring_subscriptions(session, redis_client=BatStoreProductRepository._redis)
-            except Exception as e:
-                logging.error("Periodic catalog sync failed: %s", e)
+            async with leader_lease("periodic_catalog_sync", ttl_seconds=3600) as is_leader:
+                if not is_leader:
+                    logging.debug("Skipping catalog sync: another worker holds the leader lease")
+                    continue
+                try:
+                    async with get_db_session() as session:
+                        from services.multi_supplier import MultiSupplierService
+                        res = await MultiSupplierService.sync_all_suppliers(session)
+                        await check_warranty_expiries(session)
+                        from services.subscription_tracker import SubscriptionTrackerService
+                        from repositories.batstore_product import BatStoreProductRepository
+                        await SubscriptionTrackerService.check_expiring_subscriptions(session, redis_client=BatStoreProductRepository._redis)
+                except Exception as e:
+                    logging.error("Periodic catalog sync failed: %s", e)
 
 _low_balance_alerted = False
 
@@ -383,8 +412,170 @@ async def periodic_balance_monitor():
     """Periodically check the reseller wallet balance and alert admins once if below $5.00."""
     while True:
         await asyncio.sleep(900)
+        async with leader_lease("periodic_balance_monitor", ttl_seconds=900) as is_leader:
+            if not is_leader:
+                continue
+            try:
+                async with get_db_session() as session:
+                    await check_reseller_balance(session)
+            except Exception as e:
+                logging.warning("Low balance monitor check failed: %s", e)
+
+
+async def poll_one_sms_activation(act_id: int, session):
+    """Process a single pending SMS activation."""
+    from models.sms_activation import SmsActivation
+    from models.order import Order
+    from repositories.user import UserRepository
+    from services.fivesim import FiveSimService
+    from sqlalchemy import select
+    import datetime
+
+    res = await session.execute(select(SmsActivation).where(SmsActivation.id == act_id))
+    activation = res.scalar_one_or_none()
+    if not activation or activation.status != "pending":
+        return
+
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    # Check upstream 5sim
+    try:
+        upstream = await asyncio.wait_for(
+            FiveSimService.check_order(activation.activation_id),
+            timeout=15.0
+        )
+        ProviderHealthTracker.record_success("5sim")
+    except Exception as ex:
+        logging.warning("Failed checking upstream 5sim for %s: %s", activation.activation_id, ex)
+        await ProviderHealthTracker.record_failure("5sim", str(ex))
+        if activation.expires_at and activation.expires_at < now_utc:
+            activation.status = "timeout"
+            if activation.order_id:
+                ord_res = await session.execute(select(Order).where(Order.id == activation.order_id))
+                order = ord_res.scalar_one_or_none()
+                if order and order.status != "refunded":
+                    order.status = "refunded"
+                    await UserRepository.refund_balance(order.telegram_id, activation.sell_price_usd, session)
+                    await NotificationService.send_to_user(
+                        f"⏰ <b>انتهت صلاحية طلب رقم الهاتف الافتراضي (#{activation.activation_id}).</b>\n"
+                        f"لم يتم استلام أي كود، وتم استرداد المبلغ ({activation.sell_price_usd}$) إلى رصيدك تلقائياً.",
+                        order.telegram_id
+                    )
+            await session.commit()
+        return
+
+    up_status = str(upstream.get("status", "PENDING")).upper()
+    sms_code = upstream.get("sms_code")
+    sms_text = upstream.get("sms_text")
+
+    if sms_code:
+        activation.sms_code = str(sms_code)
+        activation.sms_text = str(sms_text or "")
+        activation.status = "received"
+
+        if activation.order_id:
+            ord_res = await session.execute(select(Order).where(Order.id == activation.order_id))
+            order = ord_res.scalar_one_or_none()
+            if order:
+                order.status = "completed"
+                details = list(order.details or [])
+                if details:
+                    details[0]["status"] = "completed"
+                    details[0]["sms_code"] = sms_code
+                    details[0]["delivery_goods"] = [activation.phone, f"Code: {sms_code}"]
+                    order.details = details
+
+        try:
+            await FiveSimService.finish_order(activation.activation_id)
+        except Exception as fe:
+            logging.warning("Error finishing 5sim order %s: %s", activation.activation_id, fe)
+        activation.status = "finished"
+
+        # Record capture in wallet ledger
+        await UserRepository.record_capture(
+            activation.telegram_id,
+            float(activation.sell_price_usd),
+            session,
+            order_id=activation.order_id,
+            reference=f"sms_cap_{activation.activation_id}",
+            supplier="5sim",
+            supplier_cost=activation.cost_usd,
+            supplier_currency="USD",
+            description=f"SMS activation #{activation.activation_id} delivered",
+        )
+        await session.commit()
+
+        # Notify customer
+        msg = (
+            f"📩 <b>وصل كود التفعيل للرقم الافتراضي!</b>\n\n"
+            f"📱 <b>الرقم:</b> <code>{activation.phone}</code>\n"
+            f"🔑 <b>الكود:</b> <code>{sms_code}</code>\n"
+            f"🏷️ <b>الخدمة:</b> {activation.service.capitalize()}\n\n"
+            f"شكراً لاستخدامك GH Store! ✨"
+        )
+        try:
+            await NotificationService.send_to_user(msg, activation.telegram_id)
+        except Exception as ne:
+            logging.debug("Failed notifying user %s of sms code: %s", activation.telegram_id, ne)
+
+    elif up_status in ("CANCELED", "TIMEOUT") or (activation.expires_at and activation.expires_at < now_utc):
+        activation.status = "timeout" if up_status == "TIMEOUT" or (activation.expires_at and activation.expires_at < now_utc) else "canceled"
+        if activation.order_id:
+            ord_res = await session.execute(select(Order).where(Order.id == activation.order_id))
+            order = ord_res.scalar_one_or_none()
+            if order and order.status != "refunded":
+                order.status = "refunded"
+                details = list(order.details or [])
+                if details:
+                    details[0]["status"] = "refunded"
+                    details[0]["refund_applied"] = True
+                    order.details = details
+                await UserRepository.refund_balance(order.telegram_id, activation.sell_price_usd, session)
+                refund_msg = (
+                    f"🔄 <b>تم إلغاء تفعيل الرقم الافتراضي ({activation.phone})</b>\n"
+                    f"لم يتم استلام أي كود في الوقت المحدد.\n"
+                    f"تم إعادة المبلغ كاملاً ({activation.sell_price_usd}$) إلى محفظتك بنجاح."
+                )
+                try:
+                    await NotificationService.send_to_user(refund_msg, order.telegram_id)
+                except Exception as ne:
+                    logging.debug("Failed notifying user %s of refund: %s", order.telegram_id, ne)
+        await session.commit()
+
+
+async def poll_pending_sms_activations():
+    """Periodically poll pending 5sim SMS activations.
+
+    1. Checks if SMS code arrived upstream:
+       - marks SmsActivation 'received' -> 'finished'
+       - completes the Order with delivery goods
+       - notifies customer via Telegram with their code
+    2. Checks if activation timed out or was canceled:
+       - marks SmsActivation 'timeout' / 'canceled'
+       - refunds customer wallet atomically
+       - notifies customer of refund
+    """
+    from models.sms_activation import SmsActivation
+    from sqlalchemy import select
+
+    while True:
         try:
             async with get_db_session() as session:
-                await check_reseller_balance(session)
-        except Exception as e:
-            logging.warning("Low balance monitor check failed: %s", e)
+                stmt = select(SmsActivation.id).where(SmsActivation.status == "pending")
+                result = await session.execute(stmt)
+                act_ids = result.scalars().all()
+
+            for act_id in act_ids:
+                async with sms_lock(act_id, ttl_seconds=15) as acquired:
+                    if not acquired:
+                        continue
+                    try:
+                        async with get_db_session() as session:
+                            await poll_one_sms_activation(act_id, session)
+                    except Exception as item_err:
+                        logging.exception("Error processing pending SMS activation #%s: %s", act_id, item_err)
+        except Exception as loop_err:
+            logging.exception("poll_pending_sms_activations loop error: %s", loop_err)
+
+        await asyncio.sleep(10)
+
+

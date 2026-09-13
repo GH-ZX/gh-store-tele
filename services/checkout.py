@@ -175,7 +175,13 @@ class CheckoutService:
         total = float(sum(totals, Decimal(0)))
         for line, amount in zip(lines, totals):
             line["sell_usd"] = float(amount)
-        if not await UserRepository.try_debit_balance(tg_id, total, session):
+        if not await UserRepository.try_debit_balance(
+            tg_id,
+            total,
+            session,
+            reference=f"ord_debit_{key}",
+            description=f"Storefront checkout ({key[:12]})",
+        ):
             raise HTTPException(400, "insufficient_balance")
         if coupon and not await CouponRepository.increment_usage(coupon.id, session):
             raise HTTPException(400, "coupon_limit_reached")

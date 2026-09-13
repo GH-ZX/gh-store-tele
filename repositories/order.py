@@ -38,10 +38,14 @@ class OrderRepository:
         return list(result.scalars().all())
 
     @staticmethod
-    async def get_pending(session: AsyncSession | Session) -> list[Order]:
+    async def get_pending(session: AsyncSession | Session, limit: int | None = None, skip_locked: bool = False) -> list[Order]:
         stmt = (select(Order)
                 .where(Order.status.in_(["pending_fulfillment", "created", "queued", "submitting", "pending_supplier_recharge", "partially_completed"]))
                 .order_by(Order.created_at.asc()))
+        if skip_locked:
+            stmt = stmt.with_for_update(skip_locked=True)
+        if limit:
+            stmt = stmt.limit(limit)
         result = await session.execute(stmt)
         return list(result.scalars().all())
 

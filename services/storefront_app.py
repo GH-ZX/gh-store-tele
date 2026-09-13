@@ -21,8 +21,18 @@ def get_storefront_html(reload: bool = False) -> str:
         if _TEMPLATE_PATH.exists():
             try:
                 _base = _TEMPLATE_PATH.parent
-                _mtimes = [_TEMPLATE_PATH.stat().st_mtime]
-                for _rel in ("../static/storefront/app.js", "../static/storefront/app.css"):
+                _scripts = (
+                    "../static/storefront/app.css",
+                    "../static/storefront/security.js",
+                    "../static/storefront/api.js",
+                    "../static/storefront/storefront.js",
+                    "../static/storefront/wallet.js",
+                    "../static/storefront/checkout.js",
+                    "../static/storefront/sms.js",
+                    "../static/storefront/admin.js",
+                    "../static/storefront/app.js",
+                )
+                for _rel in _scripts:
                     _p = (_base / _rel).resolve()
                     if _p.exists():
                         _mtimes.append(_p.stat().st_mtime)
@@ -33,7 +43,8 @@ def get_storefront_html(reload: bool = False) -> str:
             # Stable per-deploy tag: identical HTML until a template/asset file changes,
             # so the in-app stale-shell guard cannot reload-loop.
             raw = raw.replace('/static/storefront/app.css', f'/static/storefront/app.css?v={v_ts}')
-            raw = raw.replace('/static/storefront/app.js', f'/static/storefront/app.js?v={v_ts}')
+            for _s in ("security.js", "api.js", "storefront.js", "wallet.js", "checkout.js", "sms.js", "admin.js", "app.js"):
+                raw = raw.replace(f'/static/storefront/{_s}', f'/static/storefront/{_s}?v={v_ts}')
             raw = raw.replace('__BUILD_TAG__', str(v_ts))
             _CACHED_HTML = raw
         else:

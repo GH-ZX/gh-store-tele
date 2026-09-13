@@ -14,9 +14,10 @@ from services.batstore import BatStoreOutOfStockError
 
 
 def test_registration_and_fallback():
-    assert SupplierRegistry.names() == {"batstore", "prodseller", "g2bulk"}
+    assert SupplierRegistry.names() == {"batstore", "prodseller", "g2bulk", "5sim"}
     assert SupplierRegistry.has("prodSeller") is True
     assert SupplierRegistry.has("g2bulk") is True
+    assert SupplierRegistry.has("5sim") is True
     assert SupplierRegistry.has("nonexistent") is False
     assert SupplierRegistry.has(None) is False
     assert SupplierRegistry.get("g2bulk").name == "g2bulk"
@@ -43,6 +44,12 @@ def test_capability_declarations():
     assert g2.supports(SupplierCapability.BALANCE)
     assert not g2.supports(SupplierCapability.QUOTE)
     assert not g2.supports(SupplierCapability.CANCEL)
+
+    fivesim = SupplierRegistry.get("5sim")
+    assert fivesim.supports(SupplierCapability.SMS_ACTIVATION)
+    assert fivesim.supports(SupplierCapability.CANCEL)
+    assert fivesim.supports(SupplierCapability.BALANCE)
+    assert not fivesim.supports(SupplierCapability.CATALOG)
 
 
 @pytest.mark.asyncio

@@ -29,11 +29,26 @@ async def run_database_backup() -> bool:
                 try:
                     from bot import bot
                     from aiogram.types import FSInputFile
-                    backups = sorted((ROOT / "backups").glob("ghstore_backup_*.sql.gz"), key=lambda p: p.stat().st_mtime)
+                    backups = sorted(
+                        [
+                            p for p in (ROOT / "backups").glob("ghstore_backup_*")
+                            if not p.name.endswith(".sha256") and (p.name.endswith(".gz") or p.name.endswith(".enc"))
+                        ],
+                        key=lambda p: p.stat().st_mtime,
+                    )
                     if backups:
                         latest = backups[-1]
                         doc = FSInputFile(str(latest), filename=latest.name)
-                        caption = f"🔒 <b>Automated Database Backup</b>\n\n• Archive: <code>{latest.name}</code>\n• Size: {latest.stat().st_size / 1024:.1f} KB"
+                        manifest = latest.with_name(latest.name + ".sha256")
+                        sha_digest = manifest.read_text(encoding="utf-8").split()[0] if manifest.exists() else "N/A"
+                        enc_status = "AES-256-GCM Encrypted" if latest.name.endswith(".enc") else "Gzip Compressed"
+                        caption = (
+                            f"🔒 <b>Automated Database Backup</b>\n\n"
+                            f"• <b>Archive:</b> <code>{latest.name}</code>\n"
+                            f"• <b>Security:</b> {enc_status}\n"
+                            f"• <b>SHA-256:</b> <code>{sha_digest}</code>\n"
+                            f"• <b>Size:</b> {latest.stat().st_size / 1024:.1f} KB"
+                        )
                         await bot.send_document(chat_id=backup_channel, document=doc, caption=caption, parse_mode="HTML")
                         logging.info("Database backup streamed to Telegram backup channel %s", backup_channel)
                 except Exception as e:
@@ -49,11 +64,14 @@ async def run_database_backup() -> bool:
 
 async def periodic_backup_cron() -> None:
     """Periodic backup runner executing every 24 hours."""
+    from services.distributed_lock import leader_lease
     # Initial sleep of 5 minutes after startup so boot is fast
     await asyncio.sleep(300)
     while True:
-        try:
-            await run_database_backup()
-        except Exception as e:
-            logging.warning("Backup cron error: %s", e)
+        async with leader_lease("periodic_backup_cron", ttl_seconds=86400) as is_leader:
+            if is_leader:
+                try:
+                    await run_database_backup()
+                except Exception as e:
+                    logging.warning("Backup cron error: %s", e)
         await asyncio.sleep(86400)

@@ -81,6 +81,23 @@ class FulfillmentService:
                 await UserRepository.refund_balance(order.telegram_id, float(amount), session)
                 item["refund_applied"] = True
                 item["refund_amount"] = float(amount)
+        elif status == "completed" and not item.get("capture_applied"):
+            sell_amount = item.get("sell_usd") if item.get("sell_usd") is not None else float(order.total_sell or 0.0)
+            sup_cost = item.get("supplier_cost") or item.get("cost")
+            sup_curr = item.get("supplier_currency") or "USD"
+            sup_name = item.get("supplier") or supplier
+            await UserRepository.record_capture(
+                order.telegram_id,
+                float(sell_amount),
+                session,
+                order_id=order.id,
+                reference=f"ord_cap_{order.id}_item_{index}",
+                supplier=sup_name,
+                supplier_cost=sup_cost,
+                supplier_currency=sup_curr,
+                description=f"Capture Order #{order.id} item #{index + 1}",
+            )
+            item["capture_applied"] = True
         item["status"] = status
         if goods is not None:
             item["delivery_goods"] = list(goods)
@@ -155,6 +172,8 @@ class FulfillmentService:
             current["external_order_ref"] = placed.get("external_order_ref")
             current["delivery_goods"] = list(placed.get("goods") or [])
             current["server_badge"] = placed.get("server_badge")
+            current["supplier_cost"] = placed.get("supplier_cost") or placed.get("cost") or getattr(product, "price", None)
+            current["supplier_currency"] = placed.get("supplier_currency") or getattr(product, "currency", "USD") or "USD"
             order.details = details
             if len(details) == 1:
                 order.external_order_ref = current["external_order_ref"]

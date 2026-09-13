@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>GH Store</title>
   <meta name="ghstore-build" content="__BUILD_TAG__">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -503,6 +503,154 @@
     </div>
   </div>
 
+  <!-- VIRTUAL NUMBERS / SMS ACTIVATION MODAL SHEET -->
+  <div class="admin-modal-overlay" id="sms-activation-modal" style="display: none;">
+    <div class="admin-modal-sheet" style="max-height: 85vh; display: flex; flex-direction: column;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 22px;">📱</span>
+          <div>
+            <h3 style="font-size: 17px; font-weight: 800; margin: 0;" id="sms-modal-title">أرقام هواتف لتفعيل الحسابات (SMS)</h3>
+            <span style="font-size: 11px; color: var(--hint);" id="sms-modal-subtitle">أرقام افتراضية مؤقتة لاستقبال كود التفعيل عبر 5sim</span>
+          </div>
+        </div>
+        <button class="circle-icon-btn" onclick="closeSmsModal()">✕</button>
+      </div>
+
+      <!-- Stage A: Service & Country Selection / Quote -->
+      <div id="sms-stage-select" style="display: flex; flex-direction: column; gap: 12px; overflow-y: auto; padding-bottom: 8px;">
+        <div>
+          <label class="admin-input-label" id="lbl-sms-select-service">اختر التطبيق أو الخدمة (Service):</label>
+          <select class="admin-text-input" id="sms-service-select" onchange="onSmsSelectionChange()" style="font-size: 14px; padding: 10px 12px; border-radius: 12px; font-weight: 600;">
+            <option value="">-- جاري تحميل الخدمات... --</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="admin-input-label" id="lbl-sms-select-country">اختر الدولة أو المنطقة (Region):</label>
+          <select class="admin-text-input" id="sms-country-select" onchange="onSmsSelectionChange()" style="font-size: 14px; padding: 10px 12px; border-radius: 12px; font-weight: 600;">
+            <option value="">-- جاري تحميل الدول... --</option>
+          </select>
+        </div>
+
+        <!-- Quote & Stock Card -->
+        <div id="sms-quote-card" style="background: var(--input-bg); border-radius: 14px; padding: 14px; border: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 13px; color: var(--hint);" id="lbl-sms-quote-stock">حالة التوفر:</span>
+            <span id="sms-quote-stock-badge" class="pill-badge" style="background: rgba(34,197,94,0.15); color: #22c55e;">متوفر (جاري الفحص...)</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 13px; color: var(--hint);" id="lbl-sms-quote-duration">مدة صلاحية الرقم:</span>
+            <span style="font-size: 13px; font-weight: 600;">15 دقيقة</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px dashed var(--border); padding-top: 8px; margin-top: 4px;">
+            <span style="font-size: 15px; font-weight: 800;" id="lbl-sms-quote-price">تكلفة التفعيل:</span>
+            <div style="text-align: end;">
+              <span id="sms-quote-price-usd" style="font-size: 18px; font-weight: 900; color: var(--accent);">$0.00</span>
+              <div id="sms-quote-price-local" style="font-size: 11px; color: var(--hint);"></div>
+            </div>
+          </div>
+        </div>
+
+        <div style="font-size: 11px; color: var(--hint); line-height: 1.5; background: rgba(56,189,248,0.06); padding: 8px 12px; border-radius: 10px; border-inline-start: 3px solid var(--accent);" id="sms-guarantee-note">
+          🛡️ <b>ضمان استرداد فوري تلقائي:</b> في حال لم يصل كود التفعيل خلال 15 دقيقة أو قمت بإلغاء الطلب، يُعاد كامل المبلغ فوراً إلى محفظتك دون أي خصم.
+        </div>
+
+        <button class="btn-action-primary" id="btn-buy-sms" onclick="executeBuySms()" style="height: 48px; font-size: 15px; font-weight: 800; border-radius: 14px; margin-top: 4px;">
+          <span>⚡ تفعيل الرقم وشراء الخدمة الآن</span>
+        </button>
+      </div>
+
+      <!-- Stage B: Active Number & Waiting for SMS Code -->
+      <div id="sms-stage-active" style="display: none; flex-direction: column; gap: 14px; text-align: center; padding: 10px 4px;">
+        <div style="background: var(--input-bg); border-radius: 16px; padding: 16px; border: 1px solid var(--border);">
+          <div style="font-size: 12px; color: var(--hint); margin-bottom: 6px;" id="lbl-sms-allocated-phone">رقم الهاتف المخصص لك:</div>
+          <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
+            <div id="sms-allocated-phone-number" style="font-size: 22px; font-weight: 900; letter-spacing: 1px; font-family: monospace; color: var(--text);">
+              +1234567890
+            </div>
+            <button class="circle-icon-btn" onclick="copyAllocatedPhone()" title="نسخ الرقم" style="background: var(--accent); color: #fff; width: 34px; height: 34px;">
+              📋
+            </button>
+          </div>
+          <div style="font-size: 11px; color: var(--accent); margin-top: 6px;" id="sms-copy-hint">اضغط لنسخ الرقم وضعه في التطبيق المطلوب</div>
+        </div>
+
+        <!-- Waiting / Countdown Box -->
+        <div id="sms-waiting-box" style="background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.3); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; align-items: center; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="sms-pulse-spinner" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #f59e0b; animation: smsPulse 1.5s infinite;"></span>
+            <span style="font-size: 14px; font-weight: 700; color: #f59e0b;" id="lbl-sms-waiting-status">بانتظار وصول رسالة SMS...</span>
+          </div>
+          <div style="font-size: 28px; font-weight: 900; font-family: monospace; color: var(--text);" id="sms-countdown-timer">
+            15:00
+          </div>
+          <div style="font-size: 11px; color: var(--hint);" id="lbl-sms-countdown-sub">سيتم الاسترداد تلقائياً في حال انتهاء الوقت</div>
+        </div>
+
+        <!-- Received Code Box (Shown on SMS Arrival) -->
+        <div id="sms-received-box" style="display: none; background: rgba(34,197,94,0.1); border: 2px solid #22c55e; border-radius: 16px; padding: 18px; flex-direction: column; align-items: center; gap: 10px;">
+          <div style="font-size: 13px; font-weight: 700; color: #22c55e;">🎉 وصل كود التفعيل بنجاح!</div>
+          <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
+            <div id="sms-received-code-val" style="font-size: 32px; font-weight: 900; letter-spacing: 4px; font-family: monospace; color: #22c55e;">
+              123456
+            </div>
+            <button class="circle-icon-btn" onclick="copyReceivedCode()" title="نسخ الكود" style="background: #22c55e; color: #fff; width: 38px; height: 38px;">
+              📋
+            </button>
+          </div>
+          <div id="sms-received-full-text" style="font-size: 11px; color: var(--hint); max-width: 90%; word-break: break-word;"></div>
+        </div>
+
+        <!-- Action buttons -->
+        <div style="display: flex; gap: 8px; margin-top: 6px;">
+          <button class="btn-action-secondary" id="btn-cancel-sms" onclick="executeCancelSms()" style="flex: 1; height: 44px; font-size: 12px; font-weight: 700; color: var(--danger); border-color: rgba(239,68,68,0.3);">
+            ✕ إلغاء واسترداد الرصيد
+          </button>
+          <button class="btn-action-secondary" id="btn-ban-sms" onclick="executeBanSms()" style="flex: 1; height: 44px; font-size: 12px; font-weight: 700; color: var(--warning); border-color: rgba(245,158,11,0.3);">
+            ⚠️ الرقم مستخدم / محظور
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ADMIN 5SIM SMS SETTINGS MODAL -->
+  <div class="admin-modal-overlay" id="admin-sms-modal" style="display: none;">
+    <div class="admin-modal-sheet" style="max-height: 85vh; display: flex; flex-direction: column;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 20px;">⚙️</span>
+          <h3 style="font-size: 17px; font-weight: 800; margin: 0;">إدارة خدمات وأرقام 5sim</h3>
+        </div>
+        <button class="circle-icon-btn" onclick="closeAdminSmsModal()">✕</button>
+      </div>
+
+      <div style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 14px;">
+        <!-- Upstream Balance Card -->
+        <div style="background: var(--input-bg); border-radius: 12px; padding: 12px; border: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <div style="font-size: 12px; color: var(--hint);">رصيد حساب 5sim الحالي:</div>
+            <div id="admin-5sim-balance-val" style="font-size: 18px; font-weight: 900; color: var(--accent);">جاري التحميل...</div>
+          </div>
+          <button class="btn-action-secondary" onclick="loadAdminSmsSettings()" style="height: 34px; font-size: 12px; padding: 0 10px;">🔄 تحديث</button>
+        </div>
+
+        <!-- Services Toggle List -->
+        <div>
+          <h4 style="font-size: 14px; font-weight: 700; margin-bottom: 8px;">الخدمات المدعومة (Services):</h4>
+          <div id="admin-sms-services-list" style="display: flex; flex-direction: column; gap: 6px;"></div>
+        </div>
+
+        <!-- Countries Toggle List -->
+        <div>
+          <h4 style="font-size: 14px; font-weight: 700; margin-bottom: 8px;">الدول المتاحة (Regions):</h4>
+          <div id="admin-sms-countries-list" style="display: flex; flex-direction: column; gap: 6px;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- CUSTOMER 5-STAR REVIEW MODAL SHEET -->
   <div class="admin-modal-overlay" id="customer-review-modal">
     <div class="admin-modal-sheet">
@@ -654,6 +802,7 @@
     <div class="filter-chips-row" id="quick-filters-row">
       <div class="filter-chip filter-search-chip" id="filter-search-chip" onclick="openSearchPage()"><span style="margin-inline-end: 4px;">🔍</span><span id="lbl-filter-search">بحث</span></div>
       <div class="filter-chip active" id="filter-all" onclick="applyCatalogFilter('all')"><span id="lbl-filter-all">الكل</span></div>
+      <div class="filter-chip filter-sms-chip" id="filter-sms-chip" onclick="openSmsModal()"><span style="margin-inline-end: 4px;">📱</span><span id="lbl-filter-sms">أرقام SMS</span></div>
       <div class="filter-chip" id="filter-wishlist" onclick="applyCatalogFilter('wishlist')">
         <svg class="fav-icon-svg active" viewBox="0 0 24 24" width="14" height="14" style="filter:none;"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
         <span id="label-filter-wishlist">المفضلة</span>
@@ -2065,6 +2214,9 @@
         <button class="btn-action-secondary" onclick="openAdminConfigPage()" style="height: 44px; font-size: 12px;" id="btn-admin-onetime-label">
           إعدادات التهيئة
         </button>
+        <button class="btn-action-secondary" onclick="openAdminSmsModal()" style="height: 44px; font-size: 12px; border-color: rgba(56,189,248,0.4); color: var(--accent);" id="btn-admin-sms-drawer">
+          📱 إدارة أرقام 5sim
+        </button>
         <button class="btn-action-secondary" onclick="openFullSqlAdmin()" style="height: 44px; font-size: 12px;" id="btn-admin-sqladmin-drawer">
           لوحة SQLAdmin
         </button>
@@ -2208,6 +2360,12 @@
   </nav>
 
   <script src="/static/storefront/security.js"></script>
+  <script src="/static/storefront/api.js"></script>
+  <script src="/static/storefront/storefront.js"></script>
+  <script src="/static/storefront/wallet.js"></script>
+  <script src="/static/storefront/checkout.js"></script>
+  <script src="/static/storefront/sms.js"></script>
+  <script src="/static/storefront/admin.js"></script>
   <script src="/static/storefront/app.js"></script>
 </body>
 </html>

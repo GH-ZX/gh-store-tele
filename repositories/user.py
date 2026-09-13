@@ -1,3 +1,7 @@
+import logging
+import time
+import uuid
+from decimal import Decimal
 from sqlalchemy import select, update, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
@@ -6,6 +10,7 @@ from callbacks import StatisticsTimeDelta
 from db import session_execute, session_flush
 
 from models.user import UserDTO, User
+from models.wallet_ledger import WalletLedger
 from utils.utils import calculate_max_page
 
 
@@ -42,10 +47,22 @@ class UserRepository:
         await session_execute(stmt, session)
 
     @staticmethod
-    async def try_debit_balance(telegram_id: int, amount: float, session: Session | AsyncSession) -> bool:
+    async def try_debit_balance(
+        telegram_id: int,
+        amount: float,
+        session: Session | AsyncSession,
+        *,
+        reference: str | None = None,
+        order_id: int | None = None,
+        description: str | None = None,
+        supplier: str | None = None,
+        supplier_cost: float | Decimal | None = None,
+        supplier_currency: str = "USD",
+    ) -> bool:
         """Atomically deduct balance if user has sufficient funds.
 
         Guards against concurrent double-spending race conditions.
+        Records an immutable reservation in the wallet ledger.
         Returns True if deducted, False if balance insufficient or user not found.
         """
         if amount <= 0:
@@ -53,9 +70,20 @@ class UserRepository:
         user = await UserRepository.get_by_tgid(telegram_id, session)
         if user is None:
             return False
-        available = (user.top_up_amount or 0.0) - (user.consume_records or 0.0)
+        available = float(user.top_up_amount or 0.0) - float(user.consume_records or 0.0)
         if available < amount:
             return False
+
+        # Idempotency check if reference provided
+        if reference and session is not None:
+            try:
+                ref_stmt = select(WalletLedger.id).where(WalletLedger.reference == reference)
+                ref_res = await session_execute(ref_stmt, session)
+                if hasattr(ref_res, "scalar_one_or_none") and ref_res.scalar_one_or_none() is not None:
+                    return True
+            except Exception:
+                pass
+
         if session is None:
             user.consume_records = (user.consume_records or 0.0) + amount
             return True
@@ -69,25 +97,76 @@ class UserRepository:
             .returning(User.id)
         )
         res = await session_execute(stmt, session)
+        deducted = True
         if type(res).__name__ != "_FakeResult":
             if hasattr(res, "scalar_one_or_none"):
                 try:
-                    return res.scalar_one_or_none() is not None
+                    deducted = res.scalar_one_or_none() is not None
                 except Exception:
                     pass
-            if hasattr(res, "scalar"):
+            elif hasattr(res, "scalar"):
                 try:
-                    return res.scalar() is not None
+                    deducted = res.scalar() is not None
                 except Exception:
                     pass
+        if not deducted:
+            return False
+
         user.consume_records = (user.consume_records or 0.0) + amount
+
+        # Record reservation in immutable ledger
+        try:
+            bal_before = available
+            bal_after = available - float(amount)
+            ledger_ref = reference or f"deb_{telegram_id}_{int(time.time() * 1000)}_{uuid.uuid4().hex[:6]}"
+            ledger_entry = WalletLedger(
+                telegram_id=telegram_id,
+                transaction_type="reservation",
+                amount=Decimal(str(round(float(amount), 2))),
+                balance_before=Decimal(str(round(bal_before, 2))),
+                balance_after=Decimal(str(round(bal_after, 2))),
+                reference=ledger_ref,
+                order_id=order_id,
+                supplier=supplier,
+                supplier_cost=Decimal(str(round(float(supplier_cost), 4))) if supplier_cost is not None else None,
+                supplier_currency=supplier_currency,
+                description=description or f"Wallet debit (${float(amount):.2f})",
+            )
+            session.add(ledger_entry)
+            await session_flush(session)
+        except Exception as e:
+            logging.warning("Could not record wallet ledger reservation: %s", e)
+
         return True
 
     @staticmethod
-    async def refund_balance(telegram_id: int, amount: float, session: Session | AsyncSession) -> None:
-        """Atomically refund balance (deducting from consume_records)."""
+    async def refund_balance(
+        telegram_id: int,
+        amount: float,
+        session: Session | AsyncSession,
+        *,
+        reference: str | None = None,
+        order_id: int | None = None,
+        description: str | None = None,
+    ) -> None:
+        """Atomically refund balance (deducting from consume_records) and record in ledger."""
         if amount <= 0:
             return
+
+        # Idempotency check if reference provided
+        if reference and session is not None:
+            try:
+                ref_stmt = select(WalletLedger.id).where(WalletLedger.reference == reference)
+                ref_res = await session_execute(ref_stmt, session)
+                if hasattr(ref_res, "scalar_one_or_none") and ref_res.scalar_one_or_none() is not None:
+                    return
+            except Exception:
+                pass
+
+        user = await UserRepository.get_by_tgid(telegram_id, session)
+        bal_before = float(user.top_up_amount or 0.0) - float(user.consume_records or 0.0) if user else 0.0
+        bal_after = bal_before + float(amount)
+
         stmt = (
             update(User)
             .where(User.telegram_id == telegram_id)
@@ -95,17 +174,123 @@ class UserRepository:
         )
         await session_execute(stmt, session)
 
+        if session is not None:
+            try:
+                ledger_ref = reference or f"ref_{telegram_id}_{int(time.time() * 1000)}_{uuid.uuid4().hex[:6]}"
+                ledger_entry = WalletLedger(
+                    telegram_id=telegram_id,
+                    transaction_type="refund",
+                    amount=Decimal(str(round(float(amount), 2))),
+                    balance_before=Decimal(str(round(bal_before, 2))),
+                    balance_after=Decimal(str(round(bal_after, 2))),
+                    reference=ledger_ref,
+                    order_id=order_id,
+                    description=description or f"Wallet refund (${float(amount):.2f})",
+                )
+                session.add(ledger_entry)
+                await session_flush(session)
+            except Exception as e:
+                logging.warning("Could not record wallet ledger refund: %s", e)
+
     @staticmethod
-    async def credit_balance(telegram_id: int, amount: float, session: Session | AsyncSession) -> None:
-        """Atomically credit balance to top_up_amount."""
+    async def credit_balance(
+        telegram_id: int,
+        amount: float,
+        session: Session | AsyncSession,
+        *,
+        reference: str | None = None,
+        order_id: int | None = None,
+        description: str | None = None,
+    ) -> None:
+        """Atomically credit balance to top_up_amount and record in ledger."""
         if amount <= 0:
             return
+
+        # Idempotency check if reference provided
+        if reference and session is not None:
+            try:
+                ref_stmt = select(WalletLedger.id).where(WalletLedger.reference == reference)
+                ref_res = await session_execute(ref_stmt, session)
+                if hasattr(ref_res, "scalar_one_or_none") and ref_res.scalar_one_or_none() is not None:
+                    return
+            except Exception:
+                pass
+
+        user = await UserRepository.get_by_tgid(telegram_id, session)
+        bal_before = float(user.top_up_amount or 0.0) - float(user.consume_records or 0.0) if user else 0.0
+        bal_after = bal_before + float(amount)
+
         stmt = (
             update(User)
             .where(User.telegram_id == telegram_id)
             .values(top_up_amount=func.coalesce(User.top_up_amount, 0.0) + amount)
         )
         await session_execute(stmt, session)
+
+        if session is not None:
+            try:
+                ledger_ref = reference or f"crd_{telegram_id}_{int(time.time() * 1000)}_{uuid.uuid4().hex[:6]}"
+                ledger_entry = WalletLedger(
+                    telegram_id=telegram_id,
+                    transaction_type="credit",
+                    amount=Decimal(str(round(float(amount), 2))),
+                    balance_before=Decimal(str(round(bal_before, 2))),
+                    balance_after=Decimal(str(round(bal_after, 2))),
+                    reference=ledger_ref,
+                    order_id=order_id,
+                    description=description or f"Wallet credit (${float(amount):.2f})",
+                )
+                session.add(ledger_entry)
+                await session_flush(session)
+            except Exception as e:
+                logging.warning("Could not record wallet ledger credit: %s", e)
+
+    @staticmethod
+    async def record_capture(
+        telegram_id: int,
+        amount: float,
+        session: Session | AsyncSession,
+        *,
+        order_id: int | None = None,
+        reference: str | None = None,
+        supplier: str | None = None,
+        supplier_cost: float | Decimal | None = None,
+        supplier_currency: str = "USD",
+        description: str | None = None,
+    ) -> None:
+        """Record order capture event in the immutable wallet ledger.
+        Retains actual supplier wholesale cost and currency at fulfillment time.
+        """
+        if session is None:
+            return
+        try:
+            user = await UserRepository.get_by_tgid(telegram_id, session)
+            bal = float(user.top_up_amount or 0.0) - float(user.consume_records or 0.0) if user else 0.0
+            ledger_ref = reference or f"cap_{order_id or telegram_id}_{int(time.time() * 1000)}_{uuid.uuid4().hex[:6]}"
+
+            # Idempotency check
+            ref_stmt = select(WalletLedger.id).where(WalletLedger.reference == ledger_ref)
+            ref_res = await session_execute(ref_stmt, session)
+            if hasattr(ref_res, "scalar_one_or_none") and ref_res.scalar_one_or_none() is not None:
+                return
+
+            ledger_entry = WalletLedger(
+                telegram_id=telegram_id,
+                transaction_type="capture",
+                amount=Decimal(str(round(float(amount), 2))),
+                balance_before=Decimal(str(round(bal, 2))),
+                balance_after=Decimal(str(round(bal, 2))),
+                reference=ledger_ref,
+                order_id=order_id,
+                supplier=supplier,
+                supplier_cost=Decimal(str(round(float(supplier_cost), 4))) if supplier_cost is not None else None,
+                supplier_currency=supplier_currency,
+                description=description or f"Order #{order_id} captured",
+            )
+            session.add(ledger_entry)
+            await session_flush(session)
+        except Exception as e:
+            logging.warning("Could not record wallet ledger capture: %s", e)
 
     @staticmethod
     async def create(user_dto: UserDTO, session: Session | AsyncSession) -> int:

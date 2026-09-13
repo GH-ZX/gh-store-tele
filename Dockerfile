@@ -13,6 +13,16 @@ FROM python:3.12-slim
 # Copy official cloudflared binary into runtime image
 COPY --from=cloudflare/cloudflared:latest /usr/local/bin/cloudflared /usr/local/bin/cloudflared
 
+# Copy PostgreSQL 18 client utilities directly from official postgres:18 image
+COPY --from=postgres:18 /usr/lib/postgresql/18/bin/pg_dump /usr/local/bin/pg_dump
+COPY --from=postgres:18 /usr/lib/postgresql/18/bin/pg_restore /usr/local/bin/pg_restore
+COPY --from=postgres:18 /usr/lib/postgresql/18/bin/psql /usr/local/bin/psql
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-client \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd -r botuser && useradd -r -g botuser -d /bot -s /sbin/nologin botuser
 
 WORKDIR /bot

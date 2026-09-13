@@ -98,6 +98,9 @@ PRODSELLER_SYNC_ENABLED = os.environ.get("PRODSELLER_SYNC_ENABLED", "true").lowe
 G2BULK_API_KEY = os.environ.get("G2BULK_API_KEY")
 G2BULK_API_URL = os.environ.get("G2BULK_API_URL", "https://api.g2bulk.com/v1")
 G2BULK_SYNC_ENABLED = os.environ.get("G2BULK_SYNC_ENABLED", "true").lower() == "true"
+FIVESIM_API_KEY = os.environ.get("FIVESIM_API_KEY")
+FIVESIM_API_URL = os.environ.get("FIVESIM_API_URL", "https://5sim.net/v1")
+FIVESIM_ENABLED = os.environ.get("FIVESIM_ENABLED", "true").lower() == "true"
 SUPPLIER_ROUTING_STRATEGY = os.environ.get("SUPPLIER_ROUTING_STRATEGY", "auto_cheapest")
 SAM_API_BASE = os.environ.get("SAM_API_BASE")
 SAM_API_KEY = os.environ.get("SAM_API_KEY")
@@ -133,3 +136,6 @@ TOPUP_ENABLE_USDC = os.environ.get("TOPUP_ENABLE_USDC", "false") == 'true'
 TOPUP_ENABLE_SHAMCASH = os.environ.get("TOPUP_ENABLE_SHAMCASH", "false") == 'true'
 TOPUP_ENABLE_SYRIATEL = os.environ.get("TOPUP_ENABLE_SYRIATEL", "false") == 'true'
 SHOW_CATEGORY_IMAGES = os.environ.get("SHOW_CATEGORY_IMAGES", "false") == 'true'
+BACKUP_ENCRYPTION_KEY = os.environ.get("BACKUP_ENCRYPTION_KEY", "")
+BACKUP_CHANNEL_ID = os.environ.get("BACKUP_CHANNEL_ID", "")
+BACKUP_RETENTION_DAYS = int(os.environ.get("BACKUP_RETENTION_DAYS", "14"))

@@ -168,10 +168,11 @@ async def _startup() -> None:
             logging.warning("Could not set bot descriptions: %s", e)
     except Exception as e:
         logging.warning("Could not set bot commands: %s", e)
-    from services.order_polling import poll_pending_orders, periodic_catalog_sync, periodic_balance_monitor
+    from services.order_polling import poll_pending_orders, periodic_catalog_sync, periodic_balance_monitor, poll_pending_sms_activations
     _create_task(poll_pending_orders())
     _create_task(periodic_catalog_sync())
     _create_task(periodic_balance_monitor())
+    _create_task(poll_pending_sms_activations())
     from services.financial_digest import daily_digest_cron
     _create_task(daily_digest_cron())
     from services.backup_service import periodic_backup_cron
@@ -338,6 +339,12 @@ from models.price_audit import ProductPriceAuditAdmin
 admin.add_model_view(ProductPriceAuditAdmin)
 from models.approved_equivalent import ApprovedEquivalentAdmin
 admin.add_model_view(ApprovedEquivalentAdmin)
+from models.sms_activation import SmsActivationAdmin, SmsServiceConfigAdmin, SmsCountryConfigAdmin
+admin.add_model_view(SmsActivationAdmin)
+admin.add_model_view(SmsServiceConfigAdmin)
+admin.add_model_view(SmsCountryConfigAdmin)
+from models.wallet_ledger import WalletLedgerAdmin
+admin.add_model_view(WalletLedgerAdmin)
 app.include_router(processing_router)
 from fastapi.staticfiles import StaticFiles
 _static_dir = Path(__file__).resolve().parent / "static"
@@ -381,6 +388,7 @@ from routes import (
     wallet_router,
     admin_router,
     webhooks_router,
+    sms_router,
 )
 from routes.tma_catalog import get_tma_catalog, broadcast_sse_event
 from routes.common import verify_admin as _verify_admin
@@ -390,6 +398,7 @@ app.include_router(checkout_router)
 app.include_router(wallet_router)
 app.include_router(admin_router)
 app.include_router(webhooks_router)
+app.include_router(sms_router)
 
 @app.get("/app", response_class=HTMLResponse)
 async def tma_storefront():

@@ -4,6 +4,7 @@ from routes.tma_checkout import router as checkout_router
 from routes.tma_wallet import router as wallet_router
 from routes.tma_admin import router as admin_router
 from routes.webhooks import router as webhooks_router
+from routes.tma_sms import router as sms_router
 
 __all__ = [
     "catalog_router",
@@ -11,4 +12,5 @@ __all__ = [
     "wallet_router",
     "admin_router",
     "webhooks_router",
+    "sms_router",
 ]

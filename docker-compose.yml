@@ -19,6 +19,7 @@ services:
         condition: service_healthy
     volumes:
       - ./i18n:/bot/i18n
+      - ./backups:/bot/backups
     restart: always
     networks:
       - ghstore

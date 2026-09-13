@@ -1,7 +1,7 @@
 from datetime import datetime
 from pydantic import BaseModel
 from sqladmin import ModelView
-from sqlalchemy import Column, Integer, DateTime, String, Boolean, Float, func, CheckConstraint, Enum, ForeignKey, \
+from sqlalchemy import Column, Integer, DateTime, String, Boolean, Float, Numeric, func, CheckConstraint, Enum, ForeignKey, \
     BigInteger
 from sqlalchemy.orm import relationship
 
@@ -17,8 +17,8 @@ class User(Base):
     id = Column(Integer, primary_key=True)
     telegram_username = Column(String, unique=True, index=True)
     telegram_id = Column(BigInteger, nullable=False, unique=True, index=True)
-    top_up_amount = Column(Float, default=0.0)
-    consume_records = Column(Float, default=0.0)
+    top_up_amount = Column(Numeric(12, 2, asdecimal=False), default=0.0)
+    consume_records = Column(Numeric(12, 2, asdecimal=False), default=0.0)
     registered_at = Column(DateTime(timezone=True), default=func.now())
     can_receive_messages = Column(Boolean, default=True)
     language = Column(Enum(Language), default=Language.EN, nullable=False)

@@ -83,6 +83,13 @@ def _build_config_module() -> ModuleType:
     config.TOPUP_ENABLE_SHAMCASH = False
     config.TOPUP_ENABLE_SYRIATEL = False
     config.RUNTIME_ENVIRONMENT = "DEV"
+    config.FIVESIM_API_KEY = "test_fivesim_key"
+    config.FIVESIM_API_URL = "https://5sim.net/v1"
+    config.FIVESIM_ENABLED = True
+    config.SHOW_CATEGORY_IMAGES = False
+    config.BACKUP_ENCRYPTION_KEY = ""
+    config.BACKUP_CHANNEL_ID = ""
+    config.BACKUP_RETENTION_DAYS = 14
     return config
 
 
@@ -173,11 +180,27 @@ class _FakeResult:
         return 0.0
     def scalar_one_or_none(self):
         return None
+from sqlalchemy.ext.asyncio import AsyncSession
+
+async def _smart_session_execute(stmt, session=None, *args, **kwargs):
+    if isinstance(session, AsyncSession):
+        return await session.execute(stmt)
+    return _FakeResult()
+
+async def _smart_session_flush(session=None, *args, **kwargs):
+    if isinstance(session, AsyncSession):
+        await session.flush()
+
+async def _smart_session_commit(session=None, *args, **kwargs):
+    if isinstance(session, AsyncSession):
+        await session.commit()
+
 async def _noop_async(*args, **kwargs):
     return _FakeResult()
-db_module.session_execute = _noop_async
-db_module.session_flush = _noop_async
-db_module.session_commit = _noop_async
+
+db_module.session_execute = _smart_session_execute
+db_module.session_flush = _smart_session_flush
+db_module.session_commit = _smart_session_commit
 db_module.get_db_session = _noop_session_cm
 db_module.create_db_and_tables = _noop_async
 db_module.engine = SimpleNamespace()
