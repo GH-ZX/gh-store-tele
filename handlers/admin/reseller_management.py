@@ -325,19 +325,15 @@ async def handle_fulfill_recharge_cb(callback: CallbackQuery, session: AsyncSess
 async def handle_refund_recharge_cb(callback: CallbackQuery, session: AsyncSession):
     """Admin refunds customer if supplier balance cannot be replenished."""
     order_id = int(callback.data.split(":")[1])
-    from repositories.batstore_order import BatStoreOrderRepository
-    from repositories.user import UserRepository
-    order = await BatStoreOrderRepository.get_by_id(order_id, session)
-    if not order or order.status == "refunded":
-        await callback.answer("الطلب مسترد مسبقاً أو غير موجود.", show_alert=True)
+    from fastapi import HTTPException
+    from services.order_admin import refund_unfulfilled
+    try:
+        order, amount = await refund_unfulfilled(order_id, session)
+        await session_commit(session)
+    except HTTPException as exc:
+        await session.rollback()
+        await callback.answer(str(exc.detail), show_alert=True)
         return
-    user = await UserRepository.get_by_tgid(order.telegram_id, session)
-    if user:
-        user.top_up_amount = (user.top_up_amount or 0.0) + (order.total_sell or 0.0)
-        await UserRepository.update(user, session)
-    order.status = "refunded"
-    await BatStoreOrderRepository.update(order, session)
-    await session_commit(session)
     await callback.message.edit_text(
-        f"{callback.message.html_text}\n\n↩️ <b>تم استرداد مبلغ ${order.total_sell:.2f} إلى رصيد العميل بنجاح.</b>"
+        f"{callback.message.html_text}\n\n↩️ <b>تم استرداد مبلغ ${amount:.2f} إلى رصيد العميل بنجاح.</b>"
     )

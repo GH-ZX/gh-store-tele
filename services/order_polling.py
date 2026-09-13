@@ -6,131 +6,96 @@ from db import get_db_session, session_commit, session_execute
 from repositories.batstore_order import BatStoreOrderRepository
 from services.batstore import BatStoreService
 from services.notification import NotificationService
-from collections import defaultdict
 
 _POLL_INTERVAL = 60
 _MAX_ATTEMPTS = 10
-_order_attempts: dict[int, int] = defaultdict(int)
+
+async def poll_one_order(order_id, session):
+    from datetime import datetime, timezone
+    from services.order_fulfillment import FulfillmentService, normalized_details, locked_order
+    order = await locked_order(order_id, session)
+    if not order:
+        return
+    details = normalized_details(order)
+    await session.commit()
+    # Resume only persisted, demonstrably unsubmitted attempts.
+    if any(item.get("status") in {"created", "queued"} for item in details):
+        order = await FulfillmentService.fulfill_order(order_id, session)
+        details = normalized_details(order)
+        await session.commit()
+    for index, item in enumerate(details):
+        state = item.get("status")
+        if state == "submitting":
+            try:
+                submitted = datetime.fromisoformat(item["submitted_at"])
+                stale = (datetime.now(timezone.utc) - submitted).total_seconds() > 300
+            except (KeyError, ValueError, TypeError):
+                stale = True
+            if stale:
+                await FulfillmentService.transition_item(order_id, index, "requires_manual_review", None, session)
+                await session.commit()
+            continue
+        if state != "pending_fulfillment":
+            continue
+        if not item.get("external_order_ref") or not item.get("supplier"):
+            await FulfillmentService.transition_item(order_id, index, "requires_manual_review", None, session)
+            await session.commit()
+            continue
+        # Persist polling counters so a restart cannot reset escalation.
+        current = await locked_order(order_id, session)
+        current_details = normalized_details(current)
+        if current_details[index].get("status") != "pending_fulfillment":
+            await session.commit()
+            continue
+        attempts = int(current_details[index].get("poll_attempts") or 0) + 1
+        current_details[index]["poll_attempts"] = attempts
+        current.details = current_details
+        await session.commit()
+        if attempts > _MAX_ATTEMPTS:
+            await FulfillmentService.transition_item(order_id, index, "requires_manual_review", None, session)
+            await session.commit()
+            await NotificationService.send_to_admins(f"⚠️ Order #{order_id}, item {index + 1}: supplier reconciliation required.", None)
+            continue
+        try:
+            status, goods = await asyncio.wait_for(FulfillmentService.supplier_status(item, session), timeout=15)
+        except Exception as exc:
+            logging.warning("Supplier polling failed for order %s item %s: %s", order_id, index, exc)
+            await session.rollback()
+            continue
+        status = str(status).lower()
+        if status in {"failed", "refunded", "cancelled", "rejected"}:
+            status = "failed"
+        elif status in {"completed", "success", "delivered", "active"}:
+            status = "completed"
+        else:
+            await session.commit()
+            continue
+        updated, changed = await FulfillmentService.transition_item(
+            order_id, index, status, goods, session,
+            external_ref=item["external_order_ref"], supplier=item["supplier"])
+        await session.commit()
+        if changed and updated.status == "completed":
+            await _notify_order_complete(updated, [
+                good for detail in updated.details for good in detail.get("delivery_goods", [])
+            ])
+
 
 async def poll_pending_orders():
-    """Periodically check pending BatStore orders with the reseller API.
-
-    For each pending order:
-      - Call GET /orders/{order_id} to check status.
-      - If completed: extract goods, update status, notify user.
-      - If failed: refund customer balance, update status, notify user.
-      - If still pending: leave as-is (will be checked next cycle).
-    """
     while True:
         try:
             async with get_db_session() as session:
                 await drain_retry_order_queue(session)
                 pending = await BatStoreOrderRepository.get_pending(session)
-
-            for order in pending:
-                if not order.external_order_ref:
-                    continue
-                ref_str = str(order.external_order_ref).strip()
-                is_numeric = ref_str.isdigit()
-                order_id = int(ref_str) if is_numeric else ref_str
-
-                _order_attempts[order.id] += 1
-                if _order_attempts[order.id] > _MAX_ATTEMPTS:
-                    logging.warning("Order %s exceeded max polling attempts (%s)", order.id, _MAX_ATTEMPTS)
-                    async with get_db_session() as session:
-                        await BatStoreOrderRepository.update_status(
-                            order.id, "requires_manual_review", None, session)
-                        await session_commit(session)
-                    await NotificationService.send_to_admins(
-                        f"⚠️ Order #{order.id} (tg:{order.telegram_id}) exceeded max polling attempts ({_MAX_ATTEMPTS}). "
-                        f"Status set to requires_manual_review. Upstream ID: {order.external_order_ref}",
-                        None
-                    )
-                    _order_attempts.pop(order.id, None)
-                    continue
-
+                order_ids = [order.id for order in pending]
+            for order_id in order_ids:
                 try:
-                    if ref_str.startswith("g2b-game-"):
-                        from services.g2bulk import G2BulkService
-                        g2b_id = ref_str.replace("g2b-game-", "").strip()
-                        async with get_db_session() as session:
-                            order_data = await asyncio.wait_for(
-                                G2BulkService.get_game_order_status(g2b_id, session),
-                                timeout=15.0
-                            )
-                        st = str(order_data.get("order", {}).get("status") or order_data.get("status") or "").upper()
-                        if st == "COMPLETED":
-                            reseller_status = "completed"
-                            goods = ["Game Top-Up Completed Successfully"]
-                        elif st in ("FAILED", "REFUNDED"):
-                            reseller_status = "failed"
-                            goods = []
-                        else:
-                            reseller_status = "pending"
-                            goods = []
-                    elif ref_str.startswith("g2b-vouch-"):
-                        from services.g2bulk import G2BulkService
-                        g2b_id = ref_str.replace("g2b-vouch-", "").strip()
-                        async with get_db_session() as session:
-                            order_data = await asyncio.wait_for(
-                                G2BulkService.get_delivery(g2b_id, session),
-                                timeout=15.0
-                            )
-                        st = str(order_data.get("status") or "").upper()
-                        if st == "COMPLETED":
-                            reseller_status = "completed"
-                            goods = G2BulkService.extract_delivery_goods(order_data)
-                        elif st in ("FAILED", "REFUNDED"):
-                            reseller_status = "failed"
-                            goods = []
-                        else:
-                            reseller_status = "pending"
-                            goods = []
-                    elif is_numeric:
-                        async with get_db_session() as session:
-                            order_data = await asyncio.wait_for(
-                                BatStoreService.get_order(session, int(order_id)),
-                                timeout=15.0
-                            )
-                        reseller_status = BatStoreService.get_order_reseller_status(order_data)
-                        goods = BatStoreService.extract_delivery_goods(order_data)
-                    else:
-                        from services.prodseller import ProdSellerService
-                        async with get_db_session() as session:
-                            order_data = await asyncio.wait_for(
-                                ProdSellerService.get_order(session, str(order_id)),
-                                timeout=15.0
-                            )
-                        reseller_status = ProdSellerService.get_order_reseller_status(order_data)
-                        goods = ProdSellerService.extract_delivery_goods(order_data)
-                except asyncio.TimeoutError:
-                    logging.warning("Timeout checking order %s after 15s", order.id)
-                    continue
-                except Exception as e:
-                    logging.warning("Failed to check order %s: %s", order.id, e)
-                    continue
-
-                if reseller_status == "completed":
                     async with get_db_session() as session:
-                        await BatStoreOrderRepository.update_status(
-                            order.id, "completed", goods, session)
-                        await session_commit(session)
-                    _order_attempts.pop(order.id, None)
-                    await _notify_order_complete(order, goods)
-
-                elif reseller_status == "failed":
-                    async with get_db_session() as session:
-                        await BatStoreOrderRepository.update_status(
-                            order.id, "failed", None, session)
-                        await session_commit(session)
-                    _order_attempts.pop(order.id, None)
-                    async with get_db_session() as session:
-                        await _refund_and_notify(order, session)
-
-        except Exception as e:
-            logging.error("poll_pending_orders error: %s", e)
+                        await poll_one_order(order_id, session)
+                except Exception:
+                    logging.exception("Order polling failed for %s", order_id)
+        except Exception:
+            logging.exception("poll_pending_orders error")
         await asyncio.sleep(_POLL_INTERVAL)
-
 
 async def _notify_order_complete(order, goods: list[str]):
     """Notify the customer that their order is ready.
@@ -257,33 +222,6 @@ async def _notify_order_complete(order, goods: list[str]):
         logging.error("Failed to notify user %s about order %s: %s",
                       order.telegram_id, order.id, e)
 
-async def _refund_and_notify(order, session):
-    """Refund customer balance and notify about failed order."""
-    from repositories.user import UserRepository
-    from services.sale_pricing import externally_paid
-    user = await UserRepository.get_by_tgid(order.telegram_id, session)
-    if user is None:
-        logging.error("Cannot refund order %s: user %s not found", order.id, order.telegram_id)
-        return
-
-    refund_amount = order.total_sell or 0.0
-    if externally_paid(order):
-        logging.info("Order %s was paid externally; marking failed without wallet credit", order.id)
-    else:
-        await UserRepository.refund_balance(order.telegram_id, refund_amount, session)
-        await session_commit(session)
-
-    text = (
-        f"❌ Your order #{order.id} could not be fulfilled.\n"
-        f"💰 {refund_amount:.2f} has been refunded to your balance."
-    )
-    try:
-        await NotificationService.send_to_user(text, order.telegram_id)
-    except Exception as e:
-        logging.error("Failed to notify user %s about refund for order %s: %s",
-                      order.telegram_id, order.id, e)
-
-
 async def periodic_catalog_sync():
     """Periodically sync the BatStore catalog every hour to keep prices and stock fresh."""
     while True:
@@ -367,45 +305,29 @@ async def check_reseller_balance(session) -> float | None:
     return bal_bat
 
 async def drain_retry_order_queue(session):
-    """Process any queued retry orders from Redis during upstream recovery."""
+    """Legacy Redis entries may describe accepted purchases; quarantine them."""
     from repositories.batstore_product import BatStoreProductRepository
-    r = BatStoreProductRepository._redis
-    if r is None:
-        return
+    from services.order_fulfillment import FulfillmentService, normalized_details
     import json
+    redis = BatStoreProductRepository._redis
+    if redis is None:
+        return
     for _ in range(5):
+        raw = await redis.lpop("ghstore:retry_order_queue")
+        if not raw:
+            break
         try:
-            raw = await r.lpop("ghstore:retry_order_queue")
-            if not raw:
-                break
-            item = json.loads(raw)
-            order_id = item["order_id"]
-            product_id = item["product_id"]
-            quantity = item["quantity"]
-            customer_ref = item["customer_reference"]
-            placed = await BatStoreService.place_order(
-                session, product_id, quantity,
-                customer_reference=customer_ref,
-                idempotency_key=customer_ref
-            )
-            ext_ref = placed.get("order", {}).get("id") or placed.get("order_id")
-            items = placed.get("order", {}).get("items") or []
-            goods_list = [it.get("value") or it.get("data") or str(it) for it in items] if items else []
-            order = await BatStoreOrderRepository.get_by_id(order_id, session)
+            payload = json.loads(raw)
+            order = await BatStoreOrderRepository.get_by_id(payload["order_id"], session)
             if order:
-                order.external_order_ref = str(ext_ref) if ext_ref else None
-                order.status = "completed" if goods_list else "pending_fulfillment"
-                await BatStoreOrderRepository.update(order, session)
-                await session_commit(session)
-                if goods_list:
-                    await _notify_order_complete(order, goods_list)
-        except Exception as e:
-            logging.warning("Failed retry for queued order: %s", e)
-            if raw:
-                try:
-                    await r.rpush("ghstore:retry_order_queue", raw)
-                except Exception:
-                    pass
+                for index, item in enumerate(normalized_details(order)):
+                    if item.get("status") not in {"completed", "failed", "refunded", "cancelled"}:
+                        await FulfillmentService.transition_item(order.id, index, "requires_manual_review", None, session)
+                await session.commit()
+        except Exception:
+            await session.rollback()
+            await redis.rpush("ghstore:retry_order_queue", raw)
+            logging.exception("Could not quarantine legacy supplier retry")
             break
 
 

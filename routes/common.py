@@ -17,7 +17,7 @@ def is_admin_id(tg_id: int | None) -> bool:
 def verify_admin(tg_id: int | None, request: Request | None = None) -> bool:
     """Verify that a given Telegram user ID has admin privileges based on config.ADMIN_ID_LIST.
 
-    Strictly verifies cryptographic Telegram WebApp initData if request is provided.
+    Requires authenticated request identity; use is_admin_id only for trusted identities.
     """
     if not tg_id:
         return False
@@ -27,7 +27,7 @@ def verify_admin(tg_id: int | None, request: Request | None = None) -> bool:
             return is_admin_id(verified_tg_id)
         except Exception:
             return False
-    return is_admin_id(tg_id)
+    return False
 
 def normalize_delivery_good(g) -> str:
     """Extract clean credentials if g is a dictionary or dict string representation."""

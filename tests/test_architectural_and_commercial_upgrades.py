@@ -69,9 +69,13 @@ async def test_subscription_tracker_alert_dispatch():
 
 
 def test_verify_admin_check(monkeypatch):
+    from services.telegram_auth import generate_session_token
+    from types import SimpleNamespace
     monkeypatch.setattr(config, "ADMIN_ID_LIST", [12345, 67890])
-    assert verify_admin(12345) is True
-    assert verify_admin(67890) is True
+    for tg_id in (12345, 67890):
+        request = SimpleNamespace(headers={"Authorization": "Bearer " + generate_session_token(tg_id)}, query_params={})
+        assert verify_admin(tg_id, request) is True
+        assert verify_admin(tg_id) is False
     assert verify_admin(99999) is False
     assert verify_admin(None) is False
     assert verify_admin(0) is False
@@ -192,26 +196,23 @@ async def test_supplier_recharge_fulfillment():
     mock_order = MagicMock()
     mock_order.id = 505
     mock_order.status = "pending_supplier_recharge"
-    mock_order.details = [{"product_id": 1, "quantity": 1, "name": "Gemini Ultra"}]
+    mock_order.details = [{"product_id": 1, "quantity": 1, "name": "Gemini Ultra",
+                           "status": "pending_supplier_recharge", "delivery_goods": []}]
     mock_order.telegram_id = 999111
 
-    mock_prod = MagicMock()
-    mock_prod.product_id = 1
-    mock_prod.supplier = "batstore"
+    async def fake_fulfill(order_id, session):
+        mock_order.status = "completed"
+        mock_order.details[0]["delivery_goods"] = ["key-12345"]
+        return mock_order
 
-    with patch("repositories.batstore_order.BatStoreOrderRepository.get_by_id", new_callable=AsyncMock, return_value=mock_order), \
-         patch("repositories.batstore_product.BatStoreProductRepository.get_by_product_id", new_callable=AsyncMock, return_value=mock_prod), \
-         patch("services.batstore.BatStoreService.place_order", new_callable=AsyncMock, return_value={"order": {"items": [{"value": "key-12345"}]}}), \
-         patch("repositories.batstore_order.BatStoreOrderRepository.update", new_callable=AsyncMock), \
-         patch("db.session_commit", new_callable=AsyncMock), \
-         patch("bot.bot.send_message", new_callable=AsyncMock) as mock_send, \
-         patch("services.pdf_receipt.PDFReceiptService.dispatch_pdf_receipt", new_callable=AsyncMock):
+    with patch("services.order_fulfillment.FulfillmentService.fulfill_order", new=fake_fulfill), \
+         patch("services.order_polling._notify_order_complete", new_callable=AsyncMock) as mock_notify:
 
         success, msg, goods = await SupplierRechargeService.check_and_fulfill_order(505, mock_session)
         assert success is True
         assert "key-12345" in goods
         assert mock_order.status == "completed"
-        mock_send.assert_awaited_once()
+        mock_notify.assert_awaited_once()
 
 
 def test_receipt_generation():
@@ -226,6 +227,7 @@ def test_receipt_generation():
 
 @pytest.mark.asyncio
 async def test_supplier_webhook_push():
+    from contextlib import asynccontextmanager
     from routes.webhooks import supplier_order_webhook
 
     class _FakeReq:
@@ -243,23 +245,44 @@ async def test_supplier_webhook_push():
     mock_order.status = "pending_fulfillment"
     mock_order.external_order_ref = "ext-777"
     mock_order.customer_reference = "cust-888"
-    mock_order.details = [{"name": "Netflix 1 Month", "delivery_goods": []}]
+    mock_order.details = [{"name": "Netflix 1 Month", "delivery_goods": [],
+                           "supplier": "batstore", "external_order_ref": "ext-777",
+                           "status": "pending_fulfillment"}]
     mock_order.telegram_id = 444555
 
     mock_res = MagicMock()
-    mock_res.scalar_one_or_none.return_value = mock_order
+    mock_res.scalars.return_value.all.return_value = [mock_order]
+    mock_session = AsyncMock()
+    mock_session.execute.return_value = mock_res
 
-    with patch("routes.webhooks.session_execute", new_callable=AsyncMock, return_value=mock_res), \
+    @asynccontextmanager
+    async def fake_session_context():
+        yield mock_session
+
+    async def fake_supplier_status(item, session):
+        assert item["supplier"] == "batstore"
+        assert item["external_order_ref"] == "ext-777"
+        return ("completed", ["activated_token_xyz"])
+
+    async def fake_transition(order_id, index, status, goods, session, *, external_ref=None, supplier=None):
+        assert supplier == "batstore"
+        assert external_ref == "ext-777"
+        assert status == "completed"
+        mock_order.status = "completed"
+        mock_order.details[0]["delivery_goods"] = list(goods)
+        return mock_order, True
+
+    with patch("routes.webhooks.get_db_session", new=fake_session_context), \
          patch("services.config.ConfigService.get", new_callable=AsyncMock, return_value="test_secret"), \
-         patch("repositories.batstore_order.BatStoreOrderRepository.update", new_callable=AsyncMock), \
-         patch("db.session_commit", new_callable=AsyncMock), \
-         patch("bot.bot.send_message", new_callable=AsyncMock) as mock_send, \
-         patch("services.pdf_receipt.PDFReceiptService.dispatch_pdf_receipt", new_callable=AsyncMock):
+         patch("services.order_fulfillment.FulfillmentService.supplier_status", new=fake_supplier_status), \
+         patch("services.order_fulfillment.FulfillmentService.transition_item", new=fake_transition), \
+         patch("services.order_polling._notify_order_complete", new_callable=AsyncMock) as mock_notify:
 
         res = await supplier_order_webhook("batstore", _FakeReq())
         assert res["status"] == "completed"
         assert mock_order.status == "completed"
-        mock_send.assert_awaited_once()
+        mock_session.commit.assert_awaited_once()
+        mock_notify.assert_awaited_once()
 
 
 def test_promotional_banner_dto():

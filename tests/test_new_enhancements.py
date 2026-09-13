@@ -80,12 +80,14 @@ def test_extract_and_verify_user_id(monkeypatch):
     assert exc.value.status_code == 403
 
 
-def test_extract_fallback_without_header(monkeypatch):
+def test_extract_requires_credentials_in_dev(monkeypatch):
     import config
     from enums.runtime_environment import RuntimeEnvironment
     monkeypatch.setattr(config, "RUNTIME_ENVIRONMENT", RuntimeEnvironment.DEV)
     req = _FakeRequest()
-    assert extract_and_verify_telegram_user(req, 12345) == 12345
+    with pytest.raises(HTTPException) as exc:
+        extract_and_verify_telegram_user(req, 12345)
+    assert exc.value.status_code == 401
     with pytest.raises(HTTPException) as exc:
         extract_and_verify_telegram_user(req, None)
     assert exc.value.status_code == 401
@@ -201,7 +203,9 @@ def test_extract_prod_strict_auth(monkeypatch):
     monkeypatch.setattr(config, "RUNTIME_ENVIRONMENT", RuntimeEnvironment.PROD)
     monkeypatch.setattr(config, "TOKEN", "test_prod_token")
     req = _FakeRequest()
-    assert extract_and_verify_telegram_user(req, 12345) == 12345
+    with pytest.raises(HTTPException) as exc:
+        extract_and_verify_telegram_user(req, 12345)
+    assert exc.value.status_code == 401
 
     # Without claimed_tg_id and without header, throws 401
     with pytest.raises(HTTPException) as exc:

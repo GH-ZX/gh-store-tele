@@ -2,6 +2,8 @@ import pytest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+from enums.language import Language
+
 
 # ---- stubs ----
 
@@ -38,6 +40,8 @@ class _State:
 
 class _CallbackMsg:
     def __init__(self):
+        self.chat = SimpleNamespace(id=55)
+        self.message_id = 4411
         self.edits = []
     async def edit_text(self, text, reply_markup=None):
         self.edits.append(text)
@@ -48,6 +52,7 @@ class _CallbackMsg:
 class _Callback:
     def __init__(self, uid=1):
         self.from_user = SimpleNamespace(id=uid)
+        self.bot = SimpleNamespace(id=901)
         self.message = _CallbackMsg()
 
 
@@ -187,26 +192,17 @@ async def test_checkout_success(monkeypatch):
     async def fake_get_by_tgid(tgid, session):
         return _UserOrm(top_up=100.0, consume=0.0)
 
-    async def fake_quote(session, pid, qty):
-        return {"success": True}
+    completed_order = SimpleNamespace(id=99)
 
-    async def fake_place_order(session, pid, qty, **kwargs):
-        return {"success": True, "order": {
-            "id": 12345,
-            "items": [{"value": "KEY-1234"}]
-        }}
+    async def fake_reserve(tg_id, body, key, session, **kwargs):
+        return completed_order, True
 
-    async def fake_update(user, session):
-        return user
+    async def fake_fulfill(order_id, session):
+        return completed_order
 
-    async def fake_create(dto, session):
-        return dto
-
-    async def fake_commit(session):
-        pass
-
-    async def fake_send_to_admins(text, reply_markup):
-        pass
+    def fake_response(order):
+        return {"goods": ["KEY-1234"], "total_paid": 20.0,
+                "reseller_status": "completed"}
 
     monkeypatch.setattr(
         "services.batstore_store.BatStoreProductRepository.get_by_product_id",
@@ -215,25 +211,24 @@ async def test_checkout_success(monkeypatch):
         "services.batstore_store.UserRepository.get_by_tgid",
         fake_get_by_tgid)
     monkeypatch.setattr(
-        "services.batstore_store.BatStoreService.quote", fake_quote)
+        "services.checkout.CheckoutService.reserve",
+        fake_reserve)
     monkeypatch.setattr(
-        "services.batstore_store.BatStoreService.place_order", fake_place_order)
+        "services.order_fulfillment.FulfillmentService.fulfill_order",
+        fake_fulfill)
     monkeypatch.setattr(
-        "services.batstore_store.UserRepository.update", fake_update)
-    monkeypatch.setattr(
-        "services.batstore_store.BatStoreOrderRepository.create", fake_create)
-    monkeypatch.setattr(
-        "services.batstore_store.session_commit", fake_commit)
+        "services.checkout.CheckoutService.response",
+        fake_response)
     monkeypatch.setattr(
         "services.batstore_store.NotificationService.send_to_admins",
-        fake_send_to_admins)
+        AsyncMock())
 
-    cb = SimpleNamespace(from_user=SimpleNamespace(id=1))
+    cb = _Callback()
     cb_data = BatStoreCallback.create(
         level=3, product_id=42, quantity=2, confirmation=True)
     state = _State()
 
-    caption, kb = await BatStoreStoreService.checkout(cb, cb_data, state, None, None)
+    caption, kb = await BatStoreStoreService.checkout(cb, cb_data, state, AsyncMock(), Language.EN)
 
     assert "2" in caption
     assert "ChatGPT Plus" in caption or "10.00" in caption
@@ -243,6 +238,7 @@ async def test_checkout_success(monkeypatch):
 async def test_checkout_insufficient_balance(monkeypatch):
     from services.batstore_store import BatStoreStoreService
     from callbacks import BatStoreCallback
+    from fastapi import HTTPException
 
     async def fake_get_by_product_id(pid, session):
         return _ProductOrm(sell=50.0)
@@ -250,18 +246,24 @@ async def test_checkout_insufficient_balance(monkeypatch):
     async def fake_get_by_tgid(tgid, session):
         return _UserOrm(top_up=10.0, consume=0.0)
 
+    async def fake_reserve(tg_id, body, key, session, **kwargs):
+        raise HTTPException(400, "insufficient_balance")
+
     monkeypatch.setattr(
         "services.batstore_store.BatStoreProductRepository.get_by_product_id",
         fake_get_by_product_id)
     monkeypatch.setattr(
         "services.batstore_store.UserRepository.get_by_tgid",
         fake_get_by_tgid)
+    monkeypatch.setattr(
+        "services.checkout.CheckoutService.reserve",
+        fake_reserve)
 
-    cb = SimpleNamespace(from_user=SimpleNamespace(id=1))
+    cb = _Callback()
     cb_data = BatStoreCallback.create(
         level=3, product_id=42, quantity=1, confirmation=True)
     state = _State()
 
-    caption, kb = await BatStoreStoreService.checkout(cb, cb_data, state, None, None)
+    caption, kb = await BatStoreStoreService.checkout(cb, cb_data, state, AsyncMock(), Language.EN)
 
     assert "insufficient" in caption.lower() or "balance" in caption.lower()

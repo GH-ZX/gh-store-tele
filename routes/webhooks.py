@@ -167,86 +167,51 @@ async def supplier_order_webhook(supplier: str, request: Request):
         if not order_ref:
             return {"status": "missing_ref"}
 
-        from bot import redis as _r
-        order_lock = _r.lock(f"lock:webhook:supplier:{supplier}:{order_ref}"[:200], timeout=30) if _r else None
-        if order_lock is not None:
-            try:
-                if not await order_lock.acquire(blocking=False):
-                    return {"status": "already_processing"}
-            except Exception:
-                order_lock = None
+        if supplier not in {"batstore", "prodseller", "g2bulk"}:
+            return JSONResponse({"error": "unknown_supplier"}, status_code=404)
+        from sqlalchemy import select, cast, or_
+        from sqlalchemy.dialects.postgresql import JSONB
+        from models.order import Order
+        from services.order_fulfillment import FulfillmentService, normalized_details
+        refs = [order_ref]
+        if supplier == "g2bulk":
+            refs.extend([f"g2b-game-{order_ref}", f"g2b-vouch-{order_ref}"])
+        # Provider and reference must belong to the same line. Never resolve a
+        # cart by only its aggregate reference or customer-controlled identity.
+        conditions = [cast(Order.details, JSONB).contains([
+            {"supplier": supplier, "external_order_ref": ref}
+        ]) for ref in refs]
+        candidates = (await session.execute(select(Order).where(or_(*conditions)))).scalars().all()
+        matches = [(order, index, item) for order in candidates
+                   for index, item in enumerate(normalized_details(order))
+                   if item.get("supplier") == supplier and str(item.get("external_order_ref") or "") in refs]
+        if len(matches) != 1:
+            return {"status": "not_found" if not matches else "ambiguous_reference"}
+        order, index, item = matches[0]
+        # Treat callbacks as a wake-up signal. Fetch authoritative status and
+        # goods, preventing one compromised shared-secret sender forging a
+        # different provider's delivery or refund.
         try:
-            from models.batstore_order import BatStoreOrder
-            from repositories.batstore_order import BatStoreOrderRepository
-            from sqlalchemy import select
-            stmt = select(BatStoreOrder).where(
-                (BatStoreOrder.external_order_ref == order_ref) |
-                (BatStoreOrder.customer_reference == order_ref)
-            )
-            order = (await session_execute(stmt, session)).scalar_one_or_none()
-            if not order:
-                logging.info("Supplier webhook for unknown order_ref=%s", order_ref)
-                return {"status": "not_found"}
-            if order.status in ("completed", "failed", "cancelled", "refunded"):
-                return {"status": f"already_{order.status}"}
-
-            if status_str in ("completed", "success", "delivered", "active"):
-                items_list = body.get("items") or body.get("order", {}).get("items") or []
-                goods = [it.get("value") or it.get("data") or str(it) for it in items_list] if items_list else []
-                if not goods and body.get("data"):
-                    goods = [str(body.get("data"))]
-                details = order.details or []
-                for item in details:
-                    if goods:
-                        item["delivery_goods"] = goods
-                order.status = "completed"
-                order.details = details
-                await BatStoreOrderRepository.update(order, session)
-                await session_commit(session)
-                goods_lines = "\n".join(f"• <code>{g}</code>" for g in goods) if goods else "تم تفعيل الخدمة بنجاح."
-                first_name = details[0].get("name") if details else "المنتج"
-                try:
-                    msg = (
-                        f"🎉 <b>تم اكتمال وتفعيل طلبك #{order.id} بنجاح!</b>\n\n"
-                        f"• <b>المنتج:</b> {first_name}\n\n"
-                        f"📦 <b>بيانات التفعيل والتسليم:</b>\n{goods_lines}\n\n"
-                        f"<i>(انقر على البيانات أعلاه للنسخ المباشر)</i>\n\n"
-                        f"شكراً لصبرك وتسوقك مع GH Store! نتمنى لك تجربة ممتعة ✨"
-                    )
-                    await bot.send_message(chat_id=order.telegram_id, text=msg, parse_mode="HTML")
-                except Exception as e:
-                    logging.warning("Could not send webhook fulfillment DM to %s: %s", order.telegram_id, e)
-                try:
-                    from services.pdf_receipt import PDFReceiptService
-                    date_str = order.created_at.strftime("%Y-%m-%d %H:%M:%S UTC") if getattr(order, "created_at", None) else None
-                    await PDFReceiptService.dispatch_pdf_receipt(
-                        order_id=order.id,
-                        telegram_id=order.telegram_id,
-                        order_data={"details": order.details, "total_sell": order.total_sell, "created_at": date_str, "goods": goods},
-                        bot=bot
-                    )
-                except Exception as e:
-                    logging.debug("Could not dispatch PDF receipt: %s", e)
-                return {"status": "completed", "order_id": order.id}
-            elif status_str in ("failed", "cancelled", "rejected"):
-                from services.sale_pricing import externally_paid
-                await BatStoreOrderRepository.update_status(order.id, "failed", None, session)
-                if not externally_paid(order):
-                    refund_amt = float(order.total_sell or 0.0)
-                    await UserRepository.refund_balance(order.telegram_id, refund_amt, session)
-                    try:
-                        await bot.send_message(
-                            chat_id=order.telegram_id,
-                            text=f"❌ تعذر تفعيل طلبك #{order.id} من قبل المورد. تمت إعادة مبلغ ${refund_amt:.2f} إلى رصيدك المتاح."
-                        )
-                    except Exception:
-                        pass
-                await session_commit(session)
-                return {"status": "failed", "order_id": order.id}
-        finally:
-            if order_lock is not None:
-                try:
-                    await order_lock.release()
-                except Exception:
-                    pass
-    return {"status": "ignored"}
+            import asyncio
+            upstream_status, goods = await asyncio.wait_for(
+                FulfillmentService.supplier_status(item, session), timeout=15)
+        except Exception:
+            logging.exception("Could not verify supplier callback for order %s", order.id)
+            return JSONResponse({"status": "verification_unavailable"}, status_code=503)
+        upstream_status = str(upstream_status).lower()
+        if upstream_status in {"completed", "success", "delivered", "active"}:
+            status = "completed"
+        elif upstream_status in {"failed", "cancelled", "rejected", "refunded"}:
+            status = "failed"
+        else:
+            return {"status": "pending"}
+        updated, changed = await FulfillmentService.transition_item(
+            order.id, index, status, goods, session,
+            external_ref=item["external_order_ref"], supplier=supplier)
+        await session.commit()
+        if changed and updated.status == "completed":
+            from services.order_polling import _notify_order_complete
+            await _notify_order_complete(updated, [
+                good for detail in updated.details for good in detail.get("delivery_goods", [])
+            ])
+        return {"status": updated.status, "order_id": updated.id, "changed": changed}

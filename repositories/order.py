@@ -1,4 +1,5 @@
 import datetime
+from copy import deepcopy
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
@@ -17,6 +18,8 @@ class OrderRepository:
             status=dto.status or "completed",
             external_order_ref=dto.external_order_ref,
             customer_reference=dto.customer_reference,
+            checkout_key=dto.checkout_key,
+            request_fingerprint=dto.request_fingerprint,
             details=dto.details,
         )
         session.add(order)
@@ -37,8 +40,7 @@ class OrderRepository:
     @staticmethod
     async def get_pending(session: AsyncSession | Session) -> list[Order]:
         stmt = (select(Order)
-                .where(Order.status == "pending_fulfillment")
-                .where(Order.external_order_ref.isnot(None))
+                .where(Order.status.in_(["pending_fulfillment", "created", "queued", "submitting", "pending_supplier_recharge", "partially_completed"]))
                 .order_by(Order.created_at.asc()))
         result = await session.execute(stmt)
         return list(result.scalars().all())
@@ -47,16 +49,18 @@ class OrderRepository:
     async def update_status(order_id: int, new_status: str,
                             delivery_goods: list | None,
                             session: AsyncSession | Session) -> Order | None:
-        stmt = select(Order).where(Order.id == order_id)
+        stmt = select(Order).where(Order.id == order_id).with_for_update().execution_options(populate_existing=True)
         result = await session.execute(stmt)
         order = result.scalar_one_or_none()
         if order is None:
             return None
         order.status = new_status
         if delivery_goods and order.details:
-            for detail in order.details:
-                if "delivery_goods" not in detail:
-                    detail["delivery_goods"] = delivery_goods
+            details = deepcopy(order.details)
+            if len(details) != 1:
+                raise ValueError("Cart deliveries must be applied to a specific order item")
+            details[0]["delivery_goods"] = list(delivery_goods)
+            order.details = details
         elif delivery_goods and not order.details:
             order.details = [{"delivery_goods": delivery_goods}]
         await session.flush()

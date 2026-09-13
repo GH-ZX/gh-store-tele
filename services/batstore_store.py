@@ -1,8 +1,10 @@
 import logging
-import uuid
+import hashlib
+from html import escape
 
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery
+from aiogram.types import CallbackQuery, WebAppInfo
+from fastapi import HTTPException
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
@@ -13,9 +15,7 @@ from callbacks import BatStoreCallback, RestockCallback
 from db import session_commit
 from services.restock_notification import RestockNotificationService
 from enums.language import Language
-from models.batstore_order import BatStoreOrderDTO
 from models.batstore_product import BatStoreProduct, format_product_icon
-from repositories.batstore_order import BatStoreOrderRepository
 from repositories.batstore_product import BatStoreProductRepository
 from repositories.user import UserRepository
 from services.batstore import BatStoreService
@@ -28,6 +28,30 @@ PAGE_SIZE = 8
 
 
 class BatStoreStoreService:
+
+    @staticmethod
+    def _requires_mini_app(product) -> bool:
+        meta = getattr(product, "extra_meta", None) or {}
+        return bool(meta.get("items") or meta.get("required_fields") or
+                    product.delivery_type in ("direct_topup", "game_recharge", "activation"))
+
+    @staticmethod
+    def _mini_app_checkout(product, language):
+        kb = InlineKeyboardBuilder()
+        host = (getattr(config, "TMA_HOST", None) or config.WEBHOOK_HOST).rstrip("/")
+        kb.button(text="فتح المتجر · Open store", web_app=WebAppInfo(url=f"{host}/app?startapp=prod_{product.product_id}"))
+        kb.row(BatStoreCallback.create(level=0).get_back_button(language, 0))
+        return "اختر الخيارات وأدخل البيانات المطلوبة في المتجر.\nChoose your options and enter the required details in the store.", kb
+
+    @staticmethod
+    async def _quoted_total(product, user, qty, session):
+        from services.checkout import priced_product
+        from services.sale_pricing import price_lines
+        from services.user import get_vip_tier_info
+        _, cost, price = await priced_product(product, {}, user, session)
+        _, discount = get_vip_tier_info(getattr(user, "consume_records", 0), getattr(user, "custom_discount_pct", None))
+        (total,), _ = price_lines([(price, cost, qty, BatStoreService.get_volume_discount(qty))], discount_pct=discount)
+        return float(total)
 
     # ------------------------------------------------------------- navigation
 
@@ -133,10 +157,10 @@ class BatStoreStoreService:
             await session_commit(session)
 
         icon_html = format_product_icon(product)
-        display_name = f"🔴 {icon_html} {product.name} {get_text(language, BotEntity.USER, 'product_out_of_stock_badge')}" if is_oos else f"{icon_html} {product.name}"
+        display_name = f"🔴 {icon_html} {escape(product.name)} {get_text(language, BotEntity.USER, 'product_out_of_stock_badge')}" if is_oos else f"{icon_html} {escape(product.name)}"
         caption = get_text(language, BotEntity.USER, "batstore_detail").format(
             name=display_name,
-            description=clean_tg_emojis(product.description),
+            description=escape(clean_tg_emojis(product.description) or ""),
             price=f"{BatStoreStoreService._effective_price(product, user):.2f}" if product.sell_price_usd is not None else "-",
             sym=sym,
             delivery=delivery,
@@ -145,6 +169,9 @@ class BatStoreStoreService:
         )
 
         kb_builder = InlineKeyboardBuilder()
+        if not is_oos and BatStoreStoreService._requires_mini_app(product):
+            guidance, kb_builder = BatStoreStoreService._mini_app_checkout(product, language)
+            return caption + "\n\n" + guidance, kb_builder
         if is_oos:
             is_sub = await RestockNotificationService.is_subscribed(
                 telegram_id=callback.from_user.id,
@@ -195,6 +222,12 @@ class BatStoreStoreService:
                           session: AsyncSession | Session,
                           language: Language) -> tuple[str, InlineKeyboardBuilder]:
         product = await BatStoreProductRepository.get_by_product_id(callback_data.product_id, session)
+        if product is None or product.hidden:
+            kb = InlineKeyboardBuilder()
+            kb.row(BatStoreCallback.create(level=0).get_back_button(language, 0))
+            return get_text(language, BotEntity.USER, "batstore_not_found"), kb
+        if BatStoreStoreService._requires_mini_app(product):
+            return BatStoreStoreService._mini_app_checkout(product, language)
         sym = config.CURRENCY.get_localized_symbol()
         user = await UserRepository.get_by_tgid(callback.from_user.id, session)
         balance = round((user.top_up_amount or 0) - (user.consume_records or 0), 2)
@@ -204,20 +237,15 @@ class BatStoreStoreService:
         await state.update_data({CART_KEY: cart})
 
         from services.user import get_vip_tier_info
-        from services.sale_pricing import price_lines
         tier_label, discount_pct = get_vip_tier_info(getattr(user, "consume_records", 0.0), getattr(user, "custom_discount_pct", None))
         kb_builder = InlineKeyboardBuilder()
         try:
-            effective_pr = BatStoreStoreService._effective_price(product, user)
-            (total_dec,), _ = price_lines(
-                [(effective_pr, product.cost_usd, callback_data.quantity, 0)],
-                discount_pct=discount_pct)
+            total = await BatStoreStoreService._quoted_total(product, user, callback_data.quantity, session)
         except ValueError:
             kb_builder.button(text=get_text(language, BotEntity.COMMON, "back_button"),
                               callback_data=BatStoreCallback.create(level=1,
                                                                     product_id=product.product_id).pack())
             return get_text(language, BotEntity.USER, "batstore_not_found"), kb_builder
-        total = float(total_dec)
         discount_note = ""
         if discount_pct > 0:
             disc_val = round(callback_data.quantity * product.sell_price_usd - total, 2)
@@ -226,9 +254,9 @@ class BatStoreStoreService:
         caption = ""
         if not callback_data.confirmation:
             caption = get_text(language, BotEntity.USER, "batstore_added").format(
-                qty=callback_data.quantity, name=product.name)
+                qty=callback_data.quantity, name=escape(product.name))
         confirm_caption = get_text(language, BotEntity.USER, "batstore_buy_confirm").format(
-            items=f"{callback_data.quantity} × {product.name} = {total}{sym}",
+            items=f"{callback_data.quantity} × {escape(product.name)} = {total}{sym}",
             total=f"{total}",
             sym=sym,
             balance=f"{balance}",
@@ -261,93 +289,66 @@ class BatStoreStoreService:
 
         sym = config.CURRENCY.get_localized_symbol()
         qty = callback_data.quantity or 1
-        from services.user import get_vip_tier_info as _vip_info
-        from services.sale_pricing import price_lines as _price_lines
-        tier_label, discount_pct = _vip_info(getattr(user, "consume_records", 0.0))
-        try:
-            effective_pr = BatStoreStoreService._effective_price(product, user)
-            (total_dec,), _ = _price_lines(
-                [(effective_pr, product.cost_usd, qty, 0)],
-                discount_pct=discount_pct)
-        except ValueError:
-            return get_text(language, BotEntity.USER, "batstore_not_found"), kb_builder
-        total = float(total_dec)
         balance = round((user.top_up_amount or 0) - (user.consume_records or 0), 2)
 
         if callback_data.confirmation is False:
             kb_builder.row(callback_data.get_back_button(language, 0))
             return get_text(language, BotEntity.USER, "purchase_confirmation_declined"), kb_builder
 
-        debited = await UserRepository.try_debit_balance(callback.from_user.id, total, session)
-        if not debited:
-            caption = get_text(language, BotEntity.USER, "batstore_insufficient").format(
-                need=f"{total}",
-                balance=f"{balance}",
-                sym=sym,
-            )
-            kb_builder.row(callback_data.get_back_button(language, 0))
-            return caption, kb_builder
-        await session_commit(session)
-
-        customer_reference = f"ghstore-{callback.from_user.id}-{uuid.uuid4().hex[:8]}"
-        from services.multi_supplier import MultiSupplierService
+        if BatStoreStoreService._requires_mini_app(product):
+            return BatStoreStoreService._mini_app_checkout(product, language)
+        message = callback.message
+        # Telegram issues a new callback ID for each tap. The confirmation message
+        # identifies the customer's purchase intent across retries and restarts.
+        key_data = f"{callback.bot.id}:{message.chat.id}:{message.message_id}:{product.product_id}:{qty}"
+        key = "bot_" + hashlib.sha256(key_data.encode()).hexdigest()
+        from services.checkout import CheckoutService
+        from services.order_fulfillment import FulfillmentService
         try:
-            placed_result = await MultiSupplierService.place_order_with_failover(
-                session, product, qty,
-                customer_reference=customer_reference,
-                idempotency_key=customer_reference,
-            )
-            external_ref = placed_result.get("external_order_ref")
-            goods_list = placed_result.get("goods") or []
-        except Exception as e:
-            logging.error("Multi-supplier place_order failed for product #%s: %s", product.product_id, e)
-            await UserRepository.refund_balance(callback.from_user.id, total, session)
-            await session_commit(session)
+            order, created = await CheckoutService.reserve(callback.from_user.id,
+                {"product_id": product.product_id, "quantity": qty}, key, session)
+        except HTTPException as exc:
+            await session.rollback()
+            if exc.detail == "insufficient_balance":
+                total = await BatStoreStoreService._quoted_total(product, user, qty, session)
+                return get_text(language, BotEntity.USER, "batstore_insufficient").format(
+                    need=f"{total:.2f}", balance=f"{balance:.2f}", sym=sym), kb_builder
             return get_text(language, BotEntity.USER, "batstore_failed"), kb_builder
 
-        order_payload = {}
-        order_payload["details"] = [{
-            "product_id": product.product_id,
-            "name": product.name,
-            "quantity": qty,
-            "cost_usd": product.cost_usd,
-            "sell_usd": total,
-            "delivery_type": product.delivery_type,
-            "delivery_goods": goods_list,
-            "warranty_days": getattr(product, "warranty_days", 0) or 0,
-        }]
-
-        order_status = "completed" if goods_list else "pending_fulfillment"
-        order = await BatStoreOrderRepository.create(BatStoreOrderDTO(
-            telegram_id=callback.from_user.id,
-            total_sell=total,
-            status=order_status,
-            external_order_ref=str(external_ref) if external_ref else None,
-            customer_reference=customer_reference,
-            details=order_payload["details"],
-        ), session)
-
+        order_id = order.id
         try:
-            from repositories.cartItem import CartItemRepository
-            await CartItemRepository.clear_cart_by_user_id(user.id, session)
-        except Exception as ex_c:
-            logging.debug("Could not clear DB cart: %s", ex_c)
-        await session_commit(session)
-
+            order = await FulfillmentService.fulfill_order(order_id, session)
+            await session_commit(session)
+        except Exception:
+            # The committed order owns the debit and recovery. A timeout must not
+            # manufacture a refund while the supplier may have accepted delivery.
+            logging.exception("Bot fulfillment interrupted for order %s", order_id)
+            await session.rollback()
+            return f"Order #{order_id}\n" + get_text(language, BotEntity.USER, "batstore_activation_pending"), kb_builder
+        result = CheckoutService.response(order)
+        goods_list = result["goods"]
+        total = result["total_paid"]
         await state.update_data({CART_KEY: {}})
 
         delivery_info = ""
         if goods_list:
-            goods_str = "\n".join(f"• <code>{g}</code>" for g in goods_list[:20])
+            from routes.common import normalize_delivery_good
+            goods_str = "\n".join(f"• <code>{escape(normalize_delivery_good(g))}</code>" for g in goods_list[:20])
             delivery_info = f"📦 <b>Your goods:</b>\n{goods_str}\n\n<i>(Tap any key above to copy)</i>"
+        elif result["reseller_status"] == "failed":
+            return f"Order #{order_id}\n" + get_text(language, BotEntity.USER, "batstore_failed"), kb_builder
         else:
             delivery_info = get_text(language, BotEntity.USER, "batstore_activation_pending")
         caption = get_text(language, BotEntity.USER, "batstore_success").format(
-            items=f"{qty} × {product.name} = {total}{sym}",
+            items=f"{qty} × {escape(product.name)} = {total}{sym}",
             delivery_info=delivery_info,
         )
-        await NotificationService.send_to_admins(
-            f"🛒 New GH Store order\n"
-            f"tg:{callback.from_user.id} · {qty}×{product.name} · {total}{sym} · {product.delivery_type}",
-            None)
+        if created:
+            try:
+                await NotificationService.send_to_admins(
+                    f"🛒 New GH Store order #{order_id}\n"
+                    f"tg:{callback.from_user.id} · {qty}×{escape(product.name)} · {total}{sym} · {escape(product.delivery_type)}",
+                    None)
+            except Exception:
+                logging.exception("Could not notify admins for order %s", order_id)
         return caption, kb_builder

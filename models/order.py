@@ -1,7 +1,7 @@
 import datetime
 from pydantic import BaseModel
 from sqladmin import ModelView
-from sqlalchemy import Column, Integer, BigInteger, Float, Text, DateTime, JSON, Boolean, Index
+from sqlalchemy import Column, Integer, BigInteger, Float, Text, DateTime, JSON, Boolean, Index, String, UniqueConstraint
 
 from models.base import Base
 
@@ -15,6 +15,7 @@ class Order(Base):
     __table_args__ = (
         Index("idx_orders_status_created", "status", "created_at"),
         Index("idx_orders_tg_created", "telegram_id", "created_at"),
+        UniqueConstraint("telegram_id", "checkout_key", name="uq_order_user_checkout_key"),
     )
     id = Column(Integer, primary_key=True)
     telegram_id = Column(BigInteger, nullable=False, index=True)
@@ -22,6 +23,8 @@ class Order(Base):
     status = Column(Text, nullable=False, default="completed")
     external_order_ref = Column(Text, nullable=True)
     customer_reference = Column(Text, nullable=True)
+    checkout_key = Column(String(128), nullable=True)
+    request_fingerprint = Column(String(64), nullable=True)
     details = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.datetime.now)
     warranty_claimed = Column(Boolean, default=False, nullable=False)
@@ -38,6 +41,8 @@ class OrderDTO(BaseModel):
     status: str | None = "completed"
     external_order_ref: str | None = None
     customer_reference: str | None = None
+    checkout_key: str | None = None
+    request_fingerprint: str | None = None
     details: list | None = None
     created_at: datetime.datetime | None = None
     warranty_claimed: bool = False

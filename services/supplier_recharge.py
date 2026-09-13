@@ -6,7 +6,6 @@ status, alerts admins with 1-tap fulfillment buttons, and automatically delivers
 once the provider balance is replenished.
 """
 import logging
-import uuid
 from typing import Any
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -79,93 +78,15 @@ class SupplierRechargeService:
 
     @staticmethod
     async def check_and_fulfill_order(order_id: int, session: AsyncSession) -> tuple[bool, str, list]:
-        """Fulfill a queued order once supplier balance has been topped up.
-
-        Returns (success: bool, message: str, delivered_goods: list).
-        """
-        from bot import bot
-        order = await BatStoreOrderRepository.get_by_id(order_id, session)
-        if not order:
+        """Resume only unsubmitted items using their original persisted keys."""
+        from services.order_fulfillment import FulfillmentService
+        from services.order_polling import _notify_order_complete
+        order = await FulfillmentService.fulfill_order(order_id, session)
+        await session.commit()
+        if order is None:
             return False, "Order not found", []
-
+        goods = [good for item in order.details or [] for good in item.get("delivery_goods", [])]
         if order.status == "completed":
-            return True, "Order already completed", []
-
-        details = order.details or []
-        if not details:
-            return False, "Missing order product details", []
-
-        all_goods = []
-        updated_details = []
-        any_failed = False
-        error_msg = ""
-
-        for item in details:
-            pid = item.get("product_id")
-            qty = max(1, int(item.get("quantity") or 1))
-            prod = await BatStoreProductRepository.get_by_product_id(pid, session)
-            cust_ref = f"fulfill-{order.id}-{uuid.uuid4().hex[:6]}"
-
-            supplier = getattr(prod, "supplier", "batstore") if prod else "batstore"
-
-            try:
-                if supplier == "prodseller":
-                    mongo_id = getattr(prod, "reseller_key_override", None) or str(pid)
-                    placed = await ProdSellerService.place_order(session, mongo_id, qty)
-                    goods = ProdSellerService.extract_delivery_goods(placed)
-                else:
-                    placed = await BatStoreService.place_order(
-                        session, pid, qty,
-                        customer_reference=cust_ref,
-                        idempotency_key=cust_ref,
-                    )
-                    items_list = placed.get("order", {}).get("items") or placed.get("items") or []
-                    goods = [it.get("value") or it.get("data") or str(it) for it in items_list] if items_list else []
-
-                all_goods.extend(goods)
-                item["delivery_goods"] = goods
-                updated_details.append(item)
-            except Exception as e:
-                logging.error("Failed to fulfill item #%s during supplier recharge fulfillment: %s", pid, e)
-                any_failed = True
-                error_msg = str(e)
-                updated_details.append(item)
-
-        if any_failed:
-            order.details = updated_details
-            await BatStoreOrderRepository.update(order, session)
-            await session_commit(session)
-            return False, f"Supplier placement failed: {error_msg}. Please ensure supplier balance is funded and retry.", all_goods
-
-        order.status = "completed"
-        order.details = updated_details
-        await BatStoreOrderRepository.update(order, session)
-        await session_commit(session)
-
-        # Notify customer in Telegram with delivered credentials
-        goods_lines = "\n".join(f"• <code>{g}</code>" for g in all_goods) if all_goods else "تم تفعيل حسابك بنجاح."
-        first_name = details[0].get("name") if details else "المنتج"
-        try:
-            msg = (
-                f"🎉 <b>تم اكتمال طلبك #{order.id} وتسليمه بنجاح!</b>\n\n"
-                f"• <b>المنتج:</b> {first_name}\n\n"
-                f"📦 <b>بيانات التفعيل والتسليم:</b>\n{goods_lines}\n\n"
-                f"<i>(انقر على البيانات أعلاه للنسخ المباشر)</i>\n\n"
-                f"شكراً لتسوقك مع GH Store! نتمنى لك تجربة ممتعة ✨"
-            )
-            await bot.send_message(chat_id=order.telegram_id, text=msg, parse_mode="HTML")
-        except Exception as e:
-            logging.warning("Could not send completed order DM to %s: %s", order.telegram_id, e)
-        try:
-            from services.pdf_receipt import PDFReceiptService
-            date_str = order.created_at.strftime("%Y-%m-%d %H:%M:%S UTC") if getattr(order, "created_at", None) else None
-            await PDFReceiptService.dispatch_pdf_receipt(
-                order_id=order.id,
-                telegram_id=order.telegram_id,
-                order_data={"details": order.details, "total_sell": order.total_sell, "created_at": date_str, "goods": all_goods},
-                bot=bot
-            )
-        except Exception as e:
-            logging.debug("Could not dispatch PDF receipt: %s", e)
-
-        return True, "Order fulfilled and delivered to customer successfully!", all_goods
+            await _notify_order_complete(order, goods)
+            return True, "Order completed", goods
+        return False, f"Order status: {order.status}. Pending or uncertain purchases are reconciled before retrying.", goods

@@ -9,6 +9,10 @@ try {
   window._origFetch = _origFetch;
   window.fetch = function(url, options) {
     const opts = options ? { ...options } : {};
+    const requestUrl = new URL(typeof url === 'string' || url instanceof URL ? url : url.url, window.location.href);
+    if (requestUrl.origin !== window.location.origin || !requestUrl.pathname.startsWith('/api/')) {
+      return _origFetch.call(this, url, opts);
+    }
     const tgObj = window.Telegram?.WebApp;
 
     if (typeof Headers !== 'undefined' && opts.headers instanceof Headers) {
@@ -578,9 +582,9 @@ const tg = window.Telegram?.WebApp;
           return `
             <div class="cart-item-card">
               <div class="cart-item-left">
-                <span class="cart-item-icon">${it.emoji || '⚡'}</span>
+                <span class="cart-item-icon">${escAttr(it.emoji || '⚡')}</span>
                 <div style="min-width: 0;">
-                  <div class="cart-item-name">${it.clean_name || it.name}</div>
+                  <div class="cart-item-name">${escAttr(it.clean_name || it.name)}</div>
                   <div class="cart-item-price">${formatPrice(it.price)} × ${it.quantity} = <strong>${formatPrice(itemTotal)}</strong></div>
                 </div>
               </div>
@@ -695,9 +699,10 @@ const tg = window.Telegram?.WebApp;
       };
 
       try {
+        const requestKey = StorefrontSecurity.checkoutKey('cart', payload);
         const res = await fetch('/api/cart/checkout', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'Idempotency-Key': requestKey },
           body: JSON.stringify(payload)
         });
         const d = await res.json();
@@ -705,6 +710,7 @@ const tg = window.Telegram?.WebApp;
         if (tg?.MainButton) tg.MainButton.hideProgress();
 
         if (d.status === 'success') {
+          StorefrontSecurity.finishCheckout('cart', payload, requestKey);
           fireConfetti();
           haptic('success');
           cartMap = {};
@@ -763,7 +769,7 @@ const tg = window.Telegram?.WebApp;
         const topInit = document.getElementById('top-avatar-initial');
         const setInit = document.getElementById('settings-avatar-initial');
         if (tgUser.photo_url) {
-          const imgTag = `<img src="${tgUser.photo_url}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block;" alt="Avatar">`;
+          const imgTag = `<img src="${escAttr(StorefrontSecurity.safeUrl(tgUser.photo_url))}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block;" alt="Avatar">`;
           if (topInit) topInit.innerHTML = imgTag;
           if (setInit) setInit.innerHTML = imgTag;
         } else {
@@ -1012,9 +1018,6 @@ const tg = window.Telegram?.WebApp;
       if (!raw) return `<span style="color: var(--hint)">${currentAppLanguage === 'ar' ? 'لا يوجد وصف إضافي.' : 'No additional description.'}</span>`;
       let text = String(raw).trim();
 
-      const entityMap = { '&lt;': '<', '&gt;': '>', '&quot;': '"', '&apos;': "'", '&amp;': '&' };
-      text = text.replace(/&(lt|gt|quot|apos|amp);/g, (m) => entityMap[m] || m);
-
       // 1. Direct Telegram custom emoji tag resolution: extract standard UTF-8 emoji
       text = text.replace(/<tg-emoji[^>]*>(.*?)<\/tg-emoji>/gis, '$1');
       text = text.replace(/<tg-emoji[^>]*\/>/gi, '');
@@ -1041,7 +1044,7 @@ const tg = window.Telegram?.WebApp;
       const links = [];
       text = text.replace(/\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)/gi, (m, label, url) => {
         const placeholder = '___LINK_' + links.length + '___';
-        links.push('<a href="' + url + '" target="_blank" rel="noopener noreferrer" class="desc-link" onclick="handleDescLink(event, \'' + url + '\')">' + label + '</a>');
+        links.push('<a href="' + escapeAttr(StorefrontSecurity.safeUrl(url)) + '" class="desc-link">' + escapeAttr(label) + '</a>');
         return placeholder;
       });
 
@@ -1049,7 +1052,7 @@ const tg = window.Telegram?.WebApp;
         const cleanUrl = url.replace(/[.,;]+$/, '');
         const trailing = url.slice(cleanUrl.length);
         const placeholder = '___LINK_' + links.length + '___';
-        links.push('<a href="' + cleanUrl + '" target="_blank" rel="noopener noreferrer" class="desc-link" onclick="handleDescLink(event, \'' + cleanUrl + '\')">' + cleanUrl + '</a>');
+        links.push('<a href="' + escapeAttr(StorefrontSecurity.safeUrl(cleanUrl)) + '" class="desc-link">' + escapeAttr(cleanUrl) + '</a>');
         return placeholder + trailing;
       });
 
@@ -1060,11 +1063,13 @@ const tg = window.Telegram?.WebApp;
       text = text.replace(/(<br\s*\/?>){3,}/gi, '<br><br>');
 
 
-      return text;
+      return StorefrontSecurity.sanitizeRichHtml(text);
     }
 
 
     function handleDescLink(e, url) {
+      url = StorefrontSecurity.safeUrl(url);
+      if (!url) { e.preventDefault(); return; }
       if (tg?.openLink) {
         e.preventDefault();
         try { tg.openLink(url); } catch (err) { window.open(url, '_blank'); }
@@ -1166,7 +1171,7 @@ const tg = window.Telegram?.WebApp;
                     🌐 ${escapeAttr(hostName)}
                   </span>
                   <span style="font-size: 10px; color: var(--success); font-weight: 700; white-space: nowrap;">
-                    🔒 ${isAr ? 'رابط معتمد' : 'Verified Link'}
+                    ↗ ${isAr ? 'رابط خارجي' : 'External Link'}
                   </span>
                 </div>
                 <div style="font-family: monospace; font-size: 11px; color: var(--text); word-break: break-all; line-height: 1.6; user-select: all; max-height: 180px; overflow-y: auto; padding: 4px 2px;">
@@ -1175,7 +1180,7 @@ const tg = window.Telegram?.WebApp;
               </div>
 
               <!-- Big Prominent Activation Button -->
-              <button type="button" class="btn-action-primary" onclick="openExternalPaymentUrl('${escapeAttr(line)}')" style="width: 100%; height: 50px; font-size: 13.5px; font-weight: 800; background: linear-gradient(135deg, #a855f7, #6366f1); border-radius: 12px; box-shadow: 0 4px 16px rgba(168, 85, 247, 0.35); display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 8px; border: none; color: white; cursor: pointer;">
+              <button type="button" class="btn-action-primary" data-payment-url="${escapeAttr(line)}" onclick="openExternalPaymentUrl(this.dataset.paymentUrl)" style="width: 100%; height: 50px; font-size: 13.5px; font-weight: 800; background: linear-gradient(135deg, #a855f7, #6366f1); border-radius: 12px; box-shadow: 0 4px 16px rgba(168, 85, 247, 0.35); display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 8px; border: none; color: white; cursor: pointer;">
                 <span>${activateBtnText}</span>
               </button>
 
@@ -2176,12 +2181,7 @@ const tg = window.Telegram?.WebApp;
           openSupportContact();
         }
       } else if (targetType === 'url' && b.target_url) {
-        const u = b.target_url.trim();
-        if (tg?.openLink) {
-          tg.openLink(u);
-        } else {
-          window.open(u, '_blank');
-        }
+        openExternalPaymentUrl(b.target_url);
       } else if (b.product_id) {
         openProductDetail(b.product_id);
       } else if (b.target_category) {
@@ -2343,7 +2343,7 @@ const tg = window.Telegram?.WebApp;
                 <div class="prod-thumb">${thumbImg(thumb, displayTitle)}</div>
                 <div class="prod-left">
                   <div class="prod-title-wrap">
-                    <span class="prod-title" title="${escAttr(displayTitle)}">${displayTitle}</span>
+                    <span class="prod-title" title="${escAttr(displayTitle)}">${escAttr(displayTitle)}</span>
                     ${renderDurationBadge(durText)}
                   </div>
                   ${metaLine}
@@ -2455,18 +2455,18 @@ const tg = window.Telegram?.WebApp;
         if (firstCover === null && imageUrl) { firstCover = imageUrl; try { const _pl = new Image(); _pl.src = imageUrl; } catch (e) {} }
         if (isGrid) {
           return `
-            <div class="catalog-visual-card${isEmpty ? ' is-empty' : ''}" style="background-image: url('${assetUrl(imageUrl)}');" onclick="openCollection('${catName.replace(/'/g, "\\\\'")}')">
+            <div class="catalog-visual-card${isEmpty ? ' is-empty' : ''}" style="background-image: url('${escAttr(assetUrl(imageUrl))}');" data-category="${escAttr(catName)}" onclick="openCollection(this.dataset.category)">
               <div class="catalog-visual-overlay"></div>
               <div class="catalog-visual-top">
                 ${soonPill}
                 ${adminEditBtn}
               </div>
               <div class="catalog-visual-bottom">
-                <div class="catalog-visual-title">${displayTitle}</div>
+                <div class="catalog-visual-title">${escAttr(displayTitle)}</div>
                 <div class="catalog-visual-sub">
                   ${isEmpty
                     ? `<span>${(currentAppLanguage === 'ar') ? 'منتجات جديدة قريبا' : 'New products soon'}</span>`
-                    : `<span>${d.starts_from} ${minPrice.toFixed(2)}${sym}</span>`}
+                    : `<span>${d.starts_from} ${minPrice.toFixed(2)}${escAttr(sym)}</span>`}
                   <span style="font-size: 15px; font-weight: 800;">${(currentAppLanguage === 'ar') ? '‹' : '›'}</span>
                 </div>
               </div>
@@ -2476,21 +2476,21 @@ const tg = window.Telegram?.WebApp;
 
         const chevron = (currentAppLanguage === 'ar') ? '‹' : '›';
         return `
-          <div class="catalog-list-card${isEmpty ? ' is-empty' : ''}" onclick="openCollection('${catName.replace(/'/g, "\\\\'")}')">
+          <div class="catalog-list-card${isEmpty ? ' is-empty' : ''}" data-category="${escAttr(catName)}" onclick="openCollection(this.dataset.category)">
             <div class="catalog-left">
-              <div class="catalog-thumb"><img src="${assetUrl(imageUrl)}" alt="" loading="lazy" onerror="this.style.display='none'"></div>
+              <div class="catalog-thumb"><img src="${escAttr(assetUrl(imageUrl))}" alt="" loading="lazy" onerror="this.style.display='none'"></div>
               <div class="catalog-info">
                 <div style="display:flex; align-items:center;">
-                  <span class="catalog-name">${displayTitle}</span>
+                  <span class="catalog-name">${escAttr(displayTitle)}</span>
                   ${adminEditBtn}
                 </div>
                 <div class="catalog-sub">
                   ${isEmpty
                     ? `<span style="color: #fbbf24; font-weight: 700;">${(currentAppLanguage === 'ar') ? 'قريبا' : 'Soon'}</span>`
-                    : `<span>${items.length} ${d.items_suffix}</span> · <span style="color: var(--accent); font-weight: 700;">${d.starts_from} ${minPrice.toFixed(2)}${sym}</span>`}
+                    : `<span>${items.length} ${d.items_suffix}</span> · <span style="color: var(--accent); font-weight: 700;">${d.starts_from} ${minPrice.toFixed(2)}${escAttr(sym)}</span>`}
                 </div>
                 <div style="font-size: 11px; color: var(--hint); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                  ${displayPreview}
+                  ${escAttr(displayPreview)}
                 </div>
               </div>
             </div>
@@ -2649,7 +2649,7 @@ const tg = window.Telegram?.WebApp;
               ? `<div style="display:flex; align-items:baseline; gap:4px;"><span style="color:var(--accent); font-weight:800;">${formatPrice(finalPrice)}</span><span style="font-size:10px; text-decoration:line-through; color:var(--hint);">${formatPrice(origPrice)}</span><span class="prod-discount-badge" style="font-size:9px;">-${discPct}%</span></div>`
               : `<span style="color:var(--accent); font-weight:800;">${formatPrice(origPrice)}</span>`;
             return `
-              <div class="search-autocomplete-item" onclick="selectSearchAutocomplete(${p.id})">
+              <div class="search-autocomplete-item" onclick="selectSearchAutocomplete(${Number(p.id)})">
                 <div class="search-item-left">
                   <div style="min-width: 0;">
                     <div class="search-item-name">${p.clean_name || p.name}</div>
@@ -2740,10 +2740,13 @@ const tg = window.Telegram?.WebApp;
 
     function assetUrl(u) {
       if (!u) return '';
-      const clean = String(u).trim().replace(/"/g, '');
-      if (clean.startsWith('/static/img/')) {
+      let clean = StorefrontSecurity.safeUrl(u, true);
+      if (!clean) return '';
+      // These URLs are also used in CSS url('...') inside HTML attributes.
+      clean = clean.replace(/['"()\\<>]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+      if (String(u).trim().startsWith('/static/img/')) {
         const v = localStorage.getItem('ghstore_build') || '4';
-        return clean + (clean.includes('?') ? '&' : '?') + 'v=' + v;
+        return clean + (clean.includes('?') ? '&' : '?') + 'v=' + encodeURIComponent(v);
       }
       return clean;
     }
@@ -2770,8 +2773,8 @@ const tg = window.Telegram?.WebApp;
       } catch (e) { el.style.display = 'none'; }
     };
     function thumbImg(src, name) {
-      const safe = assetUrl(src);
-      const nm = String(name || '').replace(/"/g, '');
+      const safe = escAttr(assetUrl(src));
+      const nm = escAttr(name);
       return '<img src="' + safe + '" alt="' + nm + '" loading="lazy" data-n="' + nm + '" onerror="window.__thumbErr(this)">';
     }
     function productThumb(p) {
@@ -2935,7 +2938,7 @@ const tg = window.Telegram?.WebApp;
           ${priceRow}
           ${dualLine}
           <div class="prod-action-row">
-            ${favSvg ? `<button class="fav-btn-action" data-pid="${product.id}" onclick="toggleWishlist(${product.id}, event)">${favSvg}</button>` : ''}
+            ${favSvg ? `<button class="fav-btn-action" data-pid="${Number(product.id)}" onclick="toggleWishlist(${Number(product.id)}, event)">${favSvg}</button>` : ''}
             <div class="prod-tap-hint">${tapHint}</div>
           </div>
         </div>
@@ -2957,7 +2960,7 @@ const tg = window.Telegram?.WebApp;
             <span class="sep">·</span>
             <span class="prof-metric">${profLbl}: <b>+${formatPrice(profitUsd)}</b></span>
           </div>
-          <button class="prod-admin-edit-action" onclick="openAdminProductEditor(${product.id}, event)">
+          <button class="prod-admin-edit-action" onclick="openAdminProductEditor(${Number(product.id)}, event)">
             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
             <span>${editLbl}</span>
           </button>
@@ -3013,11 +3016,11 @@ const tg = window.Telegram?.WebApp;
     }
 
     function escAttr(s) {
-      return String(s || '').replace(/"/g, '').replace(/</g, '');
+      return StorefrontSecurity.escapeHtml(s);
     }
     function renderDurationBadge(dur) {
       if (!dur) return '';
-      return `<span class="prod-dur-badge">${dur}</span>`;
+      return `<span class="prod-dur-badge">${escAttr(dur)}</span>`;
     }
     function renderOptionsBadge(count) {
       if (!count || count <= 1) return '';
@@ -3033,9 +3036,9 @@ const tg = window.Telegram?.WebApp;
       const stock = o.stockText || (isAr ? 'متوفر' : 'In stock');
       if (o.isActivation) {
         const delivery = isAr ? 'تفعيل مخصص' : 'Activation';
-        return `<div class="prod-meta"><i class="dot"></i><span>${stock}</span><span class="sep">·</span><span>${delivery}</span></div>`;
+        return `<div class="prod-meta"><i class="dot"></i><span>${escAttr(stock)}</span><span class="sep">·</span><span>${delivery}</span></div>`;
       }
-      return `<div class="prod-meta"><i class="dot"></i><span>${stock}</span></div>`;
+      return `<div class="prod-meta"><i class="dot"></i><span>${escAttr(stock)}</span></div>`;
     }
     function productAdminBtn(pid) {
       if (!(userData && userData.is_admin)) return '';
@@ -3123,7 +3126,7 @@ const tg = window.Telegram?.WebApp;
           const isIconUrl = /^https?:\/\//.test(String(folderIcon)) || String(folderIcon).startsWith('/');
           const thumbHtml = isIconUrl
             ? thumbImg(folderIcon, folderTitle)
-            : `<span class="folder-thumb-emoji">${folderIcon}</span>`;
+            : `<span class="folder-thumb-emoji">${escAttr(folderIcon)}</span>`;
           const planBadge = `📁 ${items.length} ${isAr ? 'باقات متوفرة' : 'Plans Available'}`;
           const chevronArrow = isAr ? '‹' : '›';
           html += `
@@ -3132,9 +3135,9 @@ const tg = window.Telegram?.WebApp;
               <div class="prod-thumb folder-thumb">${thumbHtml}</div>
               <div class="prod-left">
                 <div class="prod-title-wrap">
-                  <span class="prod-title folder-title" title="${escAttr(folderTitle)}">${folderTitle}</span>
+                  <span class="prod-title folder-title" title="${escAttr(folderTitle)}">${escAttr(folderTitle)}</span>
                   <span class="prod-options-badge">${planBadge}</span>
-                  ${(userData && userData.is_admin) ? `<button class="admin-edit-badge-btn" onclick="openAdminFolderFromCard('${escAttr(famKey)}', event)" style="margin-inline-start: 6px;">${isAr ? 'تعديل' : 'Edit'}</button>` : ''}
+                  ${(userData && userData.is_admin) ? `<button class="admin-edit-badge-btn" data-folder="${escAttr(famKey)}" onclick="openAdminFolderFromCard(this.dataset.folder, event)" style="margin-inline-start: 6px;">${isAr ? 'تعديل' : 'Edit'}</button>` : ''}
                 </div>
               </div>
               <div class="folder-chevron-action">
@@ -3154,7 +3157,7 @@ const tg = window.Telegram?.WebApp;
               <div class="prod-thumb">${thumbImg(thumb, displayTitle)}</div>
               <div class="prod-left">
                 <div class="prod-title-wrap">
-                  <span class="prod-title" title="${escAttr(displayTitle)}">${displayTitle}</span>
+                  <span class="prod-title" title="${escAttr(displayTitle)}">${escAttr(displayTitle)}</span>
                   ${renderDurationBadge(durText)}
                 </div>
                 ${metaLine}
@@ -3252,7 +3255,7 @@ const tg = window.Telegram?.WebApp;
                 <div class="prod-thumb">${thumbImg(thumb, displayTitle)}</div>
                 <div class="prod-left">
                   <div class="prod-title-wrap">
-                    <span class="prod-title" title="${escAttr(displayTitle)}">${displayTitle}</span>
+                    <span class="prod-title" title="${escAttr(displayTitle)}">${escAttr(displayTitle)}</span>
                     ${renderDurationBadge(durText)}
                   </div>
                   ${metaLine}
@@ -3831,7 +3834,7 @@ const tg = window.Telegram?.WebApp;
           : (item.stock !== undefined && item.stock !== null ? ` · ${item.stock} متاح` : '');
 
         return `
-          <div class="detail-variant-card${isSelected ? ' active' : ''}${isOutOfStock ? ' disabled' : ''}"${isOutOfStock ? '' : ` onclick="selectProductDetailVariant('${item.id}')"`}>
+          <div class="detail-variant-card${isSelected ? ' active' : ''}${isOutOfStock ? ' disabled' : ''}"${isOutOfStock ? '' : ` data-variant="${escAttr(item.id)}" onclick="selectProductDetailVariant(this.dataset.variant)"`}>
             <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
               <div class="variant-radio-circle">${isOutOfStock ? '×' : '✓'}</div>
               <div style="min-width: 0;">
@@ -4153,7 +4156,7 @@ const tg = window.Telegram?.WebApp;
             </div>
             <div class="receipt-row">
               <span class="receipt-row-label">${isAr ? 'الخدمة / المنتج:' : 'Product:'}</span>
-              <span class="receipt-row-val" style="font-family:inherit; font-size:12px;">${order.products || 'Digital License'}</span>
+              <span class="receipt-row-val" style="font-family:inherit; font-size:12px;">${escAttr(order.products || 'Digital License')}</span>
             </div>
             <div class="receipt-row">
               <span class="receipt-row-label">${isAr ? 'حالة الطلب:' : 'Status:'}</span>
@@ -4322,7 +4325,7 @@ const tg = window.Telegram?.WebApp;
           if (bar) {
             const label = currentAppLanguage === 'ar' ? '🔥 الأكثر بحثاً:' : '🔥 Trending:';
             bar.innerHTML = `<span class="trending-label">${label}</span>` +
-              d.trending.map(t => `<span class="trending-chip" onclick="applySearchQuery('${t}')">⚡ ${t}</span>`).join('');
+              d.trending.map(t => `<span class="trending-chip" data-query="${escAttr(t)}" onclick="applySearchQuery(this.dataset.query)">⚡ ${escAttr(t)}</span>`).join('');
           }
         }
       } catch (e) {}
@@ -4523,9 +4526,10 @@ const tg = window.Telegram?.WebApp;
       if (appliedCoupon?.code) payload.coupon_code = appliedCoupon.code;
 
       try {
+        const requestKey = StorefrontSecurity.checkoutKey('buy', payload);
         const res = await fetch('/api/buy', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'Idempotency-Key': requestKey },
           body: JSON.stringify(payload)
         });
         const d = await res.json();
@@ -4533,6 +4537,7 @@ const tg = window.Telegram?.WebApp;
         if (tg?.MainButton) tg.MainButton.hideProgress();
 
         if (d.status === 'success') {
+          StorefrontSecurity.finishCheckout('buy', payload, requestKey);
           fireConfetti();
           haptic('success');
 
@@ -4582,7 +4587,7 @@ const tg = window.Telegram?.WebApp;
     }
 
     function instructionStepsHTML(steps) {
-      return steps.map((step, idx) => `<div class="instr-step"><span class="instr-step-num">${idx + 1}</span><span class="instr-step-text">${step}</span></div>`).join('');
+      return steps.map((step, idx) => `<div class="instr-step"><span class="instr-step-num">${idx + 1}</span><span class="instr-step-text">${formatRichDescription(step)}</span></div>`).join('');
     }
 
     // Post-purchase activation steps on the order-success view (below the keys)
@@ -5231,7 +5236,7 @@ const tg = window.Telegram?.WebApp;
                 </div>
                 <div style="min-width: 0;">
                   <div style="font-size: 14px; font-weight: 800; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                    ${u.username ? '@' + u.username : 'User #' + u.id}
+                    ${escAttr(u.username ? '@' + u.username : 'User #' + u.id)}
                   </div>
                   <div style="display: flex; align-items: center; gap: 6px; margin-top: 1px; flex-wrap: wrap;">
                     <span style="font-size: 11px; color: var(--hint); font-family: monospace;">ID: ${u.telegram_id}</span>
@@ -5279,10 +5284,10 @@ const tg = window.Telegram?.WebApp;
 
             <!-- Quick Options & Settings UX Grid (High Usability) -->
             <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 6px;">
-              <button class="btn-action-primary" onclick="openAdminBalanceModal(${u.telegram_id}, '${u.username || ''}', ${u.balance})" style="height: 38px; font-size: 11px;">
+              <button class="btn-action-primary" data-username="${escAttr(u.username || '')}" onclick="openAdminBalanceModal(${u.telegram_id}, this.dataset.username, ${u.balance})" style="height: 38px; font-size: 11px;">
                 💰 ${isAr ? 'الرصيد' : 'Balance'}
               </button>
-              <button class="btn-action-secondary" onclick="openAdminDiscountModal(${u.telegram_id}, '${u.username || ''}', ${u.custom_discount_pct !== null && u.custom_discount_pct !== undefined ? u.custom_discount_pct : u.vip_discount})" style="height: 38px; font-size: 11px;">
+              <button class="btn-action-secondary" data-username="${escAttr(u.username || '')}" onclick="openAdminDiscountModal(${u.telegram_id}, this.dataset.username, ${u.custom_discount_pct !== null && u.custom_discount_pct !== undefined ? u.custom_discount_pct : u.vip_discount})" style="height: 38px; font-size: 11px;">
                 🏷️ ${isAr ? 'خصم %' : 'Discount'}
               </button>
               <button class="btn-action-secondary" onclick="submitToggleReseller(${u.telegram_id}, ${!!u.is_reseller})" style="height: 38px; font-size: 11px; font-weight: 700; color: ${u.is_reseller ? '#ef4444' : '#10b981'}; border-color: ${u.is_reseller ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)'};">
@@ -5291,7 +5296,7 @@ const tg = window.Telegram?.WebApp;
             </div>
 
             <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;">
-              <button class="btn-action-secondary" onclick="openAdminMessageModal(${u.telegram_id}, '${u.username || ''}')" style="height: 36px; font-size: 11px;">
+              <button class="btn-action-secondary" data-username="${escAttr(u.username || '')}" onclick="openAdminMessageModal(${u.telegram_id}, this.dataset.username)" style="height: 36px; font-size: 11px;">
                 💬 ${isAr ? 'مراسلة المستخدم' : 'Message User'}
               </button>
               <button class="btn-action-secondary" style="height: 36px; font-size: 11px; color: ${u.is_banned ? '#10b981' : '#ef4444'};" onclick="submitToggleBan(${u.telegram_id})">
@@ -5595,12 +5600,12 @@ const tg = window.Telegram?.WebApp;
           return `
           <div style="background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
-              <strong style="font-size:14px;">${orderWord} #${o.id} · ${o.username || 'tg:' + o.telegram_id}</strong>
+              <strong style="font-size:14px;">${orderWord} #${o.id} · ${escAttr(o.username || 'tg:' + o.telegram_id)}</strong>
               <span class="pill-badge" style="background:${o.status === 'completed' ? 'rgba(16,185,129,0.2); color:#10b981' : o.status === 'refunded' ? 'rgba(239,68,68,0.2); color:#ef4444' : 'rgba(245,158,11,0.2); color:#f59e0b'}; font-size:10px;">
                 ${o.status}
               </span>
             </div>
-            <div style="font-size:13px; font-weight:700; margin:4px 0;">${o.products}</div>
+            <div style="font-size:13px; font-weight:700; margin:4px 0;">${escAttr(o.products)}</div>
             <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--hint);">
               <span>${lang18.amount_label}: <strong style="color:var(--text);">$${o.total_sell.toFixed(2)}</strong></span>
               <span>${lang18.cost_label}: $${o.cost_usd.toFixed(2)}</span>
@@ -5608,7 +5613,7 @@ const tg = window.Telegram?.WebApp;
             </div>
             ${o.goods && o.goods.length ? `
               <div style="background:var(--input-bg); border-radius:6px; padding:6px; margin-top:6px; font-family:monospace; font-size:11px; word-break:break-all;">
-                ${o.goods.slice(0, 2).join('<br>')}
+                ${o.goods.slice(0, 2).map(escapeAttr).join('<br>')}
               </div>
             ` : ''}
             <div style="display:flex; gap:6px; margin-top:8px;">
@@ -6134,7 +6139,7 @@ const tg = window.Telegram?.WebApp;
       if (prodSelect) {
         prodSelect.innerHTML = allProducts.map(p => {
           const title = (currentAppLanguage === 'ar' ? (p.variant_title_ar || p.custom_name_ar) : p.variant_title_en) || p.name;
-          return `<option value="${p.id}">${p.id} - ${escAttr(title)}</option>`;
+          return `<option value="${Number(p.id)}">${Number(p.id)} - ${escAttr(title)}</option>`;
         }).join('');
       }
     }
@@ -6354,7 +6359,7 @@ const tg = window.Telegram?.WebApp;
         const tags = d.trending || [];
         if (tags.length > 0) {
           container.innerHTML = tags.map(tag => `
-            <span class="trending-chip" onclick="applySearchQuery('${tag.replace(/'/g, "\\\\'")}')">⚡ ${tag}</span>
+            <span class="trending-chip" data-query="${escAttr(tag)}" onclick="applySearchQuery(this.dataset.query)">⚡ ${escAttr(tag)}</span>
           `).join('');
           bar.style.display = 'flex';
         } else {
@@ -6599,7 +6604,7 @@ const tg = window.Telegram?.WebApp;
                 </span>
               </div>
 
-              <div style="font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 6px;">${o.products}</div>
+              <div style="font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 6px;">${escAttr(o.products)}</div>
               <div style="font-size: 14px; color: var(--accent); font-weight: 800; margin-bottom: 12px;">${isAr ? 'المبلغ المعلق:' : 'Pending Amount:'} $${o.total_sell.toFixed(2)} USD</div>
 
               <div style="display: flex; gap: 8px;">
@@ -6609,7 +6614,7 @@ const tg = window.Telegram?.WebApp;
                 <button class="btn-action-secondary" onclick="openOrderDetailView(${o.id})" style="flex: 1; height: 38px; font-size: 12px; color: var(--accent); border-color: rgba(56,189,248,0.4);">
                   ${isAr ? '🔍 التفاصيل' : '🔍 Details'}
                 </button>
-                <button class="btn-action-secondary" onclick="openAdminMessageModal(${o.telegram_id}, '${o.username || ''}')" style="flex: 1; height: 38px; font-size: 12px;">
+                <button class="btn-action-secondary" data-username="${escAttr(o.username || '')}" onclick="openAdminMessageModal(${o.telegram_id}, this.dataset.username)" style="flex: 1; height: 38px; font-size: 12px;">
                   ${isAr ? '💬 مراسلة' : '💬 Message'}
                 </button>
               </div>
@@ -6993,8 +6998,8 @@ const tg = window.Telegram?.WebApp;
         const firstLetter = (tgUser?.first_name || d.username || 'U')[0].toUpperCase();
 
         if (d.photo_url) {
-          topAvatarBox.innerHTML = `<img src="${d.photo_url}" class="avatar-img" alt="Avatar">`;
-          setAvatarBox.innerHTML = `<img src="${d.photo_url}" class="avatar-img" style="width: 48px; height: 48px;" alt="Avatar">`;
+          topAvatarBox.innerHTML = `<img src="${escAttr(StorefrontSecurity.safeUrl(d.photo_url))}" class="avatar-img" alt="Avatar">`;
+          setAvatarBox.innerHTML = `<img src="${escAttr(StorefrontSecurity.safeUrl(d.photo_url))}" class="avatar-img" style="width: 48px; height: 48px;" alt="Avatar">`;
         } else {
           document.getElementById('top-avatar-initial').innerText = firstLetter;
           document.getElementById('settings-avatar-initial').innerText = firstLetter;
@@ -7027,7 +7032,7 @@ const tg = window.Telegram?.WebApp;
         const hasVipDiscount = d.vip_discount > 0 && d.vip_tier && d.vip_tier !== 'Standard';
 
         if (!d.is_admin && hasVipDiscount) {
-          vipBox.innerHTML = `<span class="vip-tag">${d.vip_tier} (${currentAppLanguage === 'ar' ? 'خصم' : 'Discount'} ${d.vip_discount}%)</span>`;
+          vipBox.innerHTML = `<span class="vip-tag">${escAttr(d.vip_tier)} (${currentAppLanguage === 'ar' ? 'خصم' : 'Discount'} ${Number(d.vip_discount)}%)</span>`;
           vipBox.style.display = 'block';
         } else {
           vipBox.innerHTML = '';
@@ -7452,7 +7457,7 @@ const tg = window.Telegram?.WebApp;
           <div class="inset-card" style="padding: 12px; margin-bottom: 8px;">
             <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
               <div>
-                <div style="font-size: 13px; font-weight: 800; color: var(--text);">${p.name}</div>
+                <div style="font-size: 13px; font-weight: 800; color: var(--text);">${escAttr(p.name)}</div>
                 <div style="font-size: 10px; color: var(--hint); margin-top: 2px;">${p.server_badge} · ${p.category}</div>
               </div>
               ${badgeTag}
@@ -7923,35 +7928,35 @@ const tg = window.Telegram?.WebApp;
         return `
           <div class="inset-card" style="margin-bottom: 10px; padding: 12px; border-color: ${isEditing ? 'var(--accent)' : 'var(--border)'}; transition: border-color 0.2s;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-              <strong style="font-family: monospace; font-size: 13px; color: var(--accent);">${c.key}</strong>
+              <strong style="font-family: monospace; font-size: 13px; color: var(--accent);">${escAttr(c.key)}</strong>
               <span class="pill-badge" style="font-size: 10px; background: rgba(255,255,255,0.06);">
                 ${c.secret ? '🔒 سري' : '⚙️ نظام'}
               </span>
             </div>
             <div style="font-size: 11px; color: var(--hint); margin-bottom: 8px; line-height: 1.4;">
-              ${c.desc || 'إعداد نظام'}
+              ${escAttr(c.desc || 'إعداد نظام')}
             </div>
 
             <!-- Input Row with Pen Button -->
             <div style="display: flex; gap: 8px; align-items: center;">
               <input type="${inputType}"
                      class="admin-text-input"
-                     id="cfg-input-${c.key}"
-                     value="${c.value || ''}"
+                     id="cfg-input-${escAttr(c.key)}"
+                     value="${escAttr(c.value || '')}"
                      ${isEditing ? '' : 'readonly'}
                      style="flex: 1; font-family: monospace; font-size: 13px; background: var(--input-bg); border-color: ${isEditing ? 'var(--accent)' : 'var(--border)'}; color: var(--text); opacity: ${isEditing ? '1' : '0.85'}; outline: none;"
                      placeholder="غير محدد (فارغ)">
 
-              <div id="cfg-actions-${c.key}" style="display: flex; gap: 4px;">
+              <div id="cfg-actions-${escAttr(c.key)}" style="display: flex; gap: 4px;">
                 ${isEditing ? `
-                  <button class="btn-action-primary" onclick="submitSaveConfigKey('${c.key}')" style="height: 36px; padding: 0 12px; font-size: 11px; background: #10b981;">
+                  <button class="btn-action-primary" data-config-key="${escAttr(c.key)}" onclick="submitSaveConfigKey(this.dataset.configKey)" style="height: 36px; padding: 0 12px; font-size: 11px; background: #10b981;">
                     💾 حفظ
                   </button>
-                  <button class="circle-icon-btn" onclick="cancelConfigEditMode('${c.key}')" title="إلغاء">
+                  <button class="circle-icon-btn" data-config-key="${escAttr(c.key)}" onclick="cancelConfigEditMode(this.dataset.configKey)" title="إلغاء">
                     ✕
                   </button>
                 ` : `
-                  <button class="circle-icon-btn" onclick="enableConfigEditMode('${c.key}')" title="تعديل الإعداد (انقر على القلم)">
+                  <button class="circle-icon-btn" data-config-key="${escAttr(c.key)}" onclick="enableConfigEditMode(this.dataset.configKey)" title="تعديل الإعداد (انقر على القلم)">
                     ✏️
                   </button>
                 `}
@@ -8315,9 +8320,11 @@ const tg = window.Telegram?.WebApp;
 
 
     function openExternalPaymentUrl(url) {
+      url = StorefrontSecurity.safeUrl(url);
+      if (!url) return;
       haptic('light');
       if (tg?.openLink) tg.openLink(url);
-      else window.open(url, '_blank');
+      else window.open(url, '_blank', 'noopener,noreferrer');
     }
     let currentOrderDetailId = null;
     let expandedActivityItems = new Set();
@@ -8618,9 +8625,9 @@ const tg = window.Telegram?.WebApp;
                 </div>
                 <div class="activity-notif-info">
                   <div class="activity-notif-title-row">
-                    <span class="activity-notif-title">${(currentAppLanguage === 'ar') ? 'طلب' : 'Order'} #${it.id} · ${it.products || (currentAppLanguage === 'ar' ? 'منتج رقمي' : 'Digital Service')}</span>
+                    <span class="activity-notif-title">${(currentAppLanguage === 'ar') ? 'طلب' : 'Order'} #${it.id} · ${escAttr(it.products || (currentAppLanguage === 'ar' ? 'منتج رقمي' : 'Digital Service'))}</span>
                     ${it.gifted_by_admin ? `<span class="pill-badge" style="background: rgba(16, 185, 129, 0.18); color: #10b981; font-size: 10px; padding: 2px 7px; flex-shrink: 0;">🎁 ${currentAppLanguage === 'ar' ? 'هدية من الإدارة' : 'Gifted by Admin'}</span>` : ''}
-                    <span class="activity-notif-amount amount-blue">${it.total.toFixed(2)}${it.sym}</span>
+                    <span class="activity-notif-amount amount-blue">${it.total.toFixed(2)}${escAttr(it.sym)}</span>
                   </div>
                   <div class="activity-notif-meta-row">
                     <span class="activity-notif-time">${it.created_at || ''}</span>
@@ -8756,7 +8763,7 @@ const tg = window.Telegram?.WebApp;
               ${isPending ? `
                 <div style="display: flex; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border);">
                   ${it.payment_url ? `
-                    <button class="btn-action-primary" onclick="openExternalPaymentUrl('${it.payment_url}')" style="flex: 1; height: 36px; font-size: 11px;">
+                    <button class="btn-action-primary" data-payment-url="${escapeAttr(it.payment_url)}" onclick="openExternalPaymentUrl(this.dataset.paymentUrl)" style="flex: 1; height: 36px; font-size: 11px;">
                       ${(currentAppLanguage === 'ar') ? '🌐 إتمام الدفع' : '🌐 Pay Online'}
                     </button>
                   ` : ''}

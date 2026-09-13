@@ -1,5 +1,6 @@
+import hashlib
 import logging
-import uuid
+from html import escape
 
 import config
 import db
@@ -17,10 +18,8 @@ from enums.language import Language
 from handlers.common.common import enable_search
 from handlers.user.constants import UserStates
 from repositories.batstore_product import BatStoreProductRepository
-from repositories.batstore_order import BatStoreOrderRepository
 from models.batstore_product import format_product_icon
 from repositories.user import UserRepository
-from services.batstore import BatStoreService
 from services.cart import CartService
 from services.category import CategoryService
 from services.config import ConfigService
@@ -672,87 +671,73 @@ async def _batstore_checkout(callback, callback_data, state, session, language):
         return
 
     balance = round((user.top_up_amount or 0) - (user.consume_records or 0), 2)
-    if balance < total:
-        caption = get_text(language, BotEntity.USER, "batstore_insufficient").format(
-            need=f"{total}", balance=f"{balance}", sym=sym)
+
+    # Telegram issues a new callback ID for each tap. The confirmation message
+    # identifies the customer's purchase intent across retries and restarts.
+    message = callback.message
+    key_data = f"{callback.bot.id}:{message.chat.id}:{message.message_id}:{product.product_id}:{qty}"
+    key = "bot_" + hashlib.sha256(key_data.encode()).hexdigest()
+
+    from fastapi import HTTPException
+    from services.checkout import CheckoutService
+    from services.order_fulfillment import FulfillmentService
+
+    try:
+        order, created = await CheckoutService.reserve(
+            callback.from_user.id,
+            {"product_id": product.product_id, "quantity": qty},
+            key, session)
+    except HTTPException as exc:
+        await session.rollback()
+        if exc.detail == "insufficient_balance":
+            from services.batstore_store import BatStoreStoreService
+            need = await BatStoreStoreService._quoted_total(product, user, qty, session)
+            caption = get_text(language, BotEntity.USER, "batstore_insufficient").format(
+                need=f"{need:.2f}", balance=f"{balance:.2f}", sym=sym)
+        else:
+            caption = get_text(language, BotEntity.USER, "batstore_failed")
         await callback.message.edit_text(text=caption, reply_markup=kb.as_markup())
         return
 
-    customer_reference = f"ghstore-{callback.from_user.id}-{uuid.uuid4().hex[:8]}"
-
-    # Quote
+    order_id = order.id
     try:
-        await BatStoreService.quote(session, product.product_id, qty)
-    except Exception as e:
-        logging.error("BatStore quote failed for product %s: %s", product.product_id, e)
-        await callback.message.edit_text(
-            get_text(language, BotEntity.USER, "batstore_failed"),
-            reply_markup=kb.as_markup())
+        order = await FulfillmentService.fulfill_order(order_id, session)
+        await db.session_commit(session)
+    except Exception:
+        # The committed order owns the debit and recovery. A timeout must not
+        # manufacture a refund while the supplier may have accepted delivery.
+        logging.exception("Bot fulfillment interrupted for order %s", order_id)
+        await session.rollback()
+        caption = f"Order #{order_id}\n" + get_text(language, BotEntity.USER, "batstore_activation_pending")
+        await callback.message.edit_text(text=caption, reply_markup=kb.as_markup())
         return
 
-    # Place order
-    external_ref = None
-    try:
-        placed = await BatStoreService.place_order(
-            session, product.product_id, qty,
-            customer_reference=customer_reference,
-            idempotency_key=customer_reference)
-        external_ref = placed.get("order", {}).get("id") or placed.get("order_id")
-    except Exception as e:
-        logging.error("BatStore place_order failed for product %s: %s", product.product_id, e)
-        await callback.message.edit_text(
-            get_text(language, BotEntity.USER, "batstore_failed"),
-            reply_markup=kb.as_markup())
-        return
-
-    # Charge customer
-    user.consume_records = (user.consume_records or 0) + total
-    await UserRepository.update(user, session)
-
-    from models.batstore_order import BatStoreOrderDTO
-    order_status = "completed"
-    if product.delivery_type in ("activation",):
-        order_status = "pending_fulfillment"
-    await BatStoreOrderRepository.create(
-        BatStoreOrderDTO(
-            telegram_id=callback.from_user.id,
-            total_sell=total,
-            status=order_status,
-            external_order_ref=str(external_ref) if external_ref else None,
-            customer_reference=customer_reference,
-            details=[{
-                "product_id": product.product_id,
-                "name": product.name,
-                "quantity": qty,
-                "cost_usd": product.cost_usd,
-                "sell_usd": total,
-                "delivery_type": product.delivery_type,
-            }],
-        ), session)
-    await db.session_commit(session)
-
+    result = CheckoutService.response(order)
+    goods_list = result["goods"]
+    total = result["total_paid"]
     await state.update_data({BATSTORE_CART_KEY: {}})
 
-    # Delivery info
     delivery_info = ""
-    if product.delivery_type in ("stock", "supplier_api"):
-        goods = placed.get("order", {}) or {}
-        items = goods.get("items") or []
-        if items:
-            goods_list = "\n".join(
-                f"• {it.get('value') or it.get('data') or it}" for it in items[:20])
-            delivery_info = f"📦 Your goods:\n{goods_list}"
-        else:
-            delivery_info = get_text(language, BotEntity.USER, "batstore_activation_pending")
+    if goods_list:
+        from routes.common import normalize_delivery_good
+        goods_str = "\n".join(f"• <code>{escape(normalize_delivery_good(g))}</code>" for g in goods_list[:20])
+        delivery_info = f"📦 <b>Your goods:</b>\n{goods_str}\n\n<i>(Tap any key above to copy)</i>"
+    elif result["reseller_status"] == "failed":
+        caption = f"Order #{order_id}\n" + get_text(language, BotEntity.USER, "batstore_failed")
+        await callback.message.edit_text(text=caption, reply_markup=kb.as_markup())
+        return
     else:
         delivery_info = get_text(language, BotEntity.USER, "batstore_activation_pending")
 
     caption = get_text(language, BotEntity.USER, "batstore_success").format(
-        items=f"{qty} × {product.name} = {total}{sym}",
+        items=f"{qty} × {escape(product.name)} = {total}{sym}",
         delivery_info=delivery_info)
-
-    await NotificationService.send_to_admins(
-        f"🛒 New GH Store order\n"
-        f"tg:{callback.from_user.id} · {qty}×{product.name} · {total}{sym} · {product.delivery_type}",
-        None)
+    if created:
+        try:
+            await NotificationService.send_to_admins(
+                f"🛒 New GH Store order #{order_id}\n"
+                f"tg:{callback.from_user.id} · {qty}×{escape(product.name)} · {total}{sym} · {escape(product.delivery_type)}",
+                None)
+        except Exception:
+            logging.exception("Could not notify admins for order %s", order_id)
     await callback.message.edit_text(text=caption, reply_markup=kb.as_markup())
