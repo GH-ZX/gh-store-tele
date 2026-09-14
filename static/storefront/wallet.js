@@ -480,14 +480,37 @@
 
   function setAppTheme(theme) {
     api().haptic?.('light');
-    document.documentElement.setAttribute('data-theme', theme);
+    const normalized = (theme === 'light') ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', normalized);
     try {
-      root.localStorage?.setItem('ghstore_theme', theme);
-      api().cloudStorageSet?.('ghstore_theme', theme);
+      root.localStorage?.setItem('ghstore_theme', normalized);
+      api().cloudStorageSet?.('ghstore_theme', normalized);
     } catch (_) {}
-    document.querySelectorAll('#theme-picker-chips .filter-chip').forEach(el => {
-      el.classList.toggle('active', el.id === `btn-theme-${theme}`);
+
+    // Synchronize segmented toggle buttons
+    document.querySelectorAll('.theme-segment-btn').forEach(el => {
+      const isCurrent = (el.id === `theme-btn-${normalized}`);
+      el.classList.toggle('active', isCurrent);
+      if (el.hasAttribute('aria-checked')) {
+        el.setAttribute('aria-checked', isCurrent ? 'true' : 'false');
+      }
     });
+
+    // Also support any filter chips if present
+    document.querySelectorAll('#theme-picker-chips .filter-chip').forEach(el => {
+      el.classList.toggle('active', el.id === `btn-theme-${normalized}` || el.id === `theme-btn-${normalized}`);
+    });
+
+    // Sync Telegram chrome header and background colors
+    const tg = api().getTg?.();
+    if (tg) {
+      const isDark = (normalized === 'dark');
+      try {
+        if (tg.setHeaderColor) tg.setHeaderColor(isDark ? '#090e1a' : '#f8fafc');
+        if (tg.setBackgroundColor) tg.setBackgroundColor(isDark ? '#090e1a' : '#f8fafc');
+        if (tg.setBottomBarColor) tg.setBottomBarColor(isDark ? '#151d30' : '#ffffff');
+      } catch (_) {}
+    }
   }
 
   // --- Official Receipt Modal ---

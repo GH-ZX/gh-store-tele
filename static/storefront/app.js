@@ -939,6 +939,14 @@
     const savedLang = root.localStorage?.getItem('ghstore_lang') || 'ar';
     api().applyLanguage?.(savedLang);
 
+    // 2.1 Theme setup: synchronize visual toggle with stored or platform theme
+    const savedTheme = root.localStorage?.getItem('ghstore_theme') || api().getTg?.()?.colorScheme || 'dark';
+    if (root.setAppTheme) {
+      root.setAppTheme(savedTheme);
+    } else {
+      document.documentElement.setAttribute('data-theme', savedTheme);
+    }
+
     // 3. Initialize Keyboard navigation behavior
     api().initKeyboardBehavior?.();
 

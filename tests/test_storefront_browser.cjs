@@ -66,6 +66,25 @@ function runBrowserTests() {
   StoreAPI.applyLanguage('ar');
 
   // ==========================================
+  // 2b. THEME SWITCHING & STATE SYNCHRONIZATION TEST
+  // ==========================================
+  setAppTheme('light');
+  check(document.documentElement.getAttribute('data-theme') === 'light', 'HTML data-theme switched to light');
+  check(document.getElementById('theme-btn-light')?.classList.contains('active'), 'theme-btn-light has active class');
+  check(document.getElementById('theme-btn-light')?.getAttribute('aria-checked') === 'true', 'theme-btn-light aria-checked is true');
+  check(!document.getElementById('theme-btn-dark')?.classList.contains('active'), 'theme-btn-dark active class removed');
+  check(document.getElementById('theme-btn-dark')?.getAttribute('aria-checked') === 'false', 'theme-btn-dark aria-checked is false');
+  check(localStorage.getItem('ghstore_theme') === 'light', 'ghstore_theme saved as light in localStorage');
+
+  setAppTheme('dark');
+  check(document.documentElement.getAttribute('data-theme') === 'dark', 'HTML data-theme switched to dark');
+  check(document.getElementById('theme-btn-dark')?.classList.contains('active'), 'theme-btn-dark has active class');
+  check(document.getElementById('theme-btn-dark')?.getAttribute('aria-checked') === 'true', 'theme-btn-dark aria-checked is true');
+  check(!document.getElementById('theme-btn-light')?.classList.contains('active'), 'theme-btn-light active class removed');
+  check(document.getElementById('theme-btn-light')?.getAttribute('aria-checked') === 'false', 'theme-btn-light aria-checked is false');
+  check(localStorage.getItem('ghstore_theme') === 'dark', 'ghstore_theme saved as dark in localStorage');
+
+  // ==========================================
   // 3. NAVIGATION & MODAL STACK TESTS
   // ==========================================
   // Tab Navigation
@@ -500,6 +519,14 @@ async function main() {
     <div id="referral-count-val">0</div>
     <div id="referral-earned-val">$0.00</div>
     <div id="referral-rate-val">0.2%</div>
+    <div class="theme-segmented-control" role="radiogroup" aria-label="Theme">
+      <button type="button" class="theme-segment-btn active" id="theme-btn-dark" role="radio" aria-checked="true" onclick="setAppTheme('dark')">
+        <span id="label-theme-dark">داكن</span>
+      </button>
+      <button type="button" class="theme-segment-btn" id="theme-btn-light" role="radio" aria-checked="false" onclick="setAppTheme('light')">
+        <span id="label-theme-light">فاتح</span>
+      </button>
+    </div>
   </div>
 
   <!-- Cart Drawer -->

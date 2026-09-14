@@ -16,6 +16,12 @@
       }
       document.documentElement.style.setProperty('--safe-top', topSafe + 'px');
       document.documentElement.style.setProperty('--tma-safe-top', topSafe + 'px');
+      try {
+        var t = localStorage.getItem('ghstore_theme') || (tg && tg.colorScheme) || 'dark';
+        if (t === 'light' || t === 'dark') {
+          document.documentElement.setAttribute('data-theme', t);
+        }
+      } catch (_) {}
     })();
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -2241,14 +2247,14 @@
 
     <!-- Appearance: Dark / Light Mode Toggle -->
     <div class="inset-card">
-      <div class="section-title" style="margin-top: 0;" id="label-theme-title">المظهر</div>
-      <div class="theme-segmented-control">
-        <div class="theme-segment-btn active" id="theme-btn-dark" onclick="setAppTheme('dark')">
-          <span id="label-theme-dark">داكن</span>
-        </div>
-        <div class="theme-segment-btn" id="theme-btn-light" onclick="setAppTheme('light')">
-          <span id="label-theme-light">فاتح</span>
-        </div>
+      <div class="section-title" style="margin-top: 0;" id="label-theme-title" data-i18n="settings-theme">المظهر</div>
+      <div class="theme-segmented-control" role="radiogroup" aria-label="Theme">
+        <button type="button" class="theme-segment-btn active" id="theme-btn-dark" role="radio" aria-checked="true" onclick="setAppTheme('dark')">
+          <span id="label-theme-dark" data-i18n="theme-dark">داكن 🌙</span>
+        </button>
+        <button type="button" class="theme-segment-btn" id="theme-btn-light" role="radio" aria-checked="false" onclick="setAppTheme('light')">
+          <span id="label-theme-light" data-i18n="theme-light">فاتح ☀️</span>
+        </button>
       </div>
     </div>
 

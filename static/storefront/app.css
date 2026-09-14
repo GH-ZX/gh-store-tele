@@ -1563,7 +1563,19 @@
       font-weight: 700;
       color: var(--hint);
       cursor: pointer;
+      background: transparent;
+      border: 1px solid transparent;
+      font-family: inherit;
+      outline: none;
+      padding: 0;
       transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .theme-segment-btn:hover:not(.active) {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.04);
+    }
+    [data-theme="light"] .theme-segment-btn:hover:not(.active) {
+      background: rgba(0, 0, 0, 0.04);
     }
     .theme-segment-btn.active {
       background: var(--card);

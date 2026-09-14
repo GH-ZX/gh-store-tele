@@ -171,22 +171,23 @@
   function syncTelegramTheme() {
     const tg = getTg();
     if (!tg) return;
-    const isDark = tg.colorScheme === 'dark' || !tg.colorScheme;
-    try {
-      if (tg.setHeaderColor) {
-        tg.setHeaderColor(isDark ? '#090e1a' : '#f8fafc');
-      }
-      if (tg.setBackgroundColor) {
-        tg.setBackgroundColor(isDark ? '#090e1a' : '#f8fafc');
-      }
-      if (tg.setBottomBarColor) {
-        tg.setBottomBarColor(isDark ? '#151d30' : '#ffffff');
-      }
-    } catch (_) {}
-
     const storedTheme = root.localStorage?.getItem('ghstore_theme');
-    if (!storedTheme && tg.colorScheme && root.setAppTheme) {
-      root.setAppTheme(tg.colorScheme);
+    const activeTheme = storedTheme || (tg.colorScheme === 'light' ? 'light' : 'dark');
+    if (root.setAppTheme) {
+      root.setAppTheme(activeTheme);
+    } else {
+      const isDark = (activeTheme === 'dark');
+      try {
+        if (tg.setHeaderColor) {
+          tg.setHeaderColor(isDark ? '#090e1a' : '#f8fafc');
+        }
+        if (tg.setBackgroundColor) {
+          tg.setBackgroundColor(isDark ? '#090e1a' : '#f8fafc');
+        }
+        if (tg.setBottomBarColor) {
+          tg.setBottomBarColor(isDark ? '#151d30' : '#ffffff');
+        }
+      } catch (_) {}
     }
   }
 
@@ -534,7 +535,9 @@
       'settings-title': 'إعدادات الحساب',
       'settings-lang': 'اللغة / Language',
       'settings-currency': 'العملة المفضلة',
-      'settings-theme': 'المظهر الداكن / الفاتح',
+      'settings-theme': 'المظهر',
+      'theme-dark': 'داكن 🌙',
+      'theme-light': 'فاتح ☀️',
       'btn-copy': 'نسخ',
       'toast-copied': 'تم النسخ بنجاح!',
       'recovery-detected': 'تم رصد عملية شراء قيد المتابعة. جاري الاستعادة...'
@@ -573,7 +576,9 @@
       'settings-title': 'Account Settings',
       'settings-lang': 'Language / اللغة',
       'settings-currency': 'Preferred Currency',
-      'settings-theme': 'Dark / Light Theme',
+      'settings-theme': 'Appearance',
+      'theme-dark': 'Dark 🌙',
+      'theme-light': 'Light ☀️',
       'btn-copy': 'Copy',
       'toast-copied': 'Copied successfully!',
       'recovery-detected': 'Pending purchase detected. Recovering...'
