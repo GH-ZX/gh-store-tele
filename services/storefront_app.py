@@ -32,11 +32,12 @@ def get_storefront_html(reload: bool = False) -> str:
                     "../static/storefront/admin.js",
                     "../static/storefront/app.js",
                 )
+                _mtimes = []
                 for _rel in _scripts:
                     _p = (_base / _rel).resolve()
                     if _p.exists():
                         _mtimes.append(_p.stat().st_mtime)
-                v_ts = int(max(_mtimes))
+                v_ts = int(max(_mtimes)) if _mtimes else int(time.time())
             except Exception:
                 v_ts = int(time.time())
             raw = _TEMPLATE_PATH.read_text(encoding="utf-8")

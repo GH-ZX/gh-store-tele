@@ -126,3 +126,52 @@ async def test_bot_batstore_orders_rendering():
         assert "Gemini 18M" in text_arg
         assert "https://activation.google.com/test" in text_arg
         assert "$2.80" in text_arg
+
+
+@pytest.mark.asyncio
+async def test_api_user_me_authenticated():
+    from routes.tma_catalog import get_tma_user_data
+    from services.telegram_auth import generate_session_token
+
+    tg_id = 7635553403
+    tok = generate_session_token(tg_id)
+
+    mock_user = SimpleNamespace(
+        id=1,
+        telegram_id=tg_id,
+        telegram_username="ahmed_admin",
+        language="ar",
+        top_up_amount=50.0,
+        consume_records=10.0,
+        currency_preference="USD",
+        referral_code="U_ABC123",
+        custom_discount_pct=None,
+        is_reseller=False,
+    )
+
+    request = MagicMock(spec=Request)
+    request.headers = {"Authorization": f"Bearer {tok}"}
+    request.query_params = {"tg_id": str(tg_id)}
+    request.cookies = {}
+
+    with patch("routes.tma_catalog.UserRepository.get_by_tgid", new=AsyncMock(return_value=mock_user)), \
+         patch("routes.tma_catalog.BatStoreOrderRepository.get_by_telegram_id", new=AsyncMock(return_value=[])), \
+         patch("routes.tma_catalog.UserRepository.get_referrals_qty_by_referrer_id", new=AsyncMock(return_value=3)), \
+         patch("routes.tma_catalog.ReferralRepository.get_bonus_sum_as_referrer", new=AsyncMock(return_value=5.0)), \
+         patch("routes.tma_catalog.ReferralRepository.get_referrals_breakdown", new=AsyncMock(return_value=[])), \
+         patch("routes.tma_catalog.ConfigService.get", new=AsyncMock(return_value="14500")), \
+         patch("routes.tma_catalog.get_db_session") as mock_db:
+        mock_session = AsyncMock()
+        mock_db.return_value.__aenter__.return_value = mock_session
+
+        res = await get_tma_user_data(request, tg_id=tg_id)
+        assert res["telegram_id"] == tg_id
+        assert res["username"] == "ahmed_admin"
+        assert res["balance"] == 40.0
+        assert res["total_spent"] == 10.0
+        assert res["referrals_count"] == 3
+        assert res["referrals_total_earned"] == 5.0
+        assert "store_announcement" in res
+        assert "orders" in res
+        assert "recharges" in res
+

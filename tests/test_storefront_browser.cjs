@@ -182,6 +182,103 @@ function runBrowserTests() {
   closeAdminSmsModal();
   check(adminSmsModal.style.display === 'none', 'admin-sms-modal closes');
 
+  // ==========================================
+  // 7. USER DATA & ADMIN RENDERING TESTS
+  // ==========================================
+  const sampleUser = {
+    telegram_id: 7635553403,
+    username: 'ahmed_admin',
+    first_name: 'Ahmed',
+    balance: 45.75,
+    total_spent: 120.00,
+    vip_tier: 'Gold',
+    vip_discount: 7,
+    is_admin: true,
+    referrals_count: 5,
+    referrals_total_earned: 12.50,
+    referral_commission_rate: 0.2,
+    admin_stats: {
+      total_revenue: 350.00,
+      total_cost: 200.00,
+      total_user_balances: 85.00
+    }
+  };
+
+  WalletModule.renderWalletBalances(sampleUser);
+  check(document.getElementById('top-balance-str')?.textContent === '$45.75', 'top-balance-str updated with user balance');
+  check(document.getElementById('wallet-balance-hero')?.textContent === '$45.75', 'wallet-balance-hero updated with user balance');
+  check(document.getElementById('settings-card-balance')?.textContent === '$45.75', 'settings-card-balance updated with user balance');
+
+  renderUserProfile(sampleUser);
+  check(document.getElementById('user-name-title')?.textContent === 'Ahmed', 'user-name-title updated with user name');
+  check(document.getElementById('user-tg-num')?.textContent.includes('7635553403'), 'user-tg-num updated with telegram ID');
+
+  renderAdminControlCenter(sampleUser);
+  check(document.getElementById('admin-control-center-card')?.style.display !== 'none', 'admin-control-center-card visible for admin');
+  check(document.getElementById('admin-stat-revenue')?.textContent === '$350.00', 'admin-stat-revenue updated');
+
+  // ==========================================
+  // 8. STOREFRONT CATEGORIES & LOGO & AVATAR VERIFICATION
+  // ==========================================
+  // Test 8a. Skeletons in catalogs-grid are replaced by rendered category cards
+  const testCategories = [
+    { id: 1, name: 'AI & Chatbots', name_ar: 'الذكاء الاصطناعي', icon_url: '/static/img/cat-ai.svg' },
+    { id: 2, name: 'Streaming', name_ar: 'البث والترفيه', icon_url: '/static/img/cat-streaming.svg' }
+  ];
+  const testProducts = [
+    { id: 101, name: 'ChatGPT Plus 1 Month', category: 'AI & Chatbots', sell_price_usd: 19.99, stock: 10 },
+    { id: 102, name: 'Netflix Premium 4K', category: 'Streaming', sell_price_usd: 3.50, stock: 5 }
+  ];
+
+  StoreAPI.AppState.categoriesList = testCategories;
+  StoreAPI.AppState.allProducts = testProducts;
+  StorefrontModule.renderCatalogsGrid(testCategories);
+
+  const gridEl = document.getElementById('catalogs-grid');
+  check(gridEl && !gridEl.querySelector('.skeleton-card-item'), 'shimmer skeletons removed from catalogs-grid');
+  check(gridEl && gridEl.querySelectorAll('.catalog-visual-card, .catalog-list-card').length === 2, 'two category cards rendered in catalogs-grid');
+
+  // Test 8b. Category mode switching
+  StorefrontModule.setCatalogViewMode('list');
+  check(gridEl && gridEl.classList.contains('list-layout'), 'catalogs-grid switched to list-layout');
+  StorefrontModule.setCatalogViewMode('grid');
+  check(gridEl && gridEl.classList.contains('grid-layout'), 'catalogs-grid switched back to grid-layout');
+
+  // Test 8c. Open collection and return to collections
+  StorefrontModule.openCollection('AI & Chatbots');
+  check(document.getElementById('products-catalog-mode')?.style.display !== 'none', 'products-catalog-mode visible');
+  check(document.getElementById('catalogs-collection-mode')?.style.display === 'none', 'catalogs-collection-mode hidden');
+  check(document.getElementById('catalog-products-list')?.querySelectorAll('.product-row').length >= 1, 'products rendered in collection');
+
+  StorefrontModule.returnToCollections();
+  check(document.getElementById('catalogs-collection-mode')?.style.display !== 'none', 'catalogs-collection-mode restored');
+  check(document.getElementById('products-catalog-mode')?.style.display === 'none', 'products-catalog-mode hidden after return');
+
+  // Test 8d. Store logo application & fallback
+  applyStoreLogo('/static/img/gh-store-logo-mark.png');
+  const logoImg = document.getElementById('top-store-logo');
+  check(logoImg && logoImg.src.includes('gh-store-logo-mark.png'), 'store logo src set properly');
+
+  // Test 8e. User Avatar with relative path safety
+  sampleUser.photo_url = '/api/user/avatar/7635553403';
+  renderUserProfile(sampleUser);
+  const avatarImg = document.querySelector('#top-avatar-box img.avatar-img');
+  check(avatarImg && avatarImg.src.includes('/api/user/avatar/7635553403'), 'avatar img rendered with relative url allowed');
+
+  // Test 8f. Opening product detail page displays view-product-detail and hides view-store
+  switchTab('store');
+  check(document.getElementById('view-store')?.style.display !== 'none', 'store view displayed before product open');
+  StorefrontModule.openProductDetail(101);
+  const prodDetailEl = document.getElementById('view-product-detail');
+  const storeViewEl = document.getElementById('view-store');
+  check(prodDetailEl && prodDetailEl.style.display !== 'none', 'product detail page visible after opening');
+  check(storeViewEl && storeViewEl.style.display === 'none', 'view-store hidden when product detail opens (not stacked down below)');
+
+  // Test 8g. Closing product detail page restores view-store and hides product detail page
+  StorefrontModule.closeProductDetailPage();
+  check(prodDetailEl && prodDetailEl.style.display === 'none', 'product detail page hidden after closing');
+  check(storeViewEl && storeViewEl.style.display !== 'none', 'view-store restored after closing product detail');
+
   // Mark all tests passed in body
   document.body.textContent = `PASS: ${count} storefront browser coverage checks`;
 }
@@ -203,6 +300,12 @@ async function main() {
   <div id="toast" class="toast-pill"></div>
   <canvas id="confetti-canvas"></canvas>
 
+  <!-- Top Header Logo -->
+  <div class="store-logo-wrapper">
+    <img id="top-store-logo" class="store-logo-img" src="" alt="GH Store" style="display: none;">
+    <div id="top-store-fallback" class="store-logo-fallback">🛍️</div>
+  </div>
+
   <!-- Navigation Tabs -->
   <div id="tab-store" class="tab active"><span id="i18n-tab-store">المتجر</span></div>
   <div id="tab-orders" class="tab"><span id="i18n-tab-orders">العمليات</span></div>
@@ -215,13 +318,59 @@ async function main() {
     <input type="text" id="coupon-input" placeholder="Coupon...">
     <div id="quick-filters-row">
       <div class="filter-chip filter-sms-chip" id="filter-sms-chip" onclick="openSmsModal()">SMS</div>
+      <div class="filter-chip active" id="filter-all" onclick="applyCatalogFilter('all')">الكل</div>
     </div>
+
+    <!-- Real Storefront Modes -->
+    <div id="catalogs-collection-mode">
+      <button class="view-toggle-btn active" id="btn-view-grid" onclick="setCatalogViewMode('grid')">شبكة</button>
+      <button class="view-toggle-btn" id="btn-view-list" onclick="setCatalogViewMode('list')">قائمة</button>
+      <div class="catalogs-grid grid-layout" id="catalogs-grid">
+        <div class="skeleton-card-item"></div>
+      </div>
+    </div>
+    <div id="products-catalog-mode" style="display: none;">
+      <div id="active-collection-title">التصنيف</div>
+      <div id="catalog-products-list"></div>
+    </div>
+    <div id="service-variants-mode" style="display: none;">
+      <div id="active-service-title">باقات الخدمة</div>
+      <div id="service-variants-products-list"></div>
+    </div>
+
     <div id="categories-container"></div>
     <div id="products-container"></div>
   </div>
+  <section id="view-product-detail" class="tab-view" style="display: none;"></section>
+  <section id="view-search" class="tab-view" style="display: none;"></section>
   <div id="view-orders" style="display: none;"><div id="orders-history-list"></div></div>
-  <div id="view-wallet" style="display: none;"><div id="wallet-balance-usd">$0.00</div></div>
-  <div id="view-settings" style="display: none;"></div>
+  <div id="view-wallet" style="display: none;">
+    <span id="top-balance-str">$0.00</span>
+    <span id="top-balance-plus">➕</span>
+    <div id="wallet-balance-usd">$0.00</div>
+    <div id="wallet-balance-hero">$0.00</div>
+    <div id="wallet-balance-approx">جاهز للشراء</div>
+  </div>
+  <div id="view-settings" style="display: none;">
+    <div id="settings-card-balance">$0.00</div>
+    <div id="settings-card-spent">$0.00</div>
+    <div id="user-name-title">العميل</div>
+    <div id="user-handle-title" style="display: none;">@username</div>
+    <div id="user-tg-num">ID: 000000000</div>
+    <div id="user-vip-pill-box"></div>
+    <div id="admin-control-center-card" style="display: none;">
+      <div id="admin-stat-revenue">$0.00</div>
+      <div id="admin-stat-cost">$0.00</div>
+      <div id="admin-stat-profit">$0.00</div>
+      <div id="admin-stat-balances">$0.00</div>
+    </div>
+    <div id="top-avatar-box"><div id="top-avatar-initial">U</div></div>
+    <div id="settings-avatar-box"><div id="settings-avatar-initial">U</div></div>
+    <span id="referral-link-display"></span>
+    <div id="referral-count-val">0</div>
+    <div id="referral-earned-val">$0.00</div>
+    <div id="referral-rate-val">0.2%</div>
+  </div>
 
   <!-- Cart Drawer -->
   <div id="floating-cart-bar" style="display: none;">

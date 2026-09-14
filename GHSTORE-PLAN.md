@@ -1,5 +1,162 @@
 # GHstore — Knowledge Base & Implementation Plan
 
+## Mini App simplicity and usability plan — 2026-09-14
+
+Goal: help a customer find a service, understand the plan, buy confidently, and
+retrieve delivery with as little effort as possible. This is a source-code review
+of `templates/storefront.html`, `static/storefront/{storefront,app,checkout,wallet}.js`,
+`static/storefront/app.css`, and category image resolution, not a completed live
+Telegram usability study. The checklist below is proposed work; only the category
+artwork and its integration were implemented in this pass.
+
+### Category backgrounds — completed first
+
+- [x] Generate a coordinated raster cover for all 13 categories defined in
+  `services/storefront_images.py`, including Other.
+- [x] Save production assets in `static/img/cat-*-v2.webp`: 768 × 512 pixels,
+  approximately 10–20 KB each. Dark navy backgrounds, recognizable 3D objects,
+  restrained category accents, and quiet space below the subject for labels.
+- [x] Use the new covers as category defaults and resolve exact old bundled SVG
+  paths to their matching WebP covers. This handles existing seeded category rows
+  without rewriting the database. Custom uploaded and remote image URLs still win.
+  Product thumbnails that fall back to a category cover also use the new artwork.
+- [x] Keep original SVG files as compatibility assets. Unknown categories still
+  have the existing generic SVG fallback unless an admin configures another image.
+- [x] Record the exact generation prompts and built-in `image_gen` provenance in
+  [category-art-prompts.json](static/img/category-art-prompts.json).
+
+| Category | Background | Visual cue |
+|---|---|---|
+| Games | [cat-games-v2.webp](static/img/cat-games-v2.webp) | Controller |
+| AI & Chatbots | [cat-ai-v2.webp](static/img/cat-ai-v2.webp) | Neural chat bubble |
+| Streaming & Entertainment | [cat-streaming-v2.webp](static/img/cat-streaming-v2.webp) | Cinema screen and play symbol |
+| VPN & Security | [cat-vpn-v2.webp](static/img/cat-vpn-v2.webp) | Shield and lock |
+| Design & Creative | [cat-design-v2.webp](static/img/cat-design-v2.webp) | Palette and stylus |
+| Productivity | [cat-productivity-v2.webp](static/img/cat-productivity-v2.webp) | Checklist and clock |
+| Office & Productivity | [cat-office-v2.webp](static/img/cat-office-v2.webp) | Documents and spreadsheet |
+| Accounts & Email | [cat-accounts-v2.webp](static/img/cat-accounts-v2.webp) | Envelope and profile |
+| Education | [cat-education-v2.webp](static/img/cat-education-v2.webp) | Book and graduation cap |
+| Communication | [cat-comms-v2.webp](static/img/cat-comms-v2.webp) | Conversation bubbles |
+| Social Media | [cat-social-v2.webp](static/img/cat-social-v2.webp) | Heart and connected profiles |
+| Software Keys | [cat-keys-v2.webp](static/img/cat-keys-v2.webp) | Key and software window |
+| Other | [cat-other-v2.webp](static/img/cat-other-v2.webp) | Open cube and geometric objects |
+
+These are category-card backgrounds, not full-page wallpapers. Keep shopping,
+forms, and checkout surfaces plain. The existing card overlay protects label
+readability; review the actual crop and contrast on devices before release.
+The assets and resolver are ready in the working tree; deployment was not performed.
+
+Validation: all 13 mapped WebP files exist (190,348 bytes combined); bundled legacy
+cover resolution and custom-image preservation are covered by regression checks.
+The project inspector passed, including 268 Python syntax checks and 346 tests
+(one warning). Live Telegram device review remains part of the checklist below.
+
+### Priority 1 — make finding and buying easy
+
+1. [ ] **Put a visible search field at the top of Store.** Search currently starts
+   from a small header icon. Use a full-width “Search services and plans” control
+   that opens the existing search page. Preserve the query and scroll position
+   after viewing a result. Done when a new user can find search immediately and
+   return to the same results without typing again.
+2. [ ] **Simplify category names and remove overlap.** Review merging Productivity
+   with Office & Productivity; shorten visible names to AI Tools, Streaming,
+   Security, Creative Tools, and Software. Keep canonical product mappings stable
+   while changing customer labels. Move empty categories below available ones;
+   offer a useful explanation if opened. Done when each service has one obvious
+   home and category titles fit comfortably in Arabic and English.
+3. [ ] **Make product cards easy to compare.** Use the same order everywhere:
+   service name, plan/duration, account or activation type, availability, and price.
+   Group variants under a service and explain differences in customer language.
+   Done when two similar plans can be compared without opening both detail pages.
+4. [ ] **Give each purchase screen one clear primary action.** Retain the existing
+   cart and instant-purchase flows, but make the recommended next step visually
+   dominant. Put duration, region/device restrictions, delivery method, total, and
+   required account input before confirmation. Show a loading state during submit.
+   Done when users can explain what they are buying and what happens after tapping.
+5. [ ] **Make insufficient balance recovery continuous.** Show the exact shortfall,
+   preserve the selected plan and entered fields during top-up, and return to the
+   order summary when funds arrive. Recheck the price and require the customer's
+   purchase confirmation. Done when topping up never forces users to find the
+   product again or re-enter their activation details.
+6. [ ] **Explain order progress and delivery clearly.** Audit the existing success
+   and order-detail screens for separate Received, Processing, Delivered, and
+   Needs help states. Show delivery instructions and Copy controls when ready;
+   show the next step and contextual support while pending. Done when a customer
+   can retrieve a previous purchase and understand a pending order without asking
+   support. Only show delivery estimates supported by actual service information.
+
+### Priority 2 — make the interface calmer and more comfortable
+
+7. [ ] **Reduce competing decoration.** Keep the category artwork as the visual
+   focus. Standardize on one primary accent, a small surface palette, consistent
+   16 px page gutters, and 12–16 px component gaps. Reduce stacked shadows, blur,
+   oversized badges, and promotional emphasis. Keep at most one active promotional
+   message above the categories. Done when price, title, and primary action are
+   visually stronger than decoration in both themes.
+8. [ ] **Improve text hierarchy.** Start with 16 px body/form text, 14 px supporting
+   copy, and 20–24 px page headings; category titles can remain compact. Current
+   category prices and badges use roughly 10.5–11.5 px text. Increase essential
+   information, allow long labels to wrap, and use consistent price formatting.
+   Done when Arabic and English remain readable at 200% text zoom without losing
+   prices, actions, or horizontal layout.
+9. [ ] **Make every interactive element accessible.** Category cards, bottom tabs,
+   balance, and cart controls currently include clickable divs. Give them semantic
+   buttons/links, visible focus, descriptive names, and selected states; keep admin
+   edit buttons separate from card navigation. Aim for 44 × 44 CSS px tap areas.
+   Audit modal focus entry, trapping, dismissal, and return to the opener. Done
+   when keyboard and screen-reader users can complete browsing and checkout.
+10. [ ] **Polish Arabic and English equally.** Review customer-facing translations,
+    replace left/right spacing with logical properties where needed, and isolate
+    prices, email addresses, and codes with appropriate text direction. Done when
+    mixed Arabic/Latin content, long service names, and all back arrows work at
+    320, 375, and 430 px viewport widths.
+11. [ ] **Preserve familiar navigation.** Keep the existing four destinations:
+    Store, Orders, Wallet, Settings. Standardize category → service → plan → back
+    behavior and restore scroll position. Audit the existing Telegram BackButton
+    integration so one press closes the current sheet or returns one level. Done
+    when no shopping screen strands the user or loses their browsing context.
+
+### Priority 3 — speed, feedback, and final validation
+
+12. [ ] **Match loading, empty, and error states to each screen.** The initial
+    category skeletons resemble list rows while the default layout is a grid;
+    match their geometry to the loaded cards. Add a clear retry action for failed
+    loads, helpful no-results suggestions, and inline form errors that retain
+    input. Done when slow or failed requests never look like an empty catalog or
+    require re-entering a completed form.
+13. [ ] **Load artwork efficiently.** Covers are now small local WebP files, but
+    grid cards use CSS backgrounds. Consider positioned decorative `<img alt="">`
+    elements with fixed dimensions, lazy loading below the fold, and an error
+    fallback; load the first visible row immediately. Measure on a throttled
+    mobile connection. Done when covers cause no layout shift and browsing stays
+    responsive while offscreen images load.
+14. [ ] **Check Telegram themes, insets, and motion on actual phones.** The app
+    already contains safe-area variables and theme logic; verify live updates,
+    keyboard-open forms, bottom navigation, and purchase actions on iOS and
+    Android. Reduce nonessential motion for `prefers-reduced-motion` and expensive
+    blur on slower devices. Done when native Telegram controls and the keyboard
+    never cover focused inputs or primary actions. These checks follow
+    [Telegram's Mini App design and API guidance](https://core.telegram.org/bots/webapps#design-guidelines).
+15. [ ] **Run a small task-based usability check.** Ask five representative users
+    to find a service, compare two plans, recover from low balance, and retrieve a
+    purchase using a safe test environment. Record completion, time, wrong taps,
+    and requests for help. Aim for at least four of five to finish each task
+    unaided; fix repeated confusion before adding more features. This is a proposed
+    product acceptance target, not a measured result.
+
+Accessibility review should include text contrast, reflow, focus visibility,
+accessible names, and status announcements. Use the
+[WCAG 2.2 quick reference](https://www.w3.org/WAI/WCAG22/quickref/) for criteria;
+the 44 px touch target above is our comfort target, not a claim that all WCAG AA
+controls require that size. Validate image labels over the actual rendered overlay.
+
+Suggested implementation order: search and category clarity → product/checkout
+clarity → accessibility and typography → loading/performance → device and user
+testing. Keep existing checkout recovery and payment behavior covered by regression
+tests as the interface changes.
+
+---
+
 Captured during setup session (2026-08-30). Goal: a private Telegram reseller shop
 that sells BatStore/SAM digital products to known customers at a margin, wallet-backed
 by crypto (KryptoExpress built-in) + Telegram Stars, running 24/7 in Docker, portable.

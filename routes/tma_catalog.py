@@ -9,7 +9,7 @@ import time
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
-from fastapi.responses import JSONResponse, StreamingResponse, Response
+from fastapi.responses import JSONResponse, StreamingResponse, Response, FileResponse
 from sqlalchemy import func, select
 
 import config
@@ -18,6 +18,7 @@ from models.batstore_product import BatStoreProductDTO
 from repositories.batstore_order import BatStoreOrderRepository
 from repositories.batstore_product import BatStoreProductRepository
 from repositories.user import UserRepository
+from repositories.referral import ReferralRepository
 from services.config import ConfigService
 from services.notification import NotificationService
 from routes.common import is_admin_id, normalize_delivery_good
@@ -808,6 +809,7 @@ async def get_tma_user_data(request: Request, tg_id: int | None = None):
                         "global_reseller_margin_percent": float(await ConfigService.get(session, "GLOBAL_RESELLER_MARGIN_PERCENT", default="8.0") or 8.0),
                         "stars_to_usd_rate": float(stars_cfg or 0.01),
                         "total_users": int(tot_usr or 0),
+                        "total_orders": int(tot_ord or 0),
                         "total_user_balances": round(float(tot_bal or 0.0), 2),
                         "syp_usd_rate": syp_market,
                         "referral_commission_percent": ref_val,
@@ -845,6 +847,10 @@ async def get_tma_user_data(request: Request, tg_id: int | None = None):
             "referrals_total_earned": round(float(referrals_total_earned or 0.0), 2),
             "referrals_breakdown": referrals_breakdown,
             "referral_commission_rate": 0.2,
+            "first_name": user.telegram_username or "",
+            "top_up_amount": round(user.top_up_amount or 0.0, 2),
+            "consume_records": round(user.consume_records or 0.0, 2),
+            "store_logo_url": await ConfigService.get(session, "STORE_LOGO_URL", env_fallback=os.environ.get("STORE_LOGO_URL", "")),
             "orders": orders_data,
             "recharges": recharges_data,
             "store_announcement": await ConfigService.get(session, "STORE_ANNOUNCEMENT", env_fallback=""),
@@ -1010,6 +1016,17 @@ async def create_auth_session(request: Request):
         {"error": "unauthorized", "message": "Valid Telegram WebApp initData or launch token required"},
         status_code=401,
     )
+
+
+@router.api_route("/gh-store-logo-mark.png", methods=["GET", "HEAD"])
+async def get_root_logo_mark():
+    """Direct root endpoint for store logo asset to ensure full backward compatibility."""
+    from pathlib import Path
+    logo_path = Path(__file__).resolve().parent.parent / "static" / "img" / "gh-store-logo-mark.png"
+    if logo_path.exists():
+        return FileResponse(logo_path, media_type="image/png")
+    raise HTTPException(status_code=404, detail="Logo asset not found")
+
 
 @router.post("/api/user/settings")
 async def update_tma_user_settings(request: Request):

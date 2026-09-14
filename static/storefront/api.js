@@ -17,7 +17,30 @@
   // --- Session Token Management ---
   let appSessionToken = '';
   try {
-    appSessionToken = root.localStorage?.getItem('ghstore_session_token') || root.sessionStorage?.getItem('ghstore_session_token') || '';
+    const urlParams = typeof root.location !== 'undefined' ? new URLSearchParams(root.location.search) : null;
+    const urlTok = urlParams?.get('auth_token') || urlParams?.get('session_token') || urlParams?.get('token');
+    const urlTgId = Number(urlParams?.get('tg_id') || 0);
+    const tgUser = root.Telegram?.WebApp?.initDataUnsafe?.user;
+    const effectiveTgId = tgUser?.id || urlTgId;
+
+    // Detect user change from cache
+    const cachedUserId = root.localStorage?.getItem('ghstore_user_id');
+    if (effectiveTgId && cachedUserId && String(cachedUserId) !== String(effectiveTgId)) {
+      root.localStorage?.removeItem('ghstore_session_token');
+      root.sessionStorage?.removeItem('ghstore_session_token');
+      root.localStorage?.removeItem('ghstore_user_cache_v3');
+    }
+    if (effectiveTgId) {
+      root.localStorage?.setItem('ghstore_user_id', String(effectiveTgId));
+    }
+
+    if (urlTok) {
+      appSessionToken = urlTok;
+      root.localStorage?.setItem('ghstore_session_token', urlTok);
+      root.sessionStorage?.setItem('ghstore_session_token', urlTok);
+    } else {
+      appSessionToken = root.localStorage?.getItem('ghstore_session_token') || root.sessionStorage?.getItem('ghstore_session_token') || '';
+    }
   } catch (_) {}
 
   function getSessionToken() {
@@ -39,6 +62,42 @@
 
   function clearSessionToken() {
     setSessionToken('');
+  }
+
+  async function ensureAuthSession() {
+    const tgObj = getTg();
+    const currentToken = getSessionToken();
+    const initData = tgObj?.initData || '';
+
+    // If we have either initData or currentToken/urlToken, handshake with /api/auth/session
+    if (initData || currentToken) {
+      try {
+        const fetchFn = root._origFetch || root.fetch;
+        const res = await fetchFn('/api/auth/session', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(initData ? { 'X-Telegram-Init-Data': initData } : {}),
+            ...(currentToken ? { 'Authorization': 'Bearer ' + currentToken, 'X-Session-Token': currentToken } : {})
+          },
+          body: JSON.stringify({
+            init_data: initData,
+            auth_token: currentToken
+          })
+        });
+        if (res.ok) {
+          const d = await res.json();
+          if (d.status === 'ok' && d.token) {
+            setSessionToken(d.token);
+            if (d.tg_id) AppState.userId = Number(d.tg_id);
+            return d;
+          }
+        }
+      } catch (e) {
+        console.debug('Auth session exchange error:', e);
+      }
+    }
+    return null;
   }
 
   // --- Auto-Interception on window.fetch ---
@@ -124,15 +183,12 @@
     let top = 0;
     let bottom = 0;
     if (tg) {
-      if (tg.safeAreaInset?.top) top = Math.max(top, tg.safeAreaInset.top);
-      if (tg.contentSafeAreaInset?.top) top = Math.max(top, tg.contentSafeAreaInset.top);
+      if (tg.isFullscreen) {
+        if (tg.contentSafeAreaInset?.top) top = tg.contentSafeAreaInset.top;
+        else if (tg.safeAreaInset?.top) top = tg.safeAreaInset.top;
+      }
       if (tg.safeAreaInset?.bottom) bottom = Math.max(bottom, tg.safeAreaInset.bottom);
       if (tg.contentSafeAreaInset?.bottom) bottom = Math.max(bottom, tg.contentSafeAreaInset.bottom);
-    }
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (tg && (tg.platform === 'ios' || tg.platform === 'android'));
-    if (isMobile) {
-      top = Math.max(top, 56);
-      bottom = Math.max(bottom, 16);
     }
     if (typeof document !== 'undefined' && document.documentElement) {
       document.documentElement.style.setProperty('--safe-top', top + 'px');
@@ -302,10 +358,13 @@
     const toast = document.getElementById('toast');
     if (!toast) return;
     toast.textContent = msg;
-    toast.classList.add('visible');
+    toast.classList.remove('show', 'visible');
+    // Trigger reflow to restart css animation if already shown
+    void toast.offsetWidth;
+    toast.classList.add('show', 'visible');
     if (toastTimeout) clearTimeout(toastTimeout);
     toastTimeout = setTimeout(() => {
-      toast.classList.remove('visible');
+      toast.classList.remove('show', 'visible');
     }, duration);
   }
 
@@ -361,8 +420,15 @@
   }
 
   // --- Shared Reactive State Store ---
+  let initialUserId = null;
+  try {
+    const urlP = typeof root.location !== 'undefined' ? new URLSearchParams(root.location.search) : null;
+    const tg = root.Telegram?.WebApp;
+    initialUserId = Number(tg?.initDataUnsafe?.user?.id || urlP?.get('tg_id') || 0) || null;
+  } catch (_) {}
+
   const AppState = {
-    userId: null,
+    userId: initialUserId,
     userData: null,
     currentAppLanguage: 'ar',
     activeTab: 'store',
@@ -592,21 +658,180 @@
   }
 
   function renderStructuredCredentials(goods) {
-    if (!Array.isArray(goods) || goods.length === 0) return '';
-    return goods.map((item, idx) => {
-      const safeVal = escapeAttr(normalizeCredentialItem(item));
-      return `<div class="credential-box-row" id="cred-row-${idx}">
-        <div class="credential-val-text">${safeVal}</div>
-        <button class="btn-copy-cred" onclick="copyCredVal('${safeVal}')">${t('btn-copy', 'نسخ')}</button>
-      </div>`;
+    if (!goods || !goods.length) {
+      const isAr = (AppState.currentAppLanguage === 'ar');
+      return `<div style="padding: 12px; color: var(--warning); text-align: center;">${isAr ? 'جاري التفعيل، سيتم التسليم قريباً.' : 'Activation in progress, delivery shortly.'}</div>`;
+    }
+
+    const isAr = (AppState.currentAppLanguage === 'ar');
+    const normalizedGoods = goods.map(g => normalizeCredentialItem(g)).filter(Boolean);
+
+    if (!normalizedGoods.length) {
+      const isAr = (AppState.currentAppLanguage === 'ar');
+      return `<div style="padding: 12px; color: var(--warning); text-align: center;">${isAr ? 'جاري التفعيل، سيتم التسليم قريباً.' : 'Activation in progress, delivery shortly.'}</div>`;
+    }
+
+    const renderedRows = normalizedGoods.map(rawLine => {
+      const line = String(rawLine).trim();
+
+      // 1. If it's an activation / direct subscription link (e.g. Gemini, Google One, Canva, etc.)
+      if (line.startsWith('http://') || line.startsWith('https://')) {
+        const isGemini = line.toLowerCase().includes('google') || line.toLowerCase().includes('gemini');
+        let hostName = 'serviceactivation.google.com';
+        try {
+          const u = new URL(line);
+          hostName = u.hostname || hostName;
+        } catch (e) {}
+
+        const badgeText = isGemini
+          ? (isAr ? '✨ كود تفعيل اشتراك Gemini Pro المعتمد' : '✨ Gemini Pro Activation Token')
+          : (isAr ? '✨ كود تفعيل الاشتراك المباشر' : '✨ Direct Activation Token');
+
+        const activateBtnText = isAr
+          ? '⚡ تفعيل حسابك الآن عبر هذا الرابط'
+          : '⚡ Activate Your Account using this Token';
+
+        const copyBtnText = isAr
+          ? '📋 نسخ رابط التفعيل المباشر'
+          : '📋 Copy Direct Activation Link';
+
+        const hintText = isAr
+          ? '💡 اضغط على الزر البنفسجي بالأعلى لفتح الرابط وتفعيل حسابك فورياً، أو انسخ الرابط لفتحه في متصفحك.'
+          : '💡 Tap the button above to activate your account directly, or copy the token link to open in your browser.';
+
+        return `
+          <div class="inset-card" style="margin: 8px 0 14px 0; border: 1px solid rgba(168, 85, 247, 0.45); background: linear-gradient(135deg, rgba(168, 85, 247, 0.1), rgba(56, 189, 248, 0.08)); padding: 16px; border-radius: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <span class="pill-badge" style="background: rgba(168, 85, 247, 0.2); color: #c084fc; font-size: 11px; font-weight: 800; padding: 4px 10px;">
+                ${badgeText}
+              </span>
+              <span style="font-size: 11px; color: var(--hint); font-weight: 700;">1-Tap Token</span>
+            </div>
+
+            <!-- Spacious, Elegant URL Container with Domain Header -->
+            <div style="background: var(--input-bg); border: 1px solid rgba(168, 85, 247, 0.35); border-radius: 12px; padding: 12px; margin-bottom: 14px; box-shadow: inset 0 2px 6px rgba(0,0,0,0.25);">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; border-bottom: 1px dashed var(--border); padding-bottom: 6px; flex-wrap: wrap; gap: 4px;">
+                <span style="font-size: 11px; font-weight: 800; color: var(--accent); font-family: monospace; display: inline-flex; align-items: center; gap: 4px; word-break: break-all;">
+                  🌐 ${escapeAttr(hostName)}
+                </span>
+                <span style="font-size: 10px; color: var(--success); font-weight: 700; white-space: nowrap;">
+                  ↗ ${isAr ? 'رابط خارجي' : 'External Link'}
+                </span>
+              </div>
+              <div style="font-family: monospace; font-size: 11px; color: var(--text); word-break: break-all; line-height: 1.6; user-select: all; max-height: 180px; overflow-y: auto; padding: 4px 2px;">
+                ${escapeAttr(line)}
+              </div>
+            </div>
+
+            <!-- Big Prominent Activation Button -->
+            <button type="button" class="btn-action-primary" data-payment-url="${escapeAttr(line)}" onclick="openExternalPaymentUrl(this.dataset.paymentUrl)" style="width: 100%; height: 50px; font-size: 13.5px; font-weight: 800; background: linear-gradient(135deg, #a855f7, #6366f1); border-radius: 12px; box-shadow: 0 4px 16px rgba(168, 85, 247, 0.35); display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 8px; border: none; color: white; cursor: pointer;">
+              <span>${activateBtnText}</span>
+            </button>
+
+            <!-- Clean Separated Copy Button -->
+            <button type="button" class="btn-action-secondary" data-copy="${escapeAttr(line)}" onclick="copyFromBtn(this)" style="width: 100%; height: 40px; font-size: 12px; font-weight: 700; border-radius: 10px; border-color: rgba(168, 85, 247, 0.4); color: var(--text); display: flex; align-items: center; justify-content: center; gap: 6px;">
+              <span>${copyBtnText}</span>
+            </button>
+
+            <div style="font-size: 10.5px; color: var(--hint); margin-top: 10px; text-align: center; line-height: 1.5;">
+              ${hintText}
+            </div>
+          </div>
+        `;
+      }
+
+      // 2. Delimiter parsing: pipe '|', slash '/', or colon ':'
+      let parts = [];
+      if (line.includes(' | ')) { parts = line.split(' | '); }
+      else if (line.includes('|')) { parts = line.split('|'); }
+      else if (line.includes(' / ')) { parts = line.split(' / '); }
+      else if (line.includes(':') && line.split(':').length >= 2) {
+        parts = line.split(':');
+      }
+
+      if (parts.length >= 2) {
+        const rows = parts.map((partRaw, idx) => {
+          const part = String(partRaw).trim();
+          let label = isAr ? "بيانات" : "Credential";
+          if (idx === 0) {
+            label = part.includes('@') ? (isAr ? "البريد الإلكتروني" : "Email") : (isAr ? "اسم المستخدم" : "Username");
+          } else if (idx === 1) {
+            label = isAr ? "كلمة المرور" : "Password";
+          } else if (idx === 2) {
+            label = part.includes('@') ? (isAr ? "البريد البديل / الاسترداد" : "Recovery Email") : (isAr ? "كود 2FA / الأمان" : "2FA / Security Key");
+          } else if (idx === 3) {
+            label = isAr ? "رمز الأمان / كلمة سر البديل" : "Security Key / Recovery Pass";
+          } else {
+            label = isAr ? `معلومة ${idx + 1}` : `Field ${idx + 1}`;
+          }
+
+          return `
+            <div class="cred-pill-row">
+              <div class="cred-meta">
+                <span class="cred-type-tag">${label}</span>
+                <span class="cred-val-text">${escapeAttr(part)}</span>
+              </div>
+              <button class="btn-copy-mini" data-copy="${escapeAttr(part)}" onclick="copyFromBtn(this)">${isAr ? 'نسخ' : 'Copy'}</button>
+            </div>
+          `;
+        }).join('');
+
+        return `
+          <div class="cred-grid">
+            ${rows}
+          </div>
+        `;
+      }
+
+      // 3. Fallback: single license key / code
+      return `
+        <div class="cred-pill-row" style="margin: 6px 0;">
+          <div class="cred-meta">
+            <span class="cred-type-tag">${isAr ? 'مفتاح / كود التفعيل' : 'License / Key'}</span>
+            <span class="cred-val-text">${escapeAttr(line)}</span>
+          </div>
+          <button class="btn-copy-mini" data-copy="${escapeAttr(line)}" onclick="copyFromBtn(this)">${isAr ? 'نسخ' : 'Copy'}</button>
+        </div>
+      `;
     }).join('');
+
+    const hasOnlyUrls = normalizedGoods.every(g => g.startsWith('http://') || g.startsWith('https://'));
+    const allText = normalizedGoods.join('\n');
+    const copyAllBtn = (hasOnlyUrls || normalizedGoods.length <= 1) ? '' : `
+      <div style="margin-top: 8px;">
+        <button class="btn-action-secondary" data-copy="${escapeAttr(allText)}" onclick="copyFromBtn(this)" style="height: 34px; font-size: 11px; width: 100%;">
+          <span>📋 ${isAr ? 'نسخ كافة بيانات الحساب' : 'Copy All Account Details'}</span>
+        </button>
+      </div>
+    `;
+
+    return renderedRows + copyAllBtn;
   }
+
+  function copyCredVal(val) {
+    const text = String(val ?? '').trim();
+    if (!text) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(() => {});
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch (_) {}
+      document.body.removeChild(ta);
+    }
+    haptic('selection');
+    showToast(t('toast-copied', 'تم النسخ بنجاح! 📋'));
+  }
+  root.copyCredVal = copyCredVal;
 
   // --- Export Namespace ---
   root.StoreAPI = {
     getSessionToken,
     setSessionToken,
     clearSessionToken,
+    ensureAuthSession,
     getTg,
     initTelegramPlatform,
     updateSafeAreaInsets,
@@ -618,6 +843,7 @@
     playAudioChime,
     fireConfetti,
     showToast,
+    copyCredVal,
     navStack,
     pushNav,
     popNav,

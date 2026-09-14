@@ -1,0 +1,58 @@
+{
+  "tool": "Built-in image_gen",
+  "date": "2026-09-14",
+  "assets": [
+    {
+      "file": "cat-games-v2.webp",
+      "prompt": "Use case: stylized-concept. Create a landscape 3:2 raster background for the Games category of GH Store, a dark Telegram digital goods shop. Premium restrained 3D illustration of a game controller floating over a softly lit midnight navy surface, subtle violet and cyan accents, tactile matte materials, clean simple silhouette. Main subject centered in upper two thirds, lower third dark and uncluttered for a white category label added by HTML. Edge-safe composition suitable for square crop. No text, letters, logos, watermark, border or UI. Save the generated image and return its local path."
+    },
+    {
+      "file": "cat-ai-v2.webp",
+      "prompt": "Use case: stylized-concept. Create a landscape 3:2 raster background for the AI & Chatbots category of GH Store, a dark Telegram digital goods shop. Premium restrained 3D illustration of a sculptural rounded chat bubble with a luminous abstract neural orb inside floating over a softly lit midnight navy surface, subtle violet and cyan accents, tactile matte materials, clean simple silhouette. Main subject centered in upper two thirds, lower third dark and uncluttered for a white category label added by HTML. Edge-safe composition suitable for square crop. Cohesive premium digital store cover collection. No text, letters, brand logos, watermark, border or UI."
+    },
+    {
+      "file": "cat-streaming-v2.webp",
+      "prompt": "Use case: stylized-concept. Create a landscape 3:2 raster background for the Streaming & Entertainment category of GH Store, a dark Telegram digital goods shop. Premium restrained 3D illustration of a sculptural play triangle framed by a cinema screen and one curved audio wave floating over a softly lit midnight navy surface, subtle coral and violet accents, tactile matte materials, clean simple silhouette. Main subject centered in upper two thirds, lower third dark and uncluttered for a white category label added by HTML. Edge-safe composition suitable for square crop. Cohesive premium digital store cover collection. No text, letters, brand logos, watermark, border or UI."
+    },
+    {
+      "file": "cat-vpn-v2.webp",
+      "prompt": "Use case: stylized-concept. Create a landscape 3:2 raster background for the VPN & Security category of GH Store, a dark Telegram digital goods shop. Premium restrained 3D illustration of a sculptural shield surrounding a small secure padlock floating over a softly lit midnight navy surface, subtle teal and cyan accents, tactile matte materials, clean simple silhouette. Main subject centered in upper two thirds, lower third dark and uncluttered for a white category label added by HTML. Edge-safe composition suitable for square crop. Cohesive premium digital store cover collection. No text, letters, brand logos, watermark, border or UI."
+    },
+    {
+      "file": "cat-design-v2.webp",
+      "prompt": "Use case: stylized-concept. Create a landscape 3:2 raster background for the Design & Creative category of GH Store, a dark Telegram digital goods shop. Premium restrained 3D illustration of a sculptural artist color palette with a single elegant stylus floating over a softly lit midnight navy surface, subtle pink and violet accents, tactile matte materials, clean simple silhouette. Main subject centered in upper two thirds, lower third dark and uncluttered for a white category label added by HTML. Edge-safe composition suitable for square crop. Cohesive premium digital store cover collection. No text, letters, brand logos, watermark, border or UI."
+    },
+    {
+      "file": "cat-productivity-v2.webp",
+      "prompt": "Use case: stylized-concept. Create a landscape 3:2 raster background for the Productivity category of GH Store, a dark Telegram digital goods shop. Premium restrained 3D illustration of a sculptural checklist tile with three simple raised check marks and a small clock floating over a softly lit midnight navy surface, subtle mint and teal accents, tactile matte materials, clean simple silhouette. Main subject centered in upper two thirds, lower third dark and uncluttered for a white category label added by HTML. Edge-safe composition suitable for square crop. Cohesive premium digital store cover collection. No text, letters, brand logos, watermark, border or UI."
+    },
+    {
+      "file": "cat-office-v2.webp",
+      "prompt": "Use case: stylized-concept. Create a landscape 3:2 raster background for the Office & Productivity category of GH Store, a dark Telegram digital goods shop. Premium restrained 3D illustration of a sculptural document stack alongside a small spreadsheet tile floating over a softly lit midnight navy surface, subtle blue and cyan accents, tactile matte materials, clean simple silhouette. Main subject centered in upper two thirds, lower third dark and uncluttered for a white category label added by HTML. Edge-safe composition suitable for square crop. Cohesive premium digital store cover collection. No text, letters, brand logos, watermark, border or UI."
+    },
+    {
+      "file": "cat-accounts-v2.webp",
+      "prompt": "Use case: stylized-concept. Create a landscape 3:2 raster background for the Accounts & Email category of GH Store, a dark Telegram digital goods shop. Premium restrained 3D illustration of a sculptural envelope with a small circular profile silhouette token floating over a softly lit midnight navy surface, subtle sky blue and violet accents, tactile matte materials, clean simple silhouette. Main subject centered in upper two thirds, lower third dark and uncluttered for a white category label added by HTML. Edge-safe composition suitable for square crop. Cohesive premium digital store cover collection. No text, letters, brand logos, watermark, border or UI."
+    },
+    {
+      "file": "cat-education-v2.webp",
+      "prompt": "Use case: stylized-concept. Create a landscape 3:2 raster background for the Education category of GH Store, a dark Telegram digital goods shop. Premium restrained 3D illustration of a sculptural open book with a small graduation cap floating above floating over a softly lit midnight navy surface, subtle amber and gold accents, tactile matte materials, clean simple silhouette. Main subject centered in upper two thirds, lower third dark and uncluttered for a white category label added by HTML. Edge-safe composition suitable for square crop. Cohesive premium digital store cover collection. No text, letters, brand logos, watermark, border or UI."
+    },
+    {
+      "file": "cat-comms-v2.webp",
+      "prompt": "Use case: stylized-concept. Create a landscape 3:2 raster background for the Communication category of GH Store, a dark Telegram digital goods shop. Premium restrained 3D illustration of two sculptural overlapping speech bubbles joined by a subtle signal ripple floating over a softly lit midnight navy surface, subtle cyan and teal accents, tactile matte materials, clean simple silhouette. Main subject centered in upper two thirds, lower third dark and uncluttered for a white category label added by HTML. Edge-safe composition suitable for square crop. Cohesive premium digital store cover collection. No text, letters, brand logos, watermark, border or UI."
+    },
+    {
+      "file": "cat-social-v2.webp",
+      "prompt": "Use case: stylized-concept. Create a landscape 3:2 raster background for the Social Media category of GH Store, a dark Telegram digital goods shop. Premium restrained 3D illustration of a sculptural heart notification tile connected to two small profile tokens floating over a softly lit midnight navy surface, subtle rose and coral accents, tactile matte materials, clean simple silhouette. Main subject centered in upper two thirds, lower third dark and uncluttered for a white category label added by HTML. Edge-safe composition suitable for square crop. Cohesive premium digital store cover collection. No text, letters, brand logos, watermark, border or UI."
+    },
+    {
+      "file": "cat-keys-v2.webp",
+      "prompt": "Use case: stylized-concept. Create a landscape 3:2 raster background for the Software Keys category of GH Store, a dark Telegram digital goods shop. Premium restrained 3D illustration of a sculptural metallic key in front of a softly glowing software window tile floating over a softly lit midnight navy surface, subtle blue and violet accents, tactile matte materials, clean simple silhouette. Main subject centered in upper two thirds, lower third dark and uncluttered for a white category label added by HTML. Edge-safe composition suitable for square crop. Cohesive premium digital store cover collection. No text, letters, brand logos, watermark, border or UI."
+    },
+    {
+      "file": "cat-other-v2.webp",
+      "prompt": "Use case: stylized-concept. Create a landscape 3:2 raster background for the Other category of GH Store, a dark Telegram digital goods shop. Premium restrained 3D illustration of a sculptural open rounded cube with three simple geometric objects floating above it floating over a softly lit midnight navy surface, subtle lavender and silver accents, tactile matte materials, clean simple silhouette. Main subject centered in upper two thirds, lower third dark and uncluttered for a white category label added by HTML. Edge-safe composition suitable for square crop. Cohesive premium digital store cover collection. No text, letters, brand logos, watermark, border or UI."
+    }
+  ]
+}

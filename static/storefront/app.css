@@ -66,34 +66,34 @@
       -webkit-backdrop-filter: blur(24px) saturate(180%);
       background: var(--header-bg);
       border-bottom: 1px solid var(--border);
-      padding-top: max(var(--safe-top, 0px), 8px);
-      padding-bottom: 8px;
-      padding-left: max(var(--safe-left, 0px), 14px);
-      padding-right: max(var(--safe-right, 0px), 14px);
+      padding-top: max(var(--safe-top, 0px), 6px);
+      padding-bottom: 6px;
+      padding-left: max(var(--safe-left, 0px), 12px);
+      padding-right: max(var(--safe-right, 0px), 12px);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      min-height: 48px;
+      min-height: 42px;
       transition: background-color 0.25s, border-color 0.25s;
     }
 
     /* Only apply extra top padding if Telegram explicitly requests fullscreen */
     body.tg-fullscreen .top-header {
-      padding-top: max(var(--tma-safe-top, 0px), var(--safe-top, 0px), 48px);
+      padding-top: max(var(--tma-safe-top, 0px), var(--safe-top, 0px), 40px);
     }
 
     .header-brand {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       cursor: pointer;
       user-select: none;
       -webkit-user-select: none;
     }
     .store-logo-wrapper {
-      width: 36px;
-      height: 36px;
-      border-radius: 11px;
+      width: 30px;
+      height: 30px;
+      border-radius: 9px;
       overflow: hidden;
       display: flex;
       align-items: center;
@@ -113,7 +113,7 @@
       object-fit: cover;
     }
     .store-logo-fallback {
-      font-size: 18px;
+      font-size: 15px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -122,13 +122,13 @@
     .store-brand-info {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
     }
     .store-title {
       font-family: 'Tajawal', 'Cairo', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      font-size: 18px;
-      font-weight: 900;
-      letter-spacing: -0.4px;
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: -0.3px;
       line-height: 1.1;
       background: linear-gradient(135deg, #ffffff 40%, var(--accent) 100%);
       -webkit-background-clip: text;
@@ -144,22 +144,22 @@
     .vip-tag {
       background: rgba(245, 158, 11, 0.18);
       color: var(--warning);
-      font-size: 10px;
+      font-size: 9px;
       font-weight: 700;
-      padding: 2px 6px;
-      border-radius: 6px;
+      padding: 1px 5px;
+      border-radius: 5px;
     }
-    /* Header Right Actions (Exact Row Alignment & Unified 34px Height) */
+    /* Header Right Actions (Exact Row Alignment & Unified 30px Height) */
     .header-right-actions {
       display: flex;
       align-items: center;
-      gap: 8px;
-      height: 34px;
+      gap: 6px;
+      height: 30px;
     }
     .search-nav-btn {
-      width: 34px;
-      height: 34px;
-      min-width: 34px;
+      width: 30px;
+      height: 30px;
+      min-width: 30px;
       border-radius: 50%;
       background: var(--input-bg);
       border: 1px solid var(--border);
@@ -177,16 +177,16 @@
       border-color: var(--accent);
     }
     .header-balance-pill {
-      height: 34px;
+      height: 30px;
       background: rgba(56, 189, 248, 0.12);
       border: 1px solid rgba(56, 189, 248, 0.35);
-      border-radius: 17px;
-      padding: 0 12px;
+      border-radius: 15px;
+      padding: 0 10px;
       display: inline-flex;
       align-items: center;
-      gap: 5px;
+      gap: 4px;
       cursor: pointer;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 700;
       color: var(--accent);
       box-sizing: border-box;
@@ -198,7 +198,7 @@
       display: inline-block;
     }
     .bal-pill-plus {
-      font-size: 10px;
+      font-size: 9px;
       opacity: 0.85;
       line-height: 1;
       display: inline-flex;
@@ -209,20 +209,20 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      height: 34px;
-      width: 34px;
-      min-width: 34px;
+      height: 30px;
+      width: 30px;
+      min-width: 30px;
     }
     #top-avatar-box {
-      width: 34px;
-      height: 34px;
+      width: 30px;
+      height: 30px;
       display: flex;
       align-items: center;
       justify-content: center;
     }
     .avatar-img {
-      width: 34px;
-      height: 34px;
+      width: 30px;
+      height: 30px;
       border-radius: 50%;
       object-fit: cover;
       border: 1.5px solid var(--accent);
@@ -230,12 +230,12 @@
       display: block;
     }
     .avatar-fallback {
-      width: 34px;
-      height: 34px;
+      width: 30px;
+      height: 30px;
       border-radius: 50%;
       background: linear-gradient(135deg, #38bdf8, #6366f1);
       color: white;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 800;
       display: flex;
       align-items: center;
@@ -1783,11 +1783,15 @@
       border-radius: 20px;
       font-size: 13px;
       font-weight: 700;
-      z-index: 250;
-      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 9999;
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease;
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      pointer-events: none;
     }
-    .toast-pill.show { transform: translateX(-50%) translateY(0); }
+    .toast-pill.show,
+    .toast-pill.visible {
+      transform: translateX(-50%) translateY(0);
+    }
 
     /* Dedicated Search Page Styles */
     .search-page-subview-header {

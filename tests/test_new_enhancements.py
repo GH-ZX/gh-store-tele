@@ -303,6 +303,12 @@ def test_storefront_image_resolution_is_db_driven():
     cover = resolve_category_image("AI & Chatbots", "", {})
     assert cover == DEFAULT_CATEGORY_IMAGES["AI & Chatbots"]
     assert cover.startswith("/static/")
+    # Existing bundled DB covers upgrade without replacing custom category artwork.
+    for name, new_cover in DEFAULT_CATEGORY_IMAGES.items():
+        legacy_cover = new_cover.replace("-v2.webp", ".svg")
+        assert resolve_category_image(name, legacy_cover, {}) == new_cover
+        assert resolve_product_image("", name, legacy_cover, {}) == new_cover
+    assert resolve_category_image("Games", "/static/uploads/custom.webp", {}) == "/static/uploads/custom.webp"
     # Unknown category + empty -> placeholder, Admin override respected
     assert resolve_category_image("Nope", "", {}) == "/static/img/cat-other.svg"
     assert resolve_category_image("Nope", "", {"category_placeholder": "https://admin.example/c.png"}) == "https://admin.example/c.png"

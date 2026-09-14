@@ -255,10 +255,14 @@
       if (d.status === 'ok') {
         api().haptic?.('success');
         api().showToast('تم تحديث شعار المتجر بنجاح!');
-        const img = document.getElementById('top-store-logo');
-        if (img && url) {
-          img.src = url;
-          img.style.display = 'block';
+        if (root.applyStoreLogo) {
+          root.applyStoreLogo(url);
+        } else {
+          const img = document.getElementById('top-store-logo');
+          if (img && url) {
+            img.src = url;
+            img.style.display = 'block';
+          }
         }
       } else {
         api().showToast(d.error || 'فشل تحديث الشعار');
@@ -266,6 +270,285 @@
     } catch (_) {
       api().showToast('خطأ في الاتصال بالخادم');
     }
+  }
+
+  // --- Admin Navigation & Views ---
+  function openAdminStoreSettingsPage() {
+    api().haptic?.('pop');
+    document.querySelectorAll('.tab-view').forEach(el => {
+      el.classList.remove('active');
+      el.style.display = 'none';
+    });
+    const view = document.getElementById('view-admin-store-settings');
+    if (view) {
+      view.classList.add('active');
+      view.style.display = 'block';
+    }
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    api().pushNav?.('admin_store_settings', closeAdminStoreSettingsPage);
+  }
+
+  function closeAdminStoreSettingsPage() {
+    api().haptic?.('light');
+    document.querySelectorAll('.tab-view').forEach(el => {
+      el.classList.remove('active');
+      el.style.display = 'none';
+    });
+    const setView = document.getElementById('view-settings');
+    if (setView) {
+      setView.classList.add('active');
+      setView.style.display = 'block';
+    }
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }
+
+  function openAdminSuppliersPage() {
+    api().haptic?.('pop');
+    document.querySelectorAll('.tab-view').forEach(el => {
+      el.classList.remove('active');
+      el.style.display = 'none';
+    });
+    const view = document.getElementById('view-admin-suppliers');
+    if (view) {
+      view.classList.add('active');
+      view.style.display = 'block';
+    }
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    api().pushNav?.('admin_suppliers', closeAdminSuppliersPage);
+  }
+
+  function closeAdminSuppliersPage() {
+    api().haptic?.('light');
+    document.querySelectorAll('.tab-view').forEach(el => {
+      el.classList.remove('active');
+      el.style.display = 'none';
+    });
+    const setView = document.getElementById('view-settings');
+    if (setView) {
+      setView.classList.add('active');
+      setView.style.display = 'block';
+    }
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }
+
+  function openAdminUsersPage() {
+    api().haptic?.('pop');
+    document.querySelectorAll('.tab-view').forEach(el => {
+      el.classList.remove('active');
+      el.style.display = 'none';
+    });
+    const view = document.getElementById('view-admin-users');
+    if (view) {
+      view.classList.add('active');
+      view.style.display = 'block';
+    }
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    api().pushNav?.('admin_users', closeAdminUsersPage);
+  }
+
+  function closeAdminUsersPage() {
+    api().haptic?.('light');
+    document.querySelectorAll('.tab-view').forEach(el => {
+      el.classList.remove('active');
+      el.style.display = 'none';
+    });
+    const setView = document.getElementById('view-settings');
+    if (setView) {
+      setView.classList.add('active');
+      setView.style.display = 'block';
+    }
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }
+
+  function openAdminStuckOrdersPage() {
+    api().haptic?.('pop');
+    document.querySelectorAll('.tab-view').forEach(el => {
+      el.classList.remove('active');
+      el.style.display = 'none';
+    });
+    const view = document.getElementById('view-admin-stuck');
+    if (view) {
+      view.classList.add('active');
+      view.style.display = 'block';
+    }
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    api().pushNav?.('admin_stuck', closeAdminStuckOrdersPage);
+  }
+
+  function closeAdminStuckOrdersPage() {
+    api().haptic?.('light');
+    document.querySelectorAll('.tab-view').forEach(el => {
+      el.classList.remove('active');
+      el.style.display = 'none';
+    });
+    const setView = document.getElementById('view-settings');
+    if (setView) {
+      setView.classList.add('active');
+      setView.style.display = 'block';
+    }
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }
+
+  function openAdminResellerPricingPage() {
+    api().haptic?.('pop');
+    document.querySelectorAll('.tab-view').forEach(el => {
+      el.classList.remove('active');
+      el.style.display = 'none';
+    });
+    const view = document.getElementById('view-admin-reseller-pricing');
+    if (view) {
+      view.classList.add('active');
+      view.style.display = 'block';
+    }
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    api().pushNav?.('admin_reseller_pricing', closeAdminResellerPricingPage);
+  }
+
+  function closeAdminResellerPricingPage() {
+    api().haptic?.('light');
+    document.querySelectorAll('.tab-view').forEach(el => {
+      el.classList.remove('active');
+      el.style.display = 'none';
+    });
+    const setView = document.getElementById('view-settings');
+    if (setView) {
+      setView.classList.add('active');
+      setView.style.display = 'block';
+    }
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }
+
+  function openAdminConfigPage() {
+    api().haptic?.('pop');
+    document.querySelectorAll('.tab-view').forEach(el => {
+      el.classList.remove('active');
+      el.style.display = 'none';
+    });
+    const view = document.getElementById('view-admin-config');
+    if (view) {
+      view.classList.add('active');
+      view.style.display = 'block';
+    }
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    api().pushNav?.('admin_config', closeAdminConfigPage);
+  }
+
+  function closeAdminConfigPage() {
+    api().haptic?.('light');
+    document.querySelectorAll('.tab-view').forEach(el => {
+      el.classList.remove('active');
+      el.style.display = 'none';
+    });
+    const setView = document.getElementById('view-settings');
+    if (setView) {
+      setView.classList.add('active');
+      setView.style.display = 'block';
+    }
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }
+
+  // --- Admin Modals ---
+  function openAdminBannerModal() {
+    api().haptic?.('pop');
+    const m = document.getElementById('admin-banner-modal');
+    if (m) m.style.display = 'flex';
+    api().pushNav?.('admin_banner', closeAdminBannerModal);
+  }
+
+  function closeAdminBannerModal() {
+    api().haptic?.('light');
+    const m = document.getElementById('admin-banner-modal');
+    if (m) m.style.display = 'none';
+  }
+
+  function openAdminBalanceModal(tgId) {
+    api().haptic?.('pop');
+    const m = document.getElementById('admin-balance-modal');
+    if (m) m.style.display = 'flex';
+    const inp = document.getElementById('admin-bal-user-id');
+    if (inp && tgId) inp.value = tgId;
+    api().pushNav?.('admin_balance', closeAdminBalanceModal);
+  }
+
+  function closeAdminBalanceModal() {
+    api().haptic?.('light');
+    const m = document.getElementById('admin-balance-modal');
+    if (m) m.style.display = 'none';
+  }
+
+  function openAdminDiscountModal(tgId) {
+    api().haptic?.('pop');
+    const m = document.getElementById('admin-discount-modal');
+    if (m) m.style.display = 'flex';
+    const inp = document.getElementById('admin-disc-user-id');
+    if (inp && tgId) inp.value = tgId;
+    api().pushNav?.('admin_discount', closeAdminDiscountModal);
+  }
+
+  function closeAdminDiscountModal() {
+    api().haptic?.('light');
+    const m = document.getElementById('admin-discount-modal');
+    if (m) m.style.display = 'none';
+  }
+
+  function openAdminGiftModal() {
+    api().haptic?.('pop');
+    const m = document.getElementById('admin-gift-modal');
+    if (m) m.style.display = 'flex';
+    api().pushNav?.('admin_gift', closeAdminGiftModal);
+  }
+
+  function closeAdminGiftModal() {
+    api().haptic?.('light');
+    const m = document.getElementById('admin-gift-modal');
+    if (m) m.style.display = 'none';
+  }
+
+  function openAdminMessageModal(tgId) {
+    api().haptic?.('pop');
+    const m = document.getElementById('admin-message-user-modal');
+    if (m) m.style.display = 'flex';
+    const inp = document.getElementById('admin-msg-user-id');
+    if (inp && tgId) inp.value = tgId;
+    api().pushNav?.('admin_msg', closeAdminMessageModal);
+  }
+
+  function closeAdminMessageModal() {
+    api().haptic?.('light');
+    const m = document.getElementById('admin-message-user-modal');
+    if (m) m.style.display = 'none';
+  }
+
+  function openAdminOrdersModal() {
+    api().haptic?.('pop');
+    const m = document.getElementById('admin-orders-modal');
+    if (m) m.style.display = 'flex';
+    api().pushNav?.('admin_orders', closeAdminOrdersModal);
+  }
+
+  function closeAdminOrdersModal() {
+    api().haptic?.('light');
+    const m = document.getElementById('admin-orders-modal');
+    if (m) m.style.display = 'none';
+  }
+
+  function openAdminCouponsModal() {
+    api().haptic?.('pop');
+    const m = document.getElementById('admin-coupons-modal');
+    if (m) m.style.display = 'flex';
+    api().pushNav?.('admin_coupons', closeAdminCouponsModal);
+  }
+
+  function closeAdminCouponsModal() {
+    api().haptic?.('light');
+    const m = document.getElementById('admin-coupons-modal');
+    if (m) m.style.display = 'none';
+  }
+
+  function openFullSqlAdmin() {
+    const tg = root.Telegram?.WebApp;
+    if (tg?.openLink) tg.openLink(window.location.origin + '/admin');
+    else window.open('/admin', '_blank');
   }
 
   // --- Export Namespace ---
@@ -283,7 +566,34 @@
     submitAdminRevokeSessions,
     submitAdminUnrevokeSessions,
     submitAdminUpdateSypRate,
-    submitAdminUpdateStoreLogo
+    submitAdminUpdateStoreLogo,
+    openAdminStoreSettingsPage,
+    closeAdminStoreSettingsPage,
+    openAdminSuppliersPage,
+    closeAdminSuppliersPage,
+    openAdminUsersPage,
+    closeAdminUsersPage,
+    openAdminStuckOrdersPage,
+    closeAdminStuckOrdersPage,
+    openAdminResellerPricingPage,
+    closeAdminResellerPricingPage,
+    openAdminConfigPage,
+    closeAdminConfigPage,
+    openAdminBannerModal,
+    closeAdminBannerModal,
+    openAdminBalanceModal,
+    closeAdminBalanceModal,
+    openAdminDiscountModal,
+    closeAdminDiscountModal,
+    openAdminGiftModal,
+    closeAdminGiftModal,
+    openAdminMessageModal,
+    closeAdminMessageModal,
+    openAdminOrdersModal,
+    closeAdminOrdersModal,
+    openAdminCouponsModal,
+    closeAdminCouponsModal,
+    openFullSqlAdmin
   };
 
 })(typeof window !== 'undefined' ? window : globalThis);

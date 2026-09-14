@@ -78,7 +78,53 @@ async def _durable_checkout(request: Request, *, cart: bool = False):
         return JSONResponse({"error": "invalid_parameters"}, status_code=400)
     try:
         tg_id = extract_and_verify_telegram_user(request, claimed_id)
-        key = request.headers.get("Idempotency-Key", "")
+
+        # Idempotency key extraction: Check Idempotency-Key, X-Idempotency-Key, or body
+        raw_key = (
+            request.headers.get("Idempotency-Key")
+            or request.headers.get("X-Idempotency-Key")
+            or body.get("idempotency_key")
+            or ""
+        )
+        key = str(raw_key).strip()
+        import re
+        if not re.fullmatch(r"[A-Za-z0-9_-]{16,128}", key):
+            key = f"tma_{uuid.uuid4().hex}"
+
+        # Unpack custom_fields onto body so checkout service extracts them properly
+        if isinstance(body.get("custom_fields"), dict):
+            for k, v in body["custom_fields"].items():
+                if k not in body:
+                    body[k] = v
+        for alias_from, alias_to in [
+            ("userid", "player_id"),
+            ("uid", "player_id"),
+            ("zone_id", "server_id"),
+            ("serverid", "server_id"),
+            ("character_name", "charname"),
+            ("nickname", "charname"),
+        ]:
+            if alias_from in body and alias_to not in body:
+                body[alias_to] = body[alias_from]
+
+        if cart and isinstance(body.get("items"), list):
+            for it in body["items"]:
+                if isinstance(it, dict):
+                    if isinstance(it.get("custom_fields"), dict):
+                        for k, v in it["custom_fields"].items():
+                            if k not in it:
+                                it[k] = v
+                    for alias_from, alias_to in [
+                        ("userid", "player_id"),
+                        ("uid", "player_id"),
+                        ("zone_id", "server_id"),
+                        ("serverid", "server_id"),
+                        ("character_name", "charname"),
+                        ("nickname", "charname"),
+                    ]:
+                        if alias_from in it and alias_to not in it:
+                            it[alias_to] = it[alias_from]
+
         async with get_db_session() as session:
             try:
                 order, created = await CheckoutService.reserve(tg_id, body, key, session, cart=cart)
@@ -89,7 +135,21 @@ async def _durable_checkout(request: Request, *, cart: bool = False):
                 order = await FulfillmentService.fulfill_order(order.id, session)
                 await session.commit()
             result = CheckoutService.response(order)
+            result["status"] = "ok"
+            result["success"] = True
+            result["id"] = order.id
+            result["order_id"] = order.id
             result["sym"] = config.CURRENCY.get_localized_symbol()
+            result["order"] = {
+                "id": order.id,
+                "status": order.status,
+                "total_sell": float(order.total_sell or 0.0),
+                "product_name": result.get("product_name", ""),
+                "goods": result.get("goods", []),
+                "delivery_goods": result.get("goods", []),
+                "instructions_ar": result.get("instructions_ar", []),
+                "instructions_en": result.get("instructions_en", []),
+            }
             if created and order.status == "completed":
                 asyncio.create_task(_send_order_delivery_receipt_telegram(
                     telegram_id=tg_id, order_id=order.id,

@@ -163,35 +163,66 @@
 
   // --- Dynamic Game & Custom Fields ---
   function renderProductGameFields(product) {
-    const container = document.getElementById('product-game-fields-container');
+    const container = document.getElementById('detail-game-fields-container') || document.getElementById('product-game-fields-container');
     if (!container) return;
-    const meta = product?.extra_meta || {};
-    const fields = meta.custom_fields || [];
 
-    if (!fields || fields.length === 0) {
-      container.innerHTML = '';
+    const meta = product?.extra_meta || {};
+    const requiredFields = meta.required_fields || [];
+    const customFields = meta.custom_fields || [];
+    const isDirectTopup = product?.delivery_type === 'direct_topup' || product?.delivery_type === 'game_recharge' || (requiredFields.length > 0);
+
+    if (!isDirectTopup && (!customFields || customFields.length === 0)) {
       container.style.display = 'none';
       return;
     }
 
     container.style.display = 'block';
-    let html = '<div class="game-fields-card"><div class="game-fields-header">بيانات الحساب المطلوبة للشحن</div>';
-    fields.forEach(f => {
-      const fieldKey = api().escapeAttr(f.key || f.id || 'field');
-      const label = api().escapeAttr(f.name || f.label || 'المعرف');
-      const placeholder = api().escapeAttr(f.placeholder || `أدخل ${label}`);
 
-      html += `<div class="game-input-row">
-        <label class="game-input-label">${label}</label>
-        <input type="text" class="game-input-control" id="custom-field-${fieldKey}" placeholder="${placeholder}">
-      </div>`;
-    });
-    html += '</div>';
-    container.innerHTML = html;
+    // Configure standard game fields if present in DOM
+    const groupPlayer = document.getElementById('group-player-id');
+    const groupServer = document.getElementById('group-server-id');
+    const groupChar = document.getElementById('group-charname');
+
+    if (groupPlayer) groupPlayer.style.display = 'block';
+
+    const needsServer = requiredFields.includes('serverid') || requiredFields.includes('zoneid') || requiredFields.includes('server_id');
+    if (groupServer) groupServer.style.display = needsServer ? 'block' : 'none';
+
+    const needsChar = requiredFields.includes('charname') || requiredFields.includes('character_name');
+    if (groupChar) groupChar.style.display = needsChar ? 'block' : 'none';
+
+    // Clear previous input values
+    const pInp = document.getElementById('game-player-id-input');
+    if (pInp) pInp.value = '';
+    const sInp = document.getElementById('game-server-id-input');
+    if (sInp) sInp.value = '';
+    const cInp = document.getElementById('game-charname-input');
+    if (cInp) cInp.value = '';
   }
 
   function getEnteredCustomFields() {
     const custom = {};
+
+    // 1. Direct game inputs
+    const pInp = document.getElementById('game-player-id-input');
+    if (pInp && pInp.value && pInp.value.trim()) {
+      custom.player_id = pInp.value.trim();
+    }
+
+    const sInp = document.getElementById('game-server-id-input');
+    const sSel = document.getElementById('game-server-id-select');
+    if (sInp && sInp.style.display !== 'none' && sInp.value && sInp.value.trim()) {
+      custom.server_id = sInp.value.trim();
+    } else if (sSel && sSel.style.display !== 'none' && sSel.value && sSel.value.trim()) {
+      custom.server_id = sSel.value.trim();
+    }
+
+    const cInp = document.getElementById('game-charname-input');
+    if (cInp && cInp.value && cInp.value.trim()) {
+      custom.charname = cInp.value.trim();
+    }
+
+    // 2. Generic custom fields if present
     const inputs = document.querySelectorAll('[id^="custom-field-"]');
     inputs.forEach(inp => {
       const key = inp.id.replace('custom-field-', '');
@@ -201,6 +232,24 @@
     });
     return custom;
   }
+
+  // Global helper to prevent errors if called by HTML event attributes
+  root.onPlayerInputChanged = function () {};
+  root.triggerPlayerVerification = function () {
+    const pInp = document.getElementById('game-player-id-input');
+    const statusEl = document.getElementById('player-verify-status');
+    if (!pInp || !pInp.value.trim()) {
+      api().showToast?.('يرجى إدخال معرف اللاعب أولاً');
+      return;
+    }
+    if (statusEl) {
+      statusEl.style.display = 'block';
+      statusEl.style.background = 'rgba(16, 185, 129, 0.15)';
+      statusEl.style.color = '#10b981';
+      statusEl.textContent = 'معرف اللاعب جاهز للإرسال والشحن ✅';
+    }
+    api().haptic?.('success');
+  };
 
   // --- Coupon Code Application ---
   async function applyCoupon(code) {
@@ -298,6 +347,29 @@
     return false;
   }
 
+  function formatCheckoutError(err) {
+    const isAr = (state().currentAppLanguage === 'ar');
+    const dict = {
+      'idempotency_key_required': isAr ? 'مفتاح العملية مفقود، يرجى المحاولة مجدداً.' : 'Missing transaction key. Please retry.',
+      'idempotency_key_conflict': isAr ? 'تم إرسال طلب مكرر بتفاصيل مختلفة، يرجى المحاولة لاحقاً.' : 'Duplicate order conflict. Please retry.',
+      'user_not_found': isAr ? 'الحساب غير مسجل بالمتجر، يرجى إعادة تشغيل البوت.' : 'User account not found.',
+      'account_banned': isAr ? 'تم إيقاف حسابك مؤقتاً، يرجى التواصل مع الدعم.' : 'Account is banned.',
+      'product_unavailable': isAr ? 'المنتج غير متوفر للشراء حالياً.' : 'Product is currently unavailable.',
+      'out_of_stock': isAr ? 'عذراً، نفد مخزون هذا المنتج حالياً.' : 'Item is out of stock.',
+      'insufficient_balance': isAr ? 'رصيدك غير كافٍ لإتمام هذا الطلب. يرجى شحن المحفظة.' : 'Insufficient balance. Please top up your wallet.',
+      'invalid_coupon': isAr ? 'كود الخصم غير صالح أو منتهي الصلاحية.' : 'Invalid coupon code.',
+      'coupon_limit_reached': isAr ? 'تم استنفاد الحد الأقصى لاستخدام كود الخصم.' : 'Coupon usage limit reached.',
+      'direct_topup_quantity_one': isAr ? 'شحن الألعاب متاح بكمية 1 فقط لكل طلب.' : 'Game top-ups must be quantity 1.',
+      'missing_player_id': isAr ? 'يرجى إدخال معرف اللاعب (Player ID / UID).' : 'Please enter your Player ID / UID.',
+      'missing_server_id': isAr ? 'يرجى اختيار أو إدخال معرف السيرفر (Server ID).' : 'Please specify Server / Zone ID.',
+      'missing_charname': isAr ? 'يرجى إدخال اسم الشخصية داخل اللعبة.' : 'Please enter Character name.',
+      'invalid_quantity': isAr ? 'الكمية المطلوبة غير صحيحة.' : 'Invalid quantity.',
+      'invalid_parameters': isAr ? 'بيانات الطلب غير صالحة.' : 'Invalid order parameters.',
+      'price_unavailable': isAr ? 'تعذر احتساب السعر حالياً.' : 'Price unavailable.'
+    };
+    return dict[err] || err || (isAr ? 'فشلت عملية الشراء. تأكد من توفر الرصيد الكافي.' : 'Purchase failed. Check your balance.');
+  }
+
   // --- Purchase Execution (Instant & Cart) ---
   async function buyNow(product, quantity = 1, extraFields = null) {
     if (!product || !product.id) return;
@@ -314,11 +386,13 @@
       tg_id: tgId,
       product_id: Number(product.id),
       quantity: qty,
-      custom_fields: customFields,
-      coupon_code: state().appliedCoupon?.code || undefined
+      coupon_code: state().appliedCoupon?.code || undefined,
+      ...customFields,
+      custom_fields: customFields
     };
 
     const idempotencyKey = security().checkoutKey ? security().checkoutKey('buy', payload) : `buy-${Date.now()}`;
+    payload.idempotency_key = idempotencyKey;
 
     // Persist to recovery engine BEFORE firing request
     savePendingCheckout({
@@ -329,34 +403,55 @@
     });
 
     api().haptic?.('heavy');
-    const buyBtn = document.getElementById('btn-buy-now');
-    if (buyBtn) buyBtn.disabled = true;
+    const buyBtn = document.getElementById('btn-inapp-purchase') || document.getElementById('btn-buy-now');
+    const originalBtnHtml = buyBtn ? buyBtn.innerHTML : '';
+    if (buyBtn) {
+      buyBtn.disabled = true;
+      buyBtn.style.opacity = '0.7';
+      buyBtn.innerHTML = '<span>جاري الشراء... ⏳</span>';
+    }
 
     try {
       const res = await fetch('/api/buy', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
           'X-Idempotency-Key': idempotencyKey
         },
         body: JSON.stringify(payload)
       });
 
       const data = await res.json();
-      if (res.ok && data.status === 'ok') {
+      const isSuccess = res.ok && (data.status === 'ok' || data.status === 'success' || data.success === true || Boolean(data.order_id || data.id));
+
+      if (isSuccess) {
         api().haptic?.('success');
         api().fireConfetti?.();
         security().finishCheckout?.('buy', payload, idempotencyKey);
         clearPendingCheckout();
-        showOrderSuccessView(data.order || data);
+        const orderData = data.order || data;
+        showOrderSuccessView(orderData);
+        if (root.loadUserData) root.loadUserData();
       } else {
         api().haptic?.('error');
-        api().showToast(data.error || 'فشلت عملية الشراء. تأكد من توفر الرصيد الكافي.');
+        const msg = formatCheckoutError(data.error);
+        api().showToast(msg, 3500);
+        if (data.error === 'insufficient_balance') {
+          const fundAlert = document.getElementById('insufficient-funds-alert');
+          if (fundAlert) {
+            fundAlert.style.display = 'block';
+          }
+        }
       }
     } catch (e) {
       api().showToast('انقطع الاتصال بالخادم. سيتم التحقق من طلبك تلقائياً.');
     } finally {
-      if (buyBtn) buyBtn.disabled = false;
+      if (buyBtn) {
+        buyBtn.disabled = false;
+        buyBtn.style.opacity = '1';
+        buyBtn.innerHTML = originalBtnHtml;
+      }
     }
   }
 
@@ -373,7 +468,8 @@
     const lineItems = items.map(it => ({
       product_id: Number(it.product.id),
       quantity: Number(it.quantity) || 1,
-      options: it.options || {}
+      options: it.options || {},
+      ...(it.options || {})
     }));
 
     const payload = {
@@ -383,6 +479,7 @@
     };
 
     const idempotencyKey = security().checkoutKey ? security().checkoutKey('cart', payload) : `cart-${Date.now()}`;
+    payload.idempotency_key = idempotencyKey;
 
     savePendingCheckout({
       scope: 'cart',
@@ -392,54 +489,195 @@
     });
 
     api().haptic?.('heavy');
-    const checkoutBtn = document.getElementById('btn-cart-checkout-submit');
-    if (checkoutBtn) checkoutBtn.disabled = true;
+    const checkoutBtn = document.getElementById('btn-cart-checkout-submit') || document.getElementById('btn-cart-checkout');
+    const originalBtnHtml = checkoutBtn ? checkoutBtn.innerHTML : '';
+    if (checkoutBtn) {
+      checkoutBtn.disabled = true;
+      checkoutBtn.style.opacity = '0.7';
+      checkoutBtn.innerHTML = '<span>جاري إتمام الطلب... ⏳</span>';
+    }
 
     try {
       const res = await fetch('/api/cart/checkout', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
           'X-Idempotency-Key': idempotencyKey
         },
         body: JSON.stringify(payload)
       });
 
       const data = await res.json();
-      if (res.ok && data.status === 'ok') {
+      const isSuccess = res.ok && (data.status === 'ok' || data.status === 'success' || data.success === true || Boolean(data.order_id || data.id));
+
+      if (isSuccess) {
         api().haptic?.('success');
         api().fireConfetti?.();
         security().finishCheckout?.('cart', payload, idempotencyKey);
         clearPendingCheckout();
         clearEntireCart();
         closeCartDrawer();
-        showOrderSuccessView(data.order || data);
+        const orderData = data.order || data;
+        showOrderSuccessView(orderData);
+        if (root.loadUserData) root.loadUserData();
       } else {
         api().haptic?.('error');
-        api().showToast(data.error || 'فشل إتمام سلة المشتريات. تأكد من توفر الرصيد.');
+        const msg = formatCheckoutError(data.error);
+        api().showToast(msg, 3500);
       }
     } catch (e) {
       api().showToast('حدث خطأ بالشبكة. سيتم استعادة السلة تلقائياً.');
     } finally {
-      if (checkoutBtn) checkoutBtn.disabled = false;
+      if (checkoutBtn) {
+        checkoutBtn.disabled = false;
+        checkoutBtn.style.opacity = '1';
+        checkoutBtn.innerHTML = originalBtnHtml;
+      }
     }
+  }
+
+  function normalizeInstructionSteps(raw) {
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw.map(s => String(s || '').trim()).filter(Boolean);
+    return String(raw).split(/\r?\n/).map(s => String(s || '').trim()).filter(Boolean);
+  }
+
+  function renderSuccessInstructions(order) {
+    const card = document.getElementById('success-instructions-card');
+    const stepsBox = document.getElementById('success-instructions-steps');
+    if (!card || !stepsBox) return;
+
+    const isAr = ((state().currentAppLanguage || window.currentAppLanguage || root.localStorage?.getItem('ghstore_lang') || 'ar') === 'ar');
+    const raw = isAr
+      ? (order.instructions_ar || order.instructions_en || order.activation_steps)
+      : (order.instructions_en || order.instructions_ar || order.activation_steps);
+
+    const steps = normalizeInstructionSteps(raw);
+    if (!steps || !steps.length) {
+      card.style.display = 'none';
+      stepsBox.innerHTML = '';
+      return;
+    }
+
+    const labelEl = document.getElementById('label-success-instructions');
+    if (labelEl) {
+      labelEl.innerText = isAr ? 'خطوات التفعيل والاستخدام' : 'Activation Steps';
+    }
+    const htmlFn = root.instructionStepsHTML || api().instructionStepsHTML;
+    stepsBox.innerHTML = htmlFn ? htmlFn(steps) : steps.map((s, i) => `<div class="instr-step"><span class="instr-step-num">${i + 1}</span><span class="instr-step-text">${api().escapeAttr(s)}</span></div>`).join('');
+    card.style.display = 'block';
   }
 
   // --- Post-Purchase Order Delivery View ---
   function showOrderSuccessView(order) {
+    const orderId = order.id || order.order_id || '';
+    const goods = order.delivery_goods || order.goods || [];
+    const isAr = ((state().currentAppLanguage || window.currentAppLanguage || root.localStorage?.getItem('ghstore_lang') || 'ar') === 'ar');
+
+    // 1. In-App Dedicated View (#view-order-success)
+    const viewSuccess = document.getElementById('view-order-success');
+    if (viewSuccess) {
+      const titleEl = document.getElementById('success-view-title');
+      if (titleEl) {
+        titleEl.textContent = isAr ? 'تم الطلب بنجاح!' : 'Order Placed Successfully!';
+      }
+
+      const metaSub = document.getElementById('success-meta-sub');
+      if (metaSub) {
+        const prodName = order.product_name ? ` · ${order.product_name}` : '';
+        metaSub.textContent = isAr
+          ? `طلب #${orderId}${prodName} · ${goods.length > 0 ? 'تم التسليم بنجاح ✅' : 'قيد المعالجة ⏳'}`
+          : `Order #${orderId}${prodName} · ${goods.length > 0 ? 'Delivered Successfully ✅' : 'Processing ⏳'}`;
+      }
+
+      const keysContainer = document.getElementById('success-delivered-keys');
+      const keysCard = document.getElementById('success-keys-card') || keysContainer?.closest('.inset-card');
+      const keysTitle = document.getElementById('success-keys-title');
+      const copyHint = document.getElementById('success-copy-hint');
+
+      if (keysContainer) {
+        if (goods.length > 0) {
+          const renderFn = root.renderStructuredCredentials || api().renderStructuredCredentials;
+          keysContainer.innerHTML = renderFn ? renderFn(goods) : '';
+
+          const hasUrls = goods.some(g => {
+            const str = String(typeof g === 'object' ? (g.value || g.data || '') : g).trim();
+            return str.startsWith('http://') || str.startsWith('https://');
+          });
+
+          if (hasUrls) {
+            if (keysTitle) keysTitle.style.display = 'none';
+            if (copyHint) copyHint.style.display = 'none';
+            if (keysCard) {
+              keysCard.style.background = 'transparent';
+              keysCard.style.border = 'none';
+              keysCard.style.padding = '0';
+              keysCard.style.boxShadow = 'none';
+            }
+          } else {
+            if (keysTitle) {
+              keysTitle.style.display = 'block';
+              keysTitle.textContent = isAr ? 'بيانات الحساب / المفاتيح المسلمة' : 'Delivered Credentials / Keys';
+            }
+            if (copyHint) {
+              copyHint.style.display = 'block';
+              copyHint.textContent = isAr ? 'انقر على أي كود بالأعلى للنسخ!' : 'Tap any code above to copy!';
+            }
+            if (keysCard) {
+              keysCard.style.background = '';
+              keysCard.style.border = '';
+              keysCard.style.padding = '';
+              keysCard.style.boxShadow = '';
+            }
+          }
+        } else {
+          keysContainer.innerHTML = `<div style="background:rgba(56,189,248,0.1); border:1px solid rgba(56,189,248,0.3); border-radius:10px; padding:12px; font-size:13px; text-align:center; color:var(--accent);">${isAr ? 'طلبك قيد المعالجة، سيتم تسليم البيانات فوراً خلال دقائق.' : 'Your order is being processed, credentials will arrive shortly.'}</div>`;
+        }
+      }
+
+      // Render activation steps if present
+      renderSuccessInstructions(order);
+
+      const btnViewOrders = document.getElementById('btn-success-view-orders');
+      if (btnViewOrders) btnViewOrders.textContent = isAr ? 'عرض في طلباتي' : 'View in Orders';
+      const btnContinue = document.getElementById('btn-success-continue');
+      if (btnContinue) btnContinue.textContent = isAr ? 'متابعة التسوق' : 'Continue Shopping';
+
+      document.querySelectorAll('.tab-view').forEach(el => {
+        el.classList.remove('active');
+        el.style.display = 'none';
+      });
+      const storeEl = document.getElementById('view-store');
+      if (storeEl) {
+        storeEl.classList.remove('active');
+        storeEl.style.display = 'none';
+      }
+
+      viewSuccess.classList.add('active');
+      viewSuccess.style.display = 'block';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+
+      api().pushNav?.('order_success', () => {
+        if (root.switchTab) root.switchTab('store');
+      });
+      return;
+    }
+
+    // 2. Modal Fallback (#modal-order-success)
     const modal = document.getElementById('modal-order-success');
     if (!modal) return;
 
     const idEl = document.getElementById('success-order-id');
-    if (idEl) idEl.textContent = `#${order.id || ''}`;
+    if (idEl) idEl.textContent = `#${orderId}`;
 
     const goodsContainer = document.getElementById('success-delivered-goods');
     if (goodsContainer) {
-      const goods = order.delivery_goods || [];
       if (goods.length > 0) {
-        goodsContainer.innerHTML = api().renderStructuredCredentials(goods);
+        const renderFn = root.renderStructuredCredentials || api().renderStructuredCredentials;
+        goodsContainer.innerHTML = renderFn ? renderFn(goods) : '';
       } else {
-        goodsContainer.innerHTML = '<div class="alert-box-info">الطلب قيد المعالجة وسيتم تسليم البيانات فوراً خلال دقائق</div>';
+        goodsContainer.innerHTML = `<div class="alert-box-info">${isAr ? 'الطلب قيد المعالجة وسيتم تسليم البيانات فوراً خلال دقائق' : 'Order is processing, credentials will be delivered shortly'}</div>`;
       }
     }
 
@@ -452,7 +690,7 @@
     }
 
     modal.style.display = 'flex';
-    api().pushNav('order_success_modal', () => { modal.style.display = 'none'; });
+    api().pushNav?.('order_success_modal', () => { modal.style.display = 'none'; });
   }
 
   // --- Export Namespace ---

@@ -250,6 +250,67 @@
       return renderedRows + copyAllBtn;
     }
 
+    function openExternalPaymentUrl(url) {
+      const cleanUrl = StorefrontSecurity?.safeUrl ? StorefrontSecurity.safeUrl(url) : url;
+      if (!cleanUrl) return;
+      api().haptic?.('light');
+      const tg = api().getTg?.() || window.Telegram?.WebApp;
+      if (tg?.openLink) {
+        try {
+          tg.openLink(cleanUrl);
+          return;
+        } catch (_) {}
+      }
+      window.open(cleanUrl, '_blank', 'noopener,noreferrer');
+    }
+
+    function copyCredText(text, btn) {
+      api().haptic?.('success');
+      const targetBtn = btn || (window.event?.currentTarget);
+      const originalText = targetBtn ? targetBtn.innerText : null;
+      const isAr = ((state().currentAppLanguage || window.currentAppLanguage || root.localStorage?.getItem('ghstore_lang') || 'ar') === 'ar');
+
+      if (targetBtn) {
+        targetBtn.innerText = isAr ? '✅ تم النسخ!' : '✅ Copied!';
+        targetBtn.classList.add('copied');
+        setTimeout(() => {
+          if (targetBtn && originalText) {
+            targetBtn.innerText = originalText;
+            targetBtn.classList.remove('copied');
+          }
+        }, 1800);
+      }
+      if (navigator?.clipboard?.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+          api().showToast?.(isAr ? 'تم النسخ بنجاح! 📋' : 'Copied successfully! 📋');
+        }).catch(() => fallbackCopy(text));
+      } else {
+        fallbackCopy(text);
+      }
+    }
+
+    function fallbackCopy(text) {
+      try {
+        const isAr = ((state().currentAppLanguage || window.currentAppLanguage || root.localStorage?.getItem('ghstore_lang') || 'ar') === 'ar');
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        api().showToast?.(isAr ? 'تم النسخ بنجاح! 📋' : 'Copied successfully! 📋');
+      } catch (_) {}
+    }
+
+    function copyFromBtn(btn) {
+      if (!btn) return;
+      const text = btn.getAttribute('data-copy') || '';
+      copyCredText(text, btn);
+    }
+    const copyCredFromBtn = copyFromBtn;
+
     function assetUrl(u) {
       if (!u) return '';
       let clean = StorefrontSecurity.safeUrl(u, true);
@@ -285,12 +346,26 @@
     state().activeTab = tab;
     api().haptic?.('selection');
 
+    document.querySelectorAll('.tab-view').forEach(el => {
+      el.classList.remove('active');
+      el.style.display = 'none';
+    });
+
     ['store', 'orders', 'wallet', 'settings'].forEach(t => {
       const tabBtn = document.getElementById(`tab-${t}`);
       const viewEl = document.getElementById(`view-${t}`);
       if (tabBtn) tabBtn.classList.toggle('active', t === tab);
-      if (viewEl) viewEl.style.display = (t === tab) ? 'block' : 'none';
+      if (viewEl) {
+        if (t === tab) {
+          viewEl.classList.add('active');
+          viewEl.style.display = 'block';
+        } else {
+          viewEl.classList.remove('active');
+          viewEl.style.display = 'none';
+        }
+      }
     });
+    window.scrollTo({ top: 0, behavior: 'instant' });
 
     if (tab === 'orders') loadUserOrders();
     else if (tab === 'wallet') wallet().renderWalletBalances();
@@ -318,8 +393,10 @@
         const data = await res.json();
         state().categoriesList = data.categories || [];
         state().allProducts = data.products || [];
-        storefront().renderCategories(state().categoriesList);
-        storefront().renderStorefrontFolderCards(state().allProducts);
+        if (data.store_logo_url) applyStoreLogo(data.store_logo_url);
+        if (data.flash_sale) storefront().initFlashSaleTimer?.(data.flash_sale);
+        storefront().renderCatalogsGrid?.(state().categoriesList);
+        storefront().renderStorefrontFolderCards?.(state().allProducts);
       }
     } catch (e) {
       console.warn('Failed to fetch catalog:', e);
@@ -434,17 +511,310 @@
     }).join('');
   }
 
+  // --- User Data, Profile, Referrals, & Admin Overview ---
+  function renderUserProfile(d) {
+    if (!d) return;
+    const isAr = (state().currentAppLanguage === 'ar');
+    const tgObj = root.Telegram?.WebApp;
+    const tgUser = tgObj?.initDataUnsafe?.user;
+
+    // Profile Picture & Initial
+    const topAvatarBox = document.getElementById('top-avatar-box');
+    const setAvatarBox = document.getElementById('settings-avatar-box');
+    const firstLetter = (tgUser?.first_name || d.first_name || d.username || 'U')[0].toUpperCase();
+
+    const photoUrl = tgUser?.photo_url || d.photo_url;
+    const safePhoto = (photoUrl && root.StorefrontSecurity) ? root.StorefrontSecurity.safeUrl(photoUrl, true) : (photoUrl || '');
+
+    if (safePhoto) {
+      if (topAvatarBox) {
+        topAvatarBox.innerHTML = `
+          <img src="${safePhoto}" class="avatar-img" alt="Avatar" onload="this.style.display='block'; if (this.nextElementSibling) this.nextElementSibling.style.display='none';" onerror="this.style.display='none'; if (this.nextElementSibling) this.nextElementSibling.style.display='flex';">
+          <div class="avatar-fallback" id="top-avatar-initial" style="display: none;">${firstLetter}</div>
+        `;
+      }
+      if (setAvatarBox) {
+        setAvatarBox.innerHTML = `
+          <img src="${safePhoto}" class="avatar-img" style="width: 48px; height: 48px;" alt="Avatar" onload="this.style.display='block'; if (this.nextElementSibling) this.nextElementSibling.style.display='none';" onerror="this.style.display='none'; if (this.nextElementSibling) this.nextElementSibling.style.display='flex';">
+          <div class="avatar-fallback" id="settings-avatar-initial" style="width: 48px; height: 48px; font-size: 20px; display: none;">${firstLetter}</div>
+        `;
+      }
+    } else {
+      if (topAvatarBox) {
+        topAvatarBox.innerHTML = `<div class="avatar-fallback" id="top-avatar-initial">${firstLetter}</div>`;
+      }
+      if (setAvatarBox) {
+        setAvatarBox.innerHTML = `<div class="avatar-fallback" id="settings-avatar-initial" style="width: 48px; height: 48px; font-size: 20px;">${firstLetter}</div>`;
+      }
+    }
+
+    // Name & Handle
+    const defaultRoleTitle = d.is_admin ? (isAr ? 'المسؤول' : 'Admin') : (isAr ? 'العميل' : 'Customer');
+    const tgFullName = tgUser?.first_name ? `${tgUser.first_name} ${tgUser.last_name || ''}`.trim() : '';
+    const effectiveName = tgFullName || (d.first_name ? `${d.first_name} ${d.last_name || ''}`.trim() : '');
+    const displayName = effectiveName || (d.username ? '@' + d.username.replace(/^@/, '') : (d.telegram_id ? `ID: ${d.telegram_id}` : defaultRoleTitle));
+
+    const nameEl = document.getElementById('user-name-title');
+    if (nameEl) nameEl.innerText = displayName;
+
+    const handleBox = document.getElementById('user-handle-title');
+    const effectiveHandle = tgUser?.username || d.username;
+    if (handleBox) {
+      if (effectiveHandle) {
+        handleBox.innerText = `@${effectiveHandle.replace(/^@/, '')}`;
+        handleBox.style.display = 'block';
+      } else {
+        handleBox.style.display = 'none';
+      }
+    }
+
+    const idNumEl = document.getElementById('user-tg-num');
+    if (idNumEl) idNumEl.innerText = 'ID: ' + (d.telegram_id || state().userId || '---');
+
+    // VIP Pill in Profile Header
+    const vipBox = document.getElementById('user-vip-pill-box');
+    const hasVipDiscount = (Number(d.vip_discount) > 0) && d.vip_tier && d.vip_tier !== 'Standard';
+    if (vipBox) {
+      if (!d.is_admin && hasVipDiscount) {
+        vipBox.innerHTML = `<span class="vip-tag">${d.vip_tier} (${isAr ? 'خصم' : 'Discount'} ${Number(d.vip_discount)}%)</span>`;
+        vipBox.style.display = 'block';
+      } else {
+        vipBox.innerHTML = '';
+        vipBox.style.display = 'none';
+      }
+    }
+  }
+
+  function renderUserReferrals(d) {
+    if (!d) return;
+    const isAr = (state().currentAppLanguage === 'ar');
+    const refCard = document.getElementById('user-referral-system-card');
+    if (refCard) refCard.style.display = d.is_admin ? 'none' : 'block';
+
+    const botName = d.bot_username || 'gh_store1_bot';
+    const refCode = d.referral_code || '';
+    const refLink = refCode ? `https://t.me/${botName}?start=${refCode}` : `https://t.me/${botName}`;
+
+    const refEl = document.getElementById('referral-link-display');
+    if (refEl) refEl.innerText = refLink;
+
+    const countEl = document.getElementById('referral-count-val');
+    if (countEl) countEl.innerText = String(d.referrals_count || 0);
+
+    const earnedEl = document.getElementById('referral-earned-val');
+    if (earnedEl) earnedEl.innerText = `$${(d.referrals_total_earned || 0.0).toFixed(2)}`;
+
+    const rateEl = document.getElementById('referral-rate-val');
+    if (rateEl) rateEl.innerText = `${d.referral_commission_rate || d.admin_stats?.referral_commission_percent || 0.2}%`;
+
+    const breakdownList = document.getElementById('referrals-breakdown-list');
+    if (breakdownList) {
+      const items = d.referrals_breakdown || [];
+      if (!items.length) {
+        breakdownList.innerHTML = `
+          <div style="text-align: center; padding: 14px; background: var(--input-bg); border-radius: 10px; color: var(--hint); font-size: 12px;">
+            ${isAr ? 'لم تقم بدعوة أصدقاء بعد. شارك رابطك واكسب عمولة فورية من كل عملية شراء!' : 'No referred friends yet. Share your link and earn instant commission on every order!'}
+          </div>
+        `;
+      } else {
+        breakdownList.innerHTML = items.map(r => `
+          <div style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+            <div>
+              <div style="font-size: 12px; font-weight: 700; color: var(--text);">${r.user_display || 'User'}</div>
+              <div style="font-size: 10px; color: var(--hint); margin-top: 1px;">
+                ${r.registered_at ? r.registered_at + ' · ' : ''}${r.orders_count || 0} ${isAr ? 'طلب' : 'orders'}
+              </div>
+            </div>
+            <div style="text-align: end;">
+              <span style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.35); color: var(--success); font-size: 11px; font-weight: 800; padding: 2px 6px; border-radius: 6px;">
+                +$${Number(r.earned || 0).toFixed(2)}
+              </span>
+            </div>
+          </div>
+        `).join('');
+      }
+    }
+
+    const supportUser = d.support_username || 'ahmedghx';
+    const supportBtnEl = document.getElementById('label-support-chat-btn');
+    if (supportBtnEl) {
+      supportBtnEl.innerText = isAr
+        ? `التواصل مع خدمة العملاء والدعم (@${supportUser})`
+        : `Contact Customer Support (@${supportUser})`;
+    }
+  }
+
+  function renderAdminControlCenter(d) {
+    if (!d) return;
+    const isAr = (state().currentAppLanguage === 'ar');
+    const adminCenterCard = document.getElementById('admin-control-center-card');
+    if (!adminCenterCard) return;
+
+    if (!d.is_admin) {
+      adminCenterCard.style.display = 'none';
+      return;
+    }
+
+    adminCenterCard.style.display = 'block';
+    const stats = d.admin_stats || {};
+
+    const setVal = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) el.innerText = val;
+    };
+
+    setVal('admin-stat-revenue', `$${(stats.total_revenue || 0).toFixed(2)}`);
+    setVal('admin-stat-cost', `$${(stats.total_cost || 0).toFixed(2)}`);
+    setVal('admin-stat-profit', `$${((stats.total_revenue || 0) - (stats.total_cost || 0)).toFixed(2)}`);
+    setVal('admin-stat-balances', `$${(stats.total_user_balances || 0).toFixed(2)}`);
+
+    if (stats.supplier_wallets) {
+      const sw = stats.supplier_wallets;
+      setVal('admin-bal-batstore', `$${(sw.batstore_usd || 0.0).toFixed(2)}`);
+      setVal('admin-bal-prodseller', `$${(sw.prodseller_usd || 0.0).toFixed(2)}`);
+      setVal('admin-bal-g2bulk', `$${(sw.g2bulk_usd || 0.0).toFixed(2)}`);
+      setVal('admin-bal-sam-usd', `$${(sw.sam_usd || 0.0).toFixed(2)} USD`);
+      setVal('admin-bal-sam-syp', `${Math.round(sw.sam_syp || 0.0).toLocaleString()} ${isAr ? 'ل.س' : 'SYP'}`);
+      setVal('admin-bal-total-suppliers-pill', `${isAr ? 'إجمالي:' : 'Total:'} $${(sw.total_supplier_usd || 0.0).toFixed(2)}`);
+
+      setVal('admin-wallet-headline-bal', `$${(sw.total_supplier_usd || 0.0).toFixed(2)}`);
+      setVal('admin-wallet-batstore', `$${(sw.batstore_usd || 0.0).toFixed(2)}`);
+      setVal('admin-wallet-prodseller', `$${(sw.prodseller_usd || 0.0).toFixed(2)}`);
+      setVal('admin-wallet-g2bulk', `$${(sw.g2bulk_usd || 0.0).toFixed(2)}`);
+      setVal('admin-wallet-sam-usd', `$${(sw.sam_usd || 0.0).toFixed(2)}`);
+      setVal('admin-wallet-sam-syp', `${Math.round(sw.sam_syp || 0.0).toLocaleString()} ${isAr ? 'ل.س' : 'SYP'}`);
+      setVal('admin-wallet-users-total', `$${(stats.total_user_balances || 0.0).toFixed(2)}`);
+    }
+
+    const sypInput = document.getElementById('admin-syp-rate-input');
+    if (sypInput && !sypInput.value && stats.syp_usd_rate) sypInput.value = stats.syp_usd_rate;
+
+    const refInput = document.getElementById('admin-ref-rate-input');
+    if (refInput && !refInput.value && stats.referral_commission_percent) refInput.value = stats.referral_commission_percent;
+
+    const logoInput = document.getElementById('admin-store-logo-input');
+    if (logoInput && !logoInput.value && d.store_logo_url) logoInput.value = d.store_logo_url;
+  }
+
+  function renderStoreAnnouncement(d) {
+    const heroBanner = document.getElementById('storefront-hero-banner');
+    if (!heroBanner) return;
+    const annText = (d?.store_announcement || d?.admin_stats?.store_announcement || '').trim();
+    if (annText) {
+      const titleEl = document.getElementById('banner-title-text');
+      const subEl = document.getElementById('banner-sub-text');
+      if (titleEl) titleEl.innerText = annText;
+      if (subEl) subEl.style.display = 'none';
+      heroBanner.style.display = 'block';
+    } else {
+      heroBanner.style.display = 'none';
+    }
+  }
+
+  function applyStoreLogo(url) {
+    const rawUrl = (url || state().currentStoreLogo || '').trim();
+    state().currentStoreLogo = rawUrl;
+    const img = document.getElementById('top-store-logo');
+    const fallback = document.getElementById('top-store-fallback');
+    const input = document.getElementById('admin-store-logo-input');
+    if (input && rawUrl) input.value = rawUrl;
+
+    if (!img) return;
+
+    let cleanUrl = rawUrl;
+    if (cleanUrl.endsWith('/gh-store-logo-mark.png') || cleanUrl === 'gh-store-logo-mark.png') {
+      cleanUrl = '/static/img/gh-store-logo-mark.png';
+    }
+
+    if (cleanUrl) {
+      img.onload = () => {
+        img.style.display = 'block';
+        if (fallback) fallback.style.display = 'none';
+      };
+      img.onerror = () => {
+        img.style.display = 'none';
+        if (fallback) fallback.style.display = 'flex';
+      };
+      img.src = cleanUrl;
+    } else {
+      img.style.display = 'none';
+      if (fallback) fallback.style.display = 'flex';
+    }
+  }
+
+  function copyUserId() {
+    const uid = state().userId || state().userData?.telegram_id;
+    if (uid && navigator.clipboard) {
+      navigator.clipboard.writeText(String(uid));
+      api().haptic?.('light');
+      api().showToast?.(state().currentAppLanguage === 'ar' ? 'تم نسخ ID المستخدم!' : 'User ID copied!');
+    }
+  }
+
+  function copyReferralLink() {
+    const linkEl = document.getElementById('referral-link-display');
+    const txt = linkEl?.innerText?.trim();
+    if (txt && navigator.clipboard) {
+      navigator.clipboard.writeText(txt);
+      api().haptic?.('light');
+      api().showToast?.(state().currentAppLanguage === 'ar' ? 'تم نسخ رابط الدعوة!' : 'Referral link copied!');
+    }
+  }
+
+  function openCustomerSupportChat() {
+    const user = state().userData?.support_username || 'ahmedghx';
+    const tg = root.Telegram?.WebApp;
+    if (tg?.openTelegramLink) tg.openTelegramLink(`https://t.me/${user}`);
+    else window.open(`https://t.me/${user}`, '_blank');
+  }
+
+  function openOfficialChannel() {
+    const tg = root.Telegram?.WebApp;
+    if (tg?.openTelegramLink) tg.openTelegramLink('https://t.me/ghstorex');
+    else window.open('https://t.me/ghstorex', '_blank');
+  }
+
   async function loadUserData() {
     try {
-      const res = await fetch('/api/user/me');
+      if (api().ensureAuthSession) {
+        await api().ensureAuthSession();
+      }
+      const tgId = state().userId;
+      const url = tgId ? `/api/user/me?tg_id=${tgId}` : '/api/user/me';
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
+        if (data.error) {
+          console.warn('User data response error:', data.error);
+          return;
+        }
         state().userData = data;
-        state().userId = data.telegram_id || data.tg_id;
+        state().userId = data.telegram_id || data.tg_id || state().userId;
         if (data.orders) state().userOrders = data.orders;
         if (data.recharges) state().userRecharges = data.recharges;
+
+        try { root.localStorage?.setItem('ghstore_user_cache_v3', JSON.stringify(data)); } catch (_) {}
+
+        // 1. Balances across Top Bar, Wallet Tab, and Settings Tab
         wallet().renderWalletBalances(data);
+
+        // 2. User Profile (Display Name, @username, TG ID, Avatar, VIP Discount Pill)
+        renderUserProfile(data);
+
+        // 3. Referral Program (Link, Count, Earned, Rate, Breakdown List)
+        renderUserReferrals(data);
+
+        // 4. Admin Control Center & Wallets (if user is admin)
+        renderAdminControlCenter(data);
+
+        // 5. Store Announcement & Logo
+        renderStoreAnnouncement(data);
+        if (data.store_logo_url) applyStoreLogo(data.store_logo_url);
+
+        // 6. User Activity & Orders if activeTab === 'orders'
         if (state().activeTab === 'orders') renderUserActivity();
+      } else {
+        console.warn('Failed to load user data: HTTP', res.status);
       }
     } catch (e) {
       console.warn('Failed to fetch user data:', e);
@@ -459,7 +829,9 @@
     }
 
     try {
-      const res = await fetch('/api/orders');
+      const tgId = state().userId;
+      const url = tgId ? `/api/orders?tg_id=${tgId}` : '/api/orders';
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         state().userOrders = data.orders || [];
@@ -492,7 +864,7 @@
   }
 
   // --- Master App Startup Sequence ---
-  function bootApp() {
+  async function bootApp() {
     // 1. Initialize Telegram platform & viewport
     api().initTelegramPlatform?.();
     api().updateSafeAreaInsets?.();
@@ -504,7 +876,12 @@
     // 3. Initialize Keyboard navigation behavior
     api().initKeyboardBehavior?.();
 
-    // 4. Bind Search Input Keyboard Events (Enter key triggers search)
+    // 4. Ensure cryptographic auth session first
+    if (api().ensureAuthSession) {
+      await api().ensureAuthSession();
+    }
+
+    // 5. Bind Search Input Keyboard Events (Enter key triggers search)
     const searchInput = document.getElementById('search-input');
     if (searchInput) {
       searchInput.addEventListener('keydown', (e) => {
@@ -519,7 +896,7 @@
       });
     }
 
-    // 5. Bind Coupon Input Keyboard Events (Enter key triggers validation)
+    // 6. Bind Coupon Input Keyboard Events (Enter key triggers validation)
     const couponInput = document.getElementById('coupon-input');
     if (couponInput) {
       couponInput.addEventListener('keydown', (e) => {
@@ -530,19 +907,19 @@
       });
     }
 
-    // 6. Initialize Cart & Flash Sale Timer
+    // 7. Initialize Cart & Flash Sale Timer
     checkout().initCart?.();
     storefront().initFlashSaleTimer?.();
 
-    // 7. Load Data & Connect SSE
+    // 8. Load Data & Connect SSE
     loadStorefrontData();
     loadUserData();
     initSSE();
 
-    // 8. Durable Checkout Recovery on Startup
+    // 9. Durable Checkout Recovery on Startup
     checkout().recoverPendingCheckout?.();
 
-    // 9. Deep linking: handle startapp or start_param
+    // 10. Deep linking: handle startapp or start_param
     try {
       const urlParams = new URLSearchParams(window.location.search);
       const tg = window.Telegram && window.Telegram.WebApp;
@@ -565,8 +942,11 @@
 
   root.switchTab = switchTab;
   root.applyLanguage = (lang) => api().applyLanguage?.(lang);
+  root.openExternalPaymentUrl = openExternalPaymentUrl;
   root.copyCredFromBtn = copyCredFromBtn;
   root.copyFromBtn = copyFromBtn;
+  root.copyCredText = copyCredText;
+  root.copyCredVal = (val) => copyCredText(val);
   root.loadStorefrontData = loadStorefrontData;
   root.loadUserData = loadUserData;
   root.loadUserOrders = loadUserOrders;
@@ -574,11 +954,30 @@
   root.renderUserActivity = renderUserActivity;
 
   // Storefront Proxies
+  root.renderCatalogsGrid = (c) => storefront().renderCatalogsGrid?.(c);
+  root.renderCategories = (c) => storefront().renderCatalogsGrid?.(c);
   root.switchCategoryViewMode = (m) => storefront().switchCategoryViewMode?.(m);
+  root.setCatalogViewMode = (m) => storefront().setCatalogViewMode?.(m);
   root.selectCategory = (c) => storefront().selectCategory?.(c);
-  root.openProductModal = (p) => storefront().openProductModal?.(p);
-  root.openProductModalById = (id) => storefront().openProductModalById?.(id);
-  root.closeProductModal = () => storefront().closeProductModal?.();
+  root.openCollection = (c) => storefront().openCollection?.(c);
+  root.returnToCollections = () => storefront().returnToCollections?.();
+  root.applyCatalogFilter = (f) => storefront().applyCatalogFilter?.(f);
+  root.openServiceVariantsByIndex = (i) => storefront().openServiceVariantsByIndex?.(i);
+  root.returnFromVariantsToPrevious = () => storefront().returnFromVariantsToPrevious?.();
+  root.openProductDetail = (id) => storefront().openProductDetail?.(id);
+  root.openProductDetailPage = (id) => storefront().openProductDetailPage?.(id);
+  root.closeProductDetail = () => storefront().closeProductDetail?.();
+  root.closeProductDetailPage = () => storefront().closeProductDetailPage?.();
+  root.adjustQty = (d) => storefront().adjustQty?.(d);
+  root.applyCheckoutCoupon = () => storefront().applyCheckoutCoupon?.();
+  root.executeProductBuy = () => storefront().executeProductBuy?.();
+  root.openSearchPage = () => storefront().openSearchPage?.();
+  root.closeSearchPage = () => storefront().closeSearchPage?.();
+  root.handleSearchPageInput = () => storefront().handleSearchPageInput?.();
+  root.clearSearchPageInput = () => storefront().clearSearchPageInput?.();
+  root.openProductModal = (p) => storefront().openProductDetail?.(p?.id || p);
+  root.openProductModalById = (id) => storefront().openProductDetail?.(id);
+  root.closeProductModal = () => storefront().closeProductDetail?.();
   root.filterCatalog = (q) => storefront().filterCatalog?.(q);
   root.openReviewsModal = () => storefront().openReviewsModal?.();
   root.closeReviewsModal = () => storefront().closeReviewsModal?.();
@@ -590,8 +989,22 @@
   root.selectRechargeMethod = (m) => wallet().selectRechargeMethod?.(m);
   root.setShamCurrency = (c) => wallet().setShamCurrency?.(c);
   root.setRechargeAmount = (a) => wallet().setRechargeAmount?.(a);
+  root.selectTopupAmount = (a) => wallet().selectTopupAmount?.(a);
+  root.onCustomAmountInput = () => wallet().onCustomAmountInput?.();
+  root.executeSelectedRecharge = () => wallet().executeSelectedRecharge?.();
   root.submitRechargeRequest = () => wallet().submitRechargeRequest?.();
+  root.openInvoicePage = (d) => wallet().openInvoicePage?.(d);
+  root.closeInvoicePage = () => wallet().closeInvoicePage?.();
+  root.openActiveInvoiceGateway = () => wallet().openActiveInvoiceGateway?.();
+  root.checkActiveInvoiceStatus = () => wallet().checkActiveInvoiceStatus?.();
+  root.copyActiveInvoiceLink = () => wallet().copyActiveInvoiceLink?.();
+  root.copyCryptoAddress = () => wallet().copyCryptoAddress?.();
   root.submitRedeemVoucher = () => wallet().submitRedeemVoucher?.();
+  root.submitVoucherRedeem = () => wallet().submitVoucherRedeem?.();
+  root.scanVoucherQr = () => wallet().scanVoucherQr?.();
+  root.selectDisplayCurrency = (c) => wallet().selectDisplayCurrency?.(c);
+  root.setAppTheme = (t) => wallet().setAppTheme?.(t);
+  root.setCatalogViewMode = (m) => storefront().switchCategoryViewMode?.(m);
   root.openReceiptModal = (id) => wallet().openReceiptModal?.(id);
   root.closeReceiptPreviewModal = () => wallet().closeReceiptPreviewModal?.();
   root.openVipBenefitsModal = () => wallet().openVipBenefitsModal?.();
@@ -610,6 +1023,16 @@
   root.buyNow = (p, q, f) => checkout().buyNow?.(p, q, f);
   root.applyCoupon = (c) => checkout().applyCoupon?.(c);
 
+  root.copyUserId = copyUserId;
+  root.copyReferralLink = copyReferralLink;
+  root.openCustomerSupportChat = openCustomerSupportChat;
+  root.openOfficialChannel = openOfficialChannel;
+  root.renderUserProfile = renderUserProfile;
+  root.renderUserReferrals = renderUserReferrals;
+  root.renderAdminControlCenter = renderAdminControlCenter;
+  root.renderStoreAnnouncement = renderStoreAnnouncement;
+  root.applyStoreLogo = applyStoreLogo;
+
   // Admin Proxies
   root.openAdminProductModal = (id) => admin().openAdminProductModal?.(id);
   root.closeAdminProductModal = () => admin().closeAdminProductModal?.();
@@ -625,6 +1048,35 @@
   root.submitAdminUnrevokeSessions = (id) => admin().submitAdminUnrevokeSessions?.(id);
   root.submitAdminUpdateSypRate = () => admin().submitAdminUpdateSypRate?.();
   root.submitAdminUpdateStoreLogo = () => admin().submitAdminUpdateStoreLogo?.();
+  root.openAdminStoreSettingsPage = () => admin().openAdminStoreSettingsPage?.();
+  root.closeAdminStoreSettingsPage = () => admin().closeAdminStoreSettingsPage?.();
+  root.openAdminSuppliersPage = () => admin().openAdminSuppliersPage?.();
+  root.closeAdminSuppliersPage = () => admin().closeAdminSuppliersPage?.();
+  root.openAdminUsersPage = () => admin().openAdminUsersPage?.();
+  root.closeAdminUsersPage = () => admin().closeAdminUsersPage?.();
+  root.openAdminStuckOrdersPage = () => admin().openAdminStuckOrdersPage?.();
+  root.closeAdminStuckOrdersPage = () => admin().closeAdminStuckOrdersPage?.();
+  root.openAdminResellerPricingPage = () => admin().openAdminResellerPricingPage?.();
+  root.closeAdminResellerPricingPage = () => admin().closeAdminResellerPricingPage?.();
+  root.openAdminConfigPage = () => admin().openAdminConfigPage?.();
+  root.closeAdminConfigPage = () => admin().closeAdminConfigPage?.();
+  root.openAdminBannerModal = () => admin().openAdminBannerModal?.();
+  root.closeAdminBannerModal = () => admin().closeAdminBannerModal?.();
+  root.openAdminBalanceModal = (id) => admin().openAdminBalanceModal?.(id);
+  root.closeAdminBalanceModal = () => admin().closeAdminBalanceModal?.();
+  root.openAdminDiscountModal = (id) => admin().openAdminDiscountModal?.(id);
+  root.closeAdminDiscountModal = () => admin().closeAdminDiscountModal?.();
+  root.openAdminGiftModal = () => admin().openAdminGiftModal?.();
+  root.closeAdminGiftModal = () => admin().closeAdminGiftModal?.();
+  root.openAdminMessageModal = (id) => admin().openAdminMessageModal?.(id);
+  root.closeAdminMessageModal = () => admin().closeAdminMessageModal?.();
+  root.openAdminOrdersModal = () => admin().openAdminOrdersModal?.();
+  root.closeAdminOrdersModal = () => admin().closeAdminOrdersModal?.();
+  root.openAdminCouponsModal = () => admin().openAdminCouponsModal?.();
+  root.closeAdminCouponsModal = () => admin().closeAdminCouponsModal?.();
+  root.openFullSqlAdmin = () => admin().openFullSqlAdmin?.();
+  root.openAdminPanel = () => admin().openFullSqlAdmin?.();
+  root.refreshSupplierBalances = () => { if (root.loadUserData) root.loadUserData(); };
 
   // SMS Activation Proxies
   root.openSmsModal = () => sms().openSmsModal?.();
