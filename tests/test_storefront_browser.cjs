@@ -396,6 +396,58 @@ function runBrowserTests() {
   check(credsBox && (credsBox.innerHTML.includes('Gemini Pro') || credsBox.innerHTML.includes('serviceactivation')), 'Task 4: Delivered credentials retrieved with activation token');
   closeOrderDetailView();
 
+  // ==========================================
+  // 9. ADMIN PRODUCT & FOLDER CATEGORY DROPDOWN TESTS
+  // ==========================================
+  StoreAPI.AppState.categoriesList = [
+    ...testCategories,
+    { id: 5, name: 'Productivity', name_ar: 'إنتاجية', name_en: 'Productivity' },
+    { id: 9, name: 'Communication', name_ar: 'تواصل', name_en: 'Communication' }
+  ];
+  check(typeof populateCategorySelect === 'function', 'populateCategorySelect function defined');
+  check(typeof onAdminProdCatSelectChange === 'function', 'onAdminProdCatSelectChange defined');
+  check(typeof onAdminProdFolderSelectChange === 'function', 'onAdminProdFolderSelectChange defined');
+  check(typeof openAdminFolderModal === 'function', 'openAdminFolderModal defined');
+  check(typeof submitAdminFolderUpdate === 'function', 'submitAdminFolderUpdate defined');
+  check(typeof openAdminCurrentFolderEditor === 'function', 'openAdminCurrentFolderEditor defined');
+  check(typeof openAdminCreateFolderModal === 'function', 'openAdminCreateFolderModal defined');
+
+  // Test 9a. Product Modal Category Dropdown
+  openAdminProductModal(101);
+  const prodCatSelect = document.getElementById('admin-edit-prod-cat');
+  check(prodCatSelect !== null, 'admin-edit-prod-cat select exists');
+  check(prodCatSelect.tagName === 'SELECT', 'admin-edit-prod-cat is a SELECT element');
+  check(prodCatSelect.options.length >= 2, 'admin-edit-prod-cat has category options');
+  check(prodCatSelect.value === 'AI & Chatbots', 'product 101 category pre-selected');
+  const prodFolderSelect = document.getElementById('admin-edit-prod-folder-select');
+  check(prodFolderSelect !== null && prodFolderSelect.tagName === 'SELECT', 'admin-edit-prod-folder-select is a SELECT element');
+  closeAdminProductModal();
+
+  // Test 9b. Folder Modal Category Dropdown
+  const testFolder = {
+    id: 54,
+    key: 'zoom',
+    category: 'Communication',
+    title_en: 'Zoom',
+    title_ar: 'زووم',
+    icon: '💬',
+    sort_order: 10
+  };
+  openAdminFolderModal('zoom', testFolder);
+  const folderModal = document.getElementById('admin-folder-modal');
+  check(folderModal && folderModal.style.display !== 'none', 'admin-folder-modal opens');
+  const folderCatSelect = document.getElementById('admin-edit-folder-cat');
+  check(folderCatSelect !== null, 'admin-edit-folder-cat select exists');
+  check(folderCatSelect.tagName === 'SELECT', 'admin-edit-folder-cat is a SELECT element');
+  check(folderCatSelect.options.length >= 2, 'admin-edit-folder-cat has category options');
+  check(folderCatSelect.value === 'Communication', 'zoom folder current category pre-selected');
+
+  // Test 9c. Changing Folder Category to Productivity via Dropdown
+  folderCatSelect.value = 'Productivity';
+  check(folderCatSelect.value === 'Productivity', 'folder category changed to Productivity in dropdown');
+  closeAdminFolderModal();
+  check(folderModal.style.display === 'none', 'admin-folder-modal closes');
+
   // Mark all tests passed in body
   document.body.textContent = `PASS: ${count} storefront browser coverage checks`;
 }
@@ -572,6 +624,38 @@ async function main() {
     <div id="admin-5sim-balance-val"></div>
     <div id="admin-sms-services-list"></div>
     <div id="admin-sms-countries-list"></div>
+  </div>
+
+  <!-- Admin Product Editor Modal Sheet -->
+  <div class="admin-modal-overlay" id="admin-product-modal" style="display: none;">
+    <input type="hidden" id="admin-edit-prod-id">
+    <input type="text" id="admin-edit-prod-name">
+    <input type="text" id="admin-edit-prod-name-ar">
+    <select id="admin-edit-prod-folder-select" onchange="onAdminProdFolderSelectChange()"></select>
+    <div id="admin-edit-prod-new-folder-wrap" style="display: none;">
+      <input type="text" id="admin-edit-prod-folder-new-en">
+      <input type="text" id="admin-edit-prod-folder-new-ar">
+    </div>
+    <select id="admin-edit-prod-cat" onchange="onAdminProdCatSelectChange()"></select>
+    <input type="number" id="admin-edit-prod-price">
+    <input type="number" id="admin-edit-prod-reseller-price">
+    <input type="text" id="admin-edit-prod-stock-display">
+    <input type="checkbox" id="admin-edit-prod-hidden">
+    <input type="checkbox" id="admin-edit-folder-hidden">
+    <button id="admin-product-save-btn" onclick="submitAdminProductUpdate()"></button>
+  </div>
+
+  <!-- Admin Folder Editor Modal Sheet -->
+  <div class="admin-modal-overlay" id="admin-folder-modal" style="display: none;">
+    <input type="hidden" id="admin-edit-folder-id">
+    <input type="hidden" id="admin-edit-folder-key">
+    <input type="text" id="admin-edit-folder-title-en">
+    <input type="text" id="admin-edit-folder-title-ar">
+    <select id="admin-edit-folder-cat"></select>
+    <input type="text" id="admin-edit-folder-icon">
+    <input type="number" id="admin-edit-folder-sort">
+    <input type="checkbox" id="admin-edit-folder-hidden-check">
+    <button id="admin-folder-save-btn" onclick="submitAdminFolderUpdate()"></button>
   </div>
 
   <!-- Load Modular Scripts -->

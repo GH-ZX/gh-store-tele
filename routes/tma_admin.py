@@ -1950,15 +1950,37 @@ async def admin_update_folder(request: Request):
         return JSONResponse({"error": "missing_folder_identifier"}, status_code=400)
 
     async with get_db_session() as session:
-        from models.storefront_folder import StorefrontFolder
+        from models.storefront_folder import StorefrontFolder, StorefrontFolderDTO
+        from repositories.storefront_folder import StorefrontFolderRepository
         if folder_id:
             stmt = select(StorefrontFolder).where(StorefrontFolder.id == int(folder_id))
         else:
             stmt = select(StorefrontFolder).where(StorefrontFolder.key == str(folder_key).strip())
         folder = (await session_execute(stmt, session)).scalar_one_or_none()
         if not folder:
-            return JSONResponse({"error": "folder_not_found"}, status_code=404)
+            stmt2 = select(StorefrontFolder).where(
+                (StorefrontFolder.key.ilike(str(folder_key).strip())) |
+                (StorefrontFolder.title_en.ilike(str(folder_key).strip()))
+            )
+            folder = (await session_execute(stmt2, session)).scalar_one_or_none()
+        if not folder:
+            # Auto-create if updating a virtual or newly identified brand folder
+            clean_key = str(folder_key).strip().lower().replace(" ", "_")
+            dto = StorefrontFolderDTO(
+                key=clean_key,
+                category=str(body.get("category") or "Other").strip(),
+                title_en=str(body.get("title_en") or folder_key).strip(),
+                title_ar=str(body.get("title_ar") or body.get("title_en") or folder_key).strip(),
+                icon=str(body.get("icon") or "📁").strip(),
+                sort_order=int(body.get("sort_order") or 50),
+                hidden=bool(body.get("hidden", False))
+            )
+            created = await StorefrontFolderRepository.create(dto, session)
+            folder = (await session_execute(select(StorefrontFolder).where(StorefrontFolder.id == created.id), session)).scalar_one_or_none()
+            if not folder:
+                return JSONResponse({"error": "folder_not_found"}, status_code=404)
 
+        old_cat = folder.category
         old_title_en = folder.title_en
         old_title_ar = folder.title_ar
         ar_changed = "title_ar" in body and str(body["title_ar"]).strip() != str(old_title_ar or "").strip()
@@ -1978,6 +2000,24 @@ async def admin_update_folder(request: Request):
             folder.hidden = bool(body["hidden"])
         if "matching_keywords" in body:
             folder.matching_keywords = str(body["matching_keywords"]).strip() or None
+
+        # Handle Category Reassignment for Folder & Associated Products
+        if "category" in body and str(body["category"]).strip():
+            new_cat = str(body["category"]).strip()
+            if new_cat != old_cat:
+                folder.category = new_cat
+                from models.batstore_product import BatStoreProduct
+                await session_execute(
+                    update(BatStoreProduct).where(
+                        ((BatStoreProduct.category == old_cat) | (BatStoreProduct.category == new_cat)) &
+                        (
+                            (BatStoreProduct.custom_group == folder.title_en) |
+                            (BatStoreProduct.custom_group == old_title_en) |
+                            (BatStoreProduct.name.ilike(f"%{folder.key}%"))
+                        )
+                    ).values(category=new_cat),
+                    session
+                )
 
         if body.get("hide_products") is True or folder.hidden:
             from models.product import Product

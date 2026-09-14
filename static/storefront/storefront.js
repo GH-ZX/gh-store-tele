@@ -281,6 +281,28 @@
     `;
   }
 
+  function renderAdminFolderBar(primary, famKey) {
+    const u = state().userData;
+    if (!u || !u.is_admin) return '';
+    const isAr = (state().currentAppLanguage === 'ar');
+    const editLbl = isAr ? 'تعديل المجلد' : 'Edit Folder';
+    const folderKey = primary.folder_key || famKey || '';
+
+    return `
+      <div class="prod-admin-footer" onclick="event.stopPropagation()">
+        <div class="prod-admin-metrics">
+          <span class="cost-metric">📁 <b>${escAttr(primary.folder_title_en || primary.custom_group || folderKey)}</b></span>
+          <span class="sep">·</span>
+          <span class="prof-metric"><b>${escAttr(primary.category || '')}</b></span>
+        </div>
+        <button class="prod-admin-edit-action" onclick="event.stopPropagation(); (root.openAdminFolderModal || admin().openAdminFolderModal)('${escAttr(folderKey)}')">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          <span>${editLbl}</span>
+        </button>
+      </div>
+    `;
+  }
+
   const CATEGORY_LABEL_OVERRIDES = {
     'AI & Chatbots': { en: 'AI Tools', ar: 'أدوات الذكاء الاصطناعي' },
     'AI Tools': { en: 'AI Tools', ar: 'أدوات الذكاء الاصطناعي' },
@@ -718,7 +740,7 @@
                 <span class="folder-chevron-arrow">${chevronArrow}</span>
               </div>
             </div>
-            ${renderAdminProductBar(primary)}
+            ${renderAdminFolderBar(primary, famKey)}
           </div>
         `;
       } else {
@@ -779,6 +801,11 @@
 
     const sVariants = document.getElementById('service-variants-mode');
     if (sVariants) sVariants.style.display = 'block';
+
+    const fBar = document.getElementById('admin-folder-edit-bar');
+    if (fBar) {
+      fBar.style.display = (state().userData && state().userData.is_admin) ? 'block' : 'none';
+    }
 
     const vList = document.getElementById('service-variants-products-list');
     if (vList) {

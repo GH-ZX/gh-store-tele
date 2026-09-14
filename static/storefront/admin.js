@@ -18,6 +18,107 @@
   let adminBalAmount = 10;
   let adminBalAction = 'add';
 
+  // --- Category & Folder Selection Helpers ---
+  function populateCategorySelect(selectEl, selectedCategory) {
+    if (!selectEl) return;
+    const cats = state().categoriesList || [];
+    const isAr = (state().currentAppLanguage === 'ar');
+    const seen = new Set();
+    const options = [];
+
+    cats.forEach(c => {
+      const val = c.name;
+      if (!val || seen.has(val)) return;
+      seen.add(val);
+      const title = isAr ? (c.name_ar || c.name) : (c.name_en || c.name);
+      const icon = c.icon ? `${c.icon} ` : '';
+      options.push({ value: val, label: `${icon}${title}` });
+    });
+
+    const allProds = state().allProducts || [];
+    allProds.forEach(p => {
+      const val = p.category || p.category_name;
+      if (val && !seen.has(val)) {
+        seen.add(val);
+        options.push({ value: val, label: `📁 ${val}` });
+      }
+    });
+
+    if (selectedCategory && !seen.has(selectedCategory)) {
+      seen.add(selectedCategory);
+      options.push({ value: selectedCategory, label: `📁 ${selectedCategory}` });
+    }
+
+    selectEl.innerHTML = options.map(opt => `
+      <option value="${escAttr(opt.value)}" ${opt.value === selectedCategory ? 'selected' : ''}>
+        ${escAttr(opt.label)}
+      </option>
+    `).join('');
+
+    if (selectedCategory) {
+      selectEl.value = selectedCategory;
+    }
+  }
+
+  function updateAdminProductFolderOptions(selectedCategory, currentFolder) {
+    const selectEl = document.getElementById('admin-edit-prod-folder-select');
+    if (!selectEl) return;
+    const isAr = (state().currentAppLanguage === 'ar');
+    const options = [
+      { value: '', label: isAr ? '-- بدون مجلد (منتج مستقل) --' : '-- No Folder (Standalone) --' }
+    ];
+
+    const seen = new Set();
+    const allFolders = state().allFolders || [];
+    allFolders.filter(f => f.category === selectedCategory).forEach(f => {
+      const val = f.title_en || f.key;
+      if (val && !seen.has(val)) {
+        seen.add(val);
+        const title = isAr ? (f.title_ar || f.title_en) : (f.title_en || f.title_ar);
+        options.push({ value: val, label: `${f.icon || '📁'} ${title}` });
+      }
+    });
+
+    const allProds = state().allProducts || [];
+    allProds.filter(p => (p.category === selectedCategory || p.category_name === selectedCategory) && p.custom_group).forEach(p => {
+      const val = p.custom_group;
+      if (val && !seen.has(val)) {
+        seen.add(val);
+        const title = isAr ? (p.custom_group_ar || p.custom_group) : p.custom_group;
+        options.push({ value: val, label: `📁 ${title}` });
+      }
+    });
+
+    options.push({ value: '__NEW__', label: isAr ? '➕ إنشاء مجلد جديد...' : '➕ Create New Folder...' });
+
+    selectEl.innerHTML = options.map(opt => `
+      <option value="${escAttr(opt.value)}" ${opt.value === currentFolder ? 'selected' : ''}>
+        ${escAttr(opt.label)}
+      </option>
+    `).join('');
+
+    if (currentFolder && seen.has(currentFolder)) {
+      selectEl.value = currentFolder;
+    } else {
+      selectEl.value = currentFolder || '';
+    }
+
+    onAdminProdFolderSelectChange();
+  }
+
+  function onAdminProdCatSelectChange() {
+    const cat = document.getElementById('admin-edit-prod-cat')?.value || '';
+    updateAdminProductFolderOptions(cat, '');
+  }
+
+  function onAdminProdFolderSelectChange() {
+    const val = document.getElementById('admin-edit-prod-folder-select')?.value;
+    const wrap = document.getElementById('admin-edit-prod-new-folder-wrap');
+    if (wrap) {
+      wrap.style.display = (val === '__NEW__' ? 'block' : 'none');
+    }
+  }
+
   // --- Admin Product Editor Modal ---
   function openAdminProductModal(productId) {
     const all = state().allProducts || [];
@@ -32,13 +133,31 @@
     const nameInput = document.getElementById('admin-edit-prod-name');
     const nameArInput = document.getElementById('admin-edit-prod-name-ar');
     const priceInput = document.getElementById('admin-edit-prod-price');
-    const descInput = document.getElementById('admin-edit-prod-desc');
+    const resellerPriceInput = document.getElementById('admin-edit-prod-reseller-price');
+    const stockDisplay = document.getElementById('admin-edit-prod-stock-display');
+    const hiddenCheck = document.getElementById('admin-edit-prod-hidden');
+    const folderHiddenCheck = document.getElementById('admin-edit-folder-hidden');
+    const catSelect = document.getElementById('admin-edit-prod-cat');
 
     if (idInput) idInput.value = p.id;
-    if (nameInput) nameInput.value = p.name || '';
-    if (nameArInput) nameArInput.value = p.name_ar || '';
-    if (priceInput) priceInput.value = p.sell_price_usd || '';
-    if (descInput) descInput.value = p.description || '';
+    if (nameInput) nameInput.value = p.custom_name || p.clean_name || p.name || '';
+    if (nameArInput) nameArInput.value = p.custom_name_ar || p.name_ar || '';
+    if (priceInput) priceInput.value = p.sell_price_usd ?? p.price ?? '';
+    if (resellerPriceInput) resellerPriceInput.value = p.reseller_price_usd ?? '';
+    if (stockDisplay) {
+      const isAr = state().currentAppLanguage === 'ar';
+      stockDisplay.value = (p.stock !== null && p.stock !== undefined) ? `${p.stock} (${isAr ? 'قطعة' : 'in stock'})` : (isAr ? 'متوفر' : 'In stock');
+    }
+    if (hiddenCheck) hiddenCheck.checked = !!p.hidden;
+    if (folderHiddenCheck) folderHiddenCheck.checked = false;
+
+    // Populate category dropdown
+    const currentCat = p.category || p.category_name || '';
+    populateCategorySelect(catSelect, currentCat);
+
+    // Populate folder dropdown for this category
+    const currentFolder = p.custom_group || p.folder_title_en || '';
+    updateAdminProductFolderOptions(currentCat, currentFolder);
 
     modal.style.display = 'flex';
     api().pushNav('admin_prod_modal', closeAdminProductModal);
@@ -52,13 +171,25 @@
 
   async function submitAdminProductUpdate() {
     const id = document.getElementById('admin-edit-prod-id')?.value;
-    const name = document.getElementById('admin-edit-prod-name')?.value;
-    const nameAr = document.getElementById('admin-edit-prod-name-ar')?.value;
+    const name = document.getElementById('admin-edit-prod-name')?.value?.trim();
+    const nameAr = document.getElementById('admin-edit-prod-name-ar')?.value?.trim();
     const price = parseFloat(document.getElementById('admin-edit-prod-price')?.value);
-    const desc = document.getElementById('admin-edit-prod-desc')?.value;
+    const resellerPriceRaw = document.getElementById('admin-edit-prod-reseller-price')?.value;
+    const resellerPrice = (resellerPriceRaw !== '' && resellerPriceRaw !== null && !isNaN(parseFloat(resellerPriceRaw))) ? parseFloat(resellerPriceRaw) : null;
+    const catSelect = document.getElementById('admin-edit-prod-cat');
+    const category = catSelect?.value?.trim();
+    const folderSelect = document.getElementById('admin-edit-prod-folder-select');
+    let customGroup = folderSelect?.value?.trim() || null;
+    let customGroupAr = null;
+    if (customGroup === '__NEW__') {
+      customGroup = document.getElementById('admin-edit-prod-folder-new-en')?.value?.trim() || null;
+      customGroupAr = document.getElementById('admin-edit-prod-folder-new-ar')?.value?.trim() || customGroup;
+    }
+    const isHidden = !!document.getElementById('admin-edit-prod-hidden')?.checked;
+    const hideEntireFolder = !!document.getElementById('admin-edit-folder-hidden')?.checked;
 
-    if (!id || !price || price <= 0) {
-      api().showToast('يرجى التأكد من صحة السعر والبيانات');
+    if (!id || isNaN(price) || price <= 0) {
+      api().showToast(state().currentAppLanguage === 'ar' ? 'يرجى التأكد من صحة السعر والبيانات' : 'Please check price and data');
       return;
     }
 
@@ -69,17 +200,22 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           product_id: Number(id),
-          name,
-          name_ar: nameAr,
+          custom_name: name,
+          custom_name_ar: nameAr || name,
+          category: category,
+          custom_group: customGroup,
+          custom_group_ar: customGroupAr,
           sell_price_usd: price,
-          description: desc,
+          reseller_price_usd: resellerPrice,
+          hidden: isHidden,
+          hide_entire_folder: hideEntireFolder,
           admin_tg_id: state().userId
         })
       });
       const data = await res.json();
       if (data.status === 'ok') {
         api().haptic?.('success');
-        api().showToast('تم تحديث المنتج بنجاح');
+        api().showToast(state().currentAppLanguage === 'ar' ? 'تم تحديث المنتج بنجاح' : 'Product updated successfully');
         closeAdminProductModal();
         if (root.loadStorefrontData) root.loadStorefrontData();
       } else {
@@ -90,31 +226,236 @@
     }
   }
 
-  // --- Admin Category & Folder Editors ---
-  function openAdminCategoryModal(catId) {
-    const modal = document.getElementById('admin-category-modal');
-    if (modal) {
-      modal.style.display = 'flex';
-      api().pushNav('admin_cat_modal', closeAdminCategoryModal);
-    }
-  }
-
-  function closeAdminCategoryModal() {
-    const modal = document.getElementById('admin-category-modal');
-    if (modal) modal.style.display = 'none';
-  }
-
-  function openAdminFolderModal(folderKey) {
+  // --- Admin Folder Editor Modal ---
+  function openAdminFolderModal(folderKey, folderData) {
+    api().haptic?.('pop');
     const modal = document.getElementById('admin-folder-modal');
-    if (modal) {
-      modal.style.display = 'flex';
-      api().pushNav('admin_folder_modal', closeAdminFolderModal);
+    if (!modal) return;
+
+    let folder = folderData || null;
+    const allFolders = state().allFolders || [];
+    const allProds = state().allProducts || [];
+
+    if (!folder && folderKey) {
+      const matchKey = String(folderKey).toLowerCase().trim();
+      folder = allFolders.find(f => (f.key && f.key.toLowerCase() === matchKey) || String(f.id) === matchKey || (f.title_en && f.title_en.toLowerCase() === matchKey));
     }
+
+    let primaryProd = null;
+    if (folderKey) {
+      const matchKey = String(folderKey).toLowerCase().trim();
+      primaryProd = allProds.find(p =>
+        (p.folder_key && p.folder_key.toLowerCase() === matchKey) ||
+        (p.custom_group && p.custom_group.toLowerCase() === matchKey) ||
+        (p.name && p.name.toLowerCase().includes(matchKey))
+      );
+    }
+
+    const key = folder?.key || primaryProd?.folder_key || folderKey || '';
+    const id = folder?.id || '';
+    const titleEn = folder?.title_en || primaryProd?.folder_title_en || primaryProd?.custom_group || key || '';
+    const titleAr = folder?.title_ar || primaryProd?.folder_title_ar || primaryProd?.custom_group_ar || titleEn;
+    const category = folder?.category || primaryProd?.category || state().activeCatalog || '';
+    const icon = folder?.icon || primaryProd?.folder_icon || primaryProd?.emoji || '📁';
+    const sort = folder?.sort_order ?? folder?.priority ?? 50;
+    const isHidden = !!(folder?.hidden || primaryProd?.folder_hidden || primaryProd?.hidden);
+
+    const idInput = document.getElementById('admin-edit-folder-id');
+    const keyInput = document.getElementById('admin-edit-folder-key');
+    const titleEnInput = document.getElementById('admin-edit-folder-title-en');
+    const titleArInput = document.getElementById('admin-edit-folder-title-ar');
+    const iconInput = document.getElementById('admin-edit-folder-icon');
+    const sortInput = document.getElementById('admin-edit-folder-sort');
+    const hiddenCheck = document.getElementById('admin-edit-folder-hidden-check');
+    const catSelect = document.getElementById('admin-edit-folder-cat');
+
+    if (idInput) idInput.value = id;
+    if (keyInput) keyInput.value = key;
+    if (titleEnInput) titleEnInput.value = titleEn;
+    if (titleArInput) titleArInput.value = titleAr;
+    if (iconInput) iconInput.value = icon;
+    if (sortInput) sortInput.value = sort;
+    if (hiddenCheck) hiddenCheck.checked = isHidden;
+
+    populateCategorySelect(catSelect, category);
+
+    modal.style.display = 'flex';
+    api().pushNav('admin_folder_modal', closeAdminFolderModal);
   }
 
   function closeAdminFolderModal() {
+    api().haptic?.('light');
     const modal = document.getElementById('admin-folder-modal');
     if (modal) modal.style.display = 'none';
+  }
+
+  function openAdminCurrentFolderEditor() {
+    const key = (typeof activeVariantFamilyKey !== 'undefined') ? activeVariantFamilyKey : '';
+    openAdminFolderModal(key);
+  }
+
+  function openAdminCreateFolderModal() {
+    const activeCat = state().activeCatalog || '';
+    openAdminFolderModal('', {
+      id: '',
+      key: '',
+      title_en: '',
+      title_ar: '',
+      category: activeCat,
+      icon: '📁',
+      sort_order: 50,
+      hidden: false
+    });
+  }
+
+  async function submitAdminFolderUpdate() {
+    const id = document.getElementById('admin-edit-folder-id')?.value;
+    const key = document.getElementById('admin-edit-folder-key')?.value?.trim();
+    const titleEn = document.getElementById('admin-edit-folder-title-en')?.value?.trim();
+    const titleAr = document.getElementById('admin-edit-folder-title-ar')?.value?.trim();
+    const catSelect = document.getElementById('admin-edit-folder-cat');
+    const category = catSelect?.value?.trim();
+    const icon = document.getElementById('admin-edit-folder-icon')?.value?.trim();
+    const sort = parseInt(document.getElementById('admin-edit-folder-sort')?.value || '50', 10);
+    const isHidden = !!document.getElementById('admin-edit-folder-hidden-check')?.checked;
+
+    if (!titleEn) {
+      api().showToast(state().currentAppLanguage === 'ar' ? 'يرجى إدخال اسم المجلد' : 'Please enter folder title');
+      return;
+    }
+
+    const folderKey = key || titleEn.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+
+    api().haptic?.('medium');
+    try {
+      const endpoint = (!id && !key) ? '/api/admin/folder/create' : '/api/admin/folder/update';
+      const payload = {
+        admin_tg_id: state().userId,
+        folder_id: id ? Number(id) : null,
+        key: folderKey,
+        category: category,
+        title_en: titleEn,
+        title_ar: titleAr || titleEn,
+        icon: icon || '📁',
+        sort_order: isNaN(sort) ? 50 : sort,
+        hidden: isHidden
+      };
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.status === 'ok') {
+        api().haptic?.('success');
+        api().showToast(state().currentAppLanguage === 'ar' ? 'تم حفظ بيانات المجلد بنجاح' : 'Folder saved successfully');
+        closeAdminFolderModal();
+        if (root.loadStorefrontData) root.loadStorefrontData();
+      } else {
+        api().showToast(data.error || 'فشل حفظ بيانات المجلد');
+      }
+    } catch (_) {
+      api().showToast('خطأ في إرسال طلب حفظ المجلد');
+    }
+  }
+
+  // --- Admin Category Editor Modal ---
+  function openAdminCategoryModal(catId) {
+    const cats = state().categoriesList || [];
+    const cat = cats.find(c => String(c.id) === String(catId) || c.name === catId);
+    if (!cat) return;
+
+    api().haptic?.('pop');
+    const modal = document.getElementById('admin-category-modal');
+    if (!modal) return;
+
+    const idInput = document.getElementById('admin-edit-cat-id');
+    const arInput = document.getElementById('admin-edit-cat-ar');
+    const enInput = document.getElementById('admin-edit-cat-en');
+    const prodInput = document.getElementById('admin-edit-cat-prod');
+    const imgInput = document.getElementById('admin-edit-cat-img');
+    const prevArInput = document.getElementById('admin-edit-cat-prev-ar');
+    const prevEnInput = document.getElementById('admin-edit-cat-prev-en');
+    const sortInput = document.getElementById('admin-edit-cat-sort');
+    const hiddenCheck = document.getElementById('admin-edit-cat-hidden');
+
+    if (idInput) idInput.value = cat.id || '';
+    if (arInput) arInput.value = cat.name_ar || cat.name || '';
+    if (enInput) enInput.value = cat.name_en || cat.name || '';
+    if (prodInput) prodInput.value = cat.product_category || cat.name || '';
+    if (imgInput) imgInput.value = cat.image_url || '';
+    if (prevArInput) prevArInput.value = cat.preview_ar || '';
+    if (prevEnInput) prevEnInput.value = cat.preview_en || '';
+    if (sortInput) sortInput.value = cat.sort_order ?? 1;
+    if (hiddenCheck) hiddenCheck.checked = !!cat.hidden;
+
+    modal.style.display = 'flex';
+    api().pushNav('admin_cat_modal', closeAdminCategoryModal);
+  }
+
+  function closeAdminCategoryModal() {
+    api().haptic?.('light');
+    const modal = document.getElementById('admin-category-modal');
+    if (modal) modal.style.display = 'none';
+  }
+
+  function openAdminCurrentCategoryEditor() {
+    const activeCat = state().activeCatalog;
+    if (!activeCat) return;
+    const cats = state().categoriesList || [];
+    const cat = cats.find(c => c.name === activeCat || String(c.id) === String(activeCat));
+    if (cat) {
+      openAdminCategoryModal(cat.id);
+    }
+  }
+
+  async function submitAdminCategoryUpdate() {
+    const id = document.getElementById('admin-edit-cat-id')?.value;
+    const nameAr = document.getElementById('admin-edit-cat-ar')?.value?.trim();
+    const nameEn = document.getElementById('admin-edit-cat-en')?.value?.trim();
+    const prodCat = document.getElementById('admin-edit-cat-prod')?.value?.trim();
+    const imgUrl = document.getElementById('admin-edit-cat-img')?.value?.trim();
+    const prevAr = document.getElementById('admin-edit-cat-prev-ar')?.value?.trim();
+    const prevEn = document.getElementById('admin-edit-cat-prev-en')?.value?.trim();
+    const sort = parseInt(document.getElementById('admin-edit-cat-sort')?.value || '1', 10);
+    const isHidden = !!document.getElementById('admin-edit-cat-hidden')?.checked;
+
+    if (!id || !nameEn) {
+      api().showToast('يرجى التأكد من إدخال اسم التصنيف');
+      return;
+    }
+
+    api().haptic?.('medium');
+    try {
+      const res = await fetch('/api/admin/category/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category_id: Number(id),
+          admin_tg_id: state().userId,
+          name_ar: nameAr,
+          name_en: nameEn,
+          product_category: prodCat,
+          image_url: imgUrl,
+          preview_ar: prevAr,
+          preview_en: prevEn,
+          sort_order: isNaN(sort) ? 1 : sort,
+          hidden: isHidden
+        })
+      });
+      const data = await res.json();
+      if (data.status === 'ok') {
+        api().haptic?.('success');
+        api().showToast('تم تحديث التصنيف بنجاح');
+        closeAdminCategoryModal();
+        if (root.loadStorefrontData) root.loadStorefrontData();
+      } else {
+        api().showToast(data.error || 'فشل تحديث بيانات التصنيف');
+      }
+    } catch (_) {
+      api().showToast('خطأ في إرسال طلب التحديث');
+    }
   }
 
   // --- Admin Balance Adjustments ---
@@ -910,6 +1251,14 @@
     closeAdminCategoryModal,
     openAdminFolderModal,
     closeAdminFolderModal,
+    openAdminCurrentFolderEditor,
+    openAdminCreateFolderModal,
+    submitAdminFolderUpdate,
+    openAdminCurrentCategoryEditor,
+    submitAdminCategoryUpdate,
+    onAdminProdCatSelectChange,
+    onAdminProdFolderSelectChange,
+    populateCategorySelect,
     setAdminBalanceAction,
     setAdminBalAmount,
     submitAdminAdjustBalance,
@@ -974,6 +1323,14 @@
   root.closeAdminCategoryModal = closeAdminCategoryModal;
   root.openAdminFolderModal = openAdminFolderModal;
   root.closeAdminFolderModal = closeAdminFolderModal;
+  root.openAdminCurrentFolderEditor = openAdminCurrentFolderEditor;
+  root.openAdminCreateFolderModal = openAdminCreateFolderModal;
+  root.submitAdminFolderUpdate = submitAdminFolderUpdate;
+  root.openAdminCurrentCategoryEditor = openAdminCurrentCategoryEditor;
+  root.submitAdminCategoryUpdate = submitAdminCategoryUpdate;
+  root.onAdminProdCatSelectChange = onAdminProdCatSelectChange;
+  root.onAdminProdFolderSelectChange = onAdminProdFolderSelectChange;
+  root.populateCategorySelect = populateCategorySelect;
   root.setAdminBalanceAction = setAdminBalanceAction;
   root.setAdminBalAmount = setAdminBalAmount;
   root.submitAdminAdjustBalance = submitAdminAdjustBalance;

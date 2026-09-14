@@ -75,7 +75,7 @@
       </div>
       <div class="admin-input-row">
         <label class="admin-input-label">التصنيف الرئيسي (Category)</label>
-        <input type="text" class="admin-text-input" id="admin-edit-prod-cat" placeholder="AI & Chatbots">
+        <select class="admin-text-input" id="admin-edit-prod-cat" onchange="onAdminProdCatSelectChange()"></select>
       </div>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
         <div class="admin-input-row">
@@ -169,7 +169,7 @@
       </div>
       <div class="admin-input-row">
         <label class="admin-input-label">التصنيف الرئيسي (Category)</label>
-        <input type="text" class="admin-text-input" id="admin-edit-folder-cat" readonly style="opacity: 0.75; background: var(--bg);">
+        <select class="admin-text-input" id="admin-edit-folder-cat"></select>
       </div>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
         <div class="admin-input-row">

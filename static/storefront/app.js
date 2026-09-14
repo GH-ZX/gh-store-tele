@@ -424,6 +424,7 @@
         const data = await res.json();
         if (!Array.isArray(data.categories) || !Array.isArray(data.products)) throw new Error('Invalid catalog response');
         state().categoriesList = data.categories || [];
+        state().allFolders = data.folders || [];
         state().allProducts = data.products || [];
         if (data.store_logo_url) applyStoreLogo(data.store_logo_url);
         if (data.flash_sale) storefront().initFlashSaleTimer?.(data.flash_sale);
@@ -1374,10 +1375,17 @@ Payment Method: Wallet Balance (USD)
   root.openAdminProductModal = (id) => admin().openAdminProductModal?.(id);
   root.closeAdminProductModal = () => admin().closeAdminProductModal?.();
   root.submitAdminProductUpdate = () => admin().submitAdminProductUpdate?.();
+  root.onAdminProdCatSelectChange = () => admin().onAdminProdCatSelectChange?.();
+  root.onAdminProdFolderSelectChange = () => admin().onAdminProdFolderSelectChange?.();
   root.openAdminCategoryModal = (id) => admin().openAdminCategoryModal?.(id);
   root.closeAdminCategoryModal = () => admin().closeAdminCategoryModal?.();
-  root.openAdminFolderModal = (k) => admin().openAdminFolderModal?.(k);
+  root.openAdminCurrentCategoryEditor = () => admin().openAdminCurrentCategoryEditor?.();
+  root.submitAdminCategoryUpdate = () => admin().submitAdminCategoryUpdate?.();
+  root.openAdminFolderModal = (k, d) => admin().openAdminFolderModal?.(k, d);
   root.closeAdminFolderModal = () => admin().closeAdminFolderModal?.();
+  root.openAdminCurrentFolderEditor = () => admin().openAdminCurrentFolderEditor?.();
+  root.openAdminCreateFolderModal = () => admin().openAdminCreateFolderModal?.();
+  root.submitAdminFolderUpdate = () => admin().submitAdminFolderUpdate?.();
   root.setAdminBalanceAction = (a) => admin().setAdminBalanceAction?.(a);
   root.setAdminBalAmount = (a) => admin().setAdminBalAmount?.(a);
   root.submitAdminAdjustBalance = () => admin().submitAdminAdjustBalance?.();
