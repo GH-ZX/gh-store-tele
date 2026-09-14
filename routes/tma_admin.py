@@ -1993,6 +1993,47 @@ async def admin_update_product(request: Request):
     return {"status": "ok", "product_id": product_id}
 
 
+@router.post("/api/admin/category/create")
+async def admin_create_category(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not verify_admin(admin_id, request):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+
+    name_en = str(body.get("name_en") or body.get("name") or "").strip()
+    name_ar = str(body.get("name_ar") or name_en).strip()
+    if not name_en:
+        return JSONResponse({"error": "missing_category_name"}, status_code=400)
+
+    from repositories.storefront_category import StorefrontCategoryRepository
+    from models.storefront_category import StorefrontCategoryDTO
+    async with get_db_session() as session:
+        existing = await StorefrontCategoryRepository.get_by_name(name_en, session)
+        if existing:
+            return JSONResponse({"error": "category_already_exists", "category_id": existing.id}, status_code=400)
+
+        dto = StorefrontCategoryDTO(
+            name=name_en,
+            name_ar=name_ar,
+            name_en=name_en,
+            product_category=(str(body.get("product_category") or "").strip()) or None,
+            image_url=(str(body.get("image_url") or "").strip()) or "/static/img/cat-other.svg",
+            icon=(str(body.get("icon") or "📦").strip()) or "📦",
+            preview_ar=(str(body.get("preview_ar") or "").strip()) or None,
+            preview_en=(str(body.get("preview_en") or "").strip()) or None,
+            sort_order=int(body.get("sort_order") or 50),
+            hidden=bool(body.get("hidden", False))
+        )
+        created = await StorefrontCategoryRepository.create(dto, session)
+        await session_commit(session)
+
+    invalidate_catalog_cache()
+    return {"status": "ok", "category_id": created.id}
+
+
 @router.post("/api/admin/category/update")
 async def admin_update_category(request: Request):
     try:
@@ -2003,6 +2044,8 @@ async def admin_update_category(request: Request):
     if not verify_admin(admin_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
     category_id = int(body.get("category_id") or 0)
+    if not category_id:
+        return await admin_create_category(request)
     async with get_db_session() as session:
         stmt = select(StorefrontCategory).where(StorefrontCategory.id == category_id)
         cat = (await session_execute(stmt, session)).scalar_one_or_none()
@@ -2018,6 +2061,8 @@ async def admin_update_category(request: Request):
             existing_c = (await session_execute(select(StorefrontCategory).where(StorefrontCategory.name == new_name), session)).scalar_one_or_none()
             if not existing_c or existing_c.id == cat.id:
                 cat.name = new_name
+        if "icon" in body:
+            cat.icon = (str(body["icon"]).strip()) or "📦"
         if "image_url" in body:
             cat.image_url = str(body["image_url"]).strip()
         if "preview_ar" in body:

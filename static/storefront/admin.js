@@ -383,37 +383,85 @@
   }
 
   // --- Admin Category Editor Modal ---
-  function openAdminCategoryModal(catId) {
+  function openAdminCategoryModal(catId, ev) {
+    if (ev && typeof ev.stopPropagation === 'function') {
+      ev.stopPropagation();
+    }
+    const isAr = (state().currentAppLanguage === 'ar');
     const cats = state().categoriesList || [];
-    const cat = cats.find(c => String(c.id) === String(catId) || c.name === catId);
-    if (!cat) return;
+
+    let cat = null;
+    if (catId && catId !== 'new' && catId !== '0') {
+      cat = cats.find(c =>
+        (c.id != null && String(c.id) === String(catId)) ||
+        (c.name && String(c.name).toLowerCase() === String(catId).toLowerCase()) ||
+        (c.name_en && String(c.name_en).toLowerCase() === String(catId).toLowerCase()) ||
+        (c.name_ar && String(c.name_ar) === String(catId))
+      );
+      if (!cat && typeof catId === 'object') {
+        cat = catId;
+      }
+    }
 
     api().haptic?.('pop');
     const modal = document.getElementById('admin-category-modal');
     if (!modal) return;
 
+    const titleEl = document.getElementById('admin-category-modal-title');
+    const saveBtn = document.getElementById('admin-category-save-btn');
     const idInput = document.getElementById('admin-edit-cat-id');
     const arInput = document.getElementById('admin-edit-cat-ar');
     const enInput = document.getElementById('admin-edit-cat-en');
     const prodInput = document.getElementById('admin-edit-cat-prod');
+    const iconInput = document.getElementById('admin-edit-cat-icon');
     const imgInput = document.getElementById('admin-edit-cat-img');
     const prevArInput = document.getElementById('admin-edit-cat-prev-ar');
     const prevEnInput = document.getElementById('admin-edit-cat-prev-en');
     const sortInput = document.getElementById('admin-edit-cat-sort');
     const hiddenCheck = document.getElementById('admin-edit-cat-hidden');
 
-    if (idInput) idInput.value = cat.id || '';
-    if (arInput) arInput.value = cat.name_ar || cat.name || '';
-    if (enInput) enInput.value = cat.name_en || cat.name || '';
-    if (prodInput) prodInput.value = cat.product_category || cat.name || '';
-    if (imgInput) imgInput.value = cat.image_url || '';
-    if (prevArInput) prevArInput.value = cat.preview_ar || '';
-    if (prevEnInput) prevEnInput.value = cat.preview_en || '';
-    if (sortInput) sortInput.value = cat.sort_order ?? 1;
-    if (hiddenCheck) hiddenCheck.checked = !!cat.hidden;
+    if (cat) {
+      // Edit existing category
+      if (titleEl) titleEl.innerText = isAr ? 'تعديل التصنيف كمسؤول' : 'Edit Category (Admin)';
+      if (saveBtn) saveBtn.innerText = isAr ? 'حفظ بيانات التصنيف في قاعدة البيانات' : 'Save Category Changes';
+
+      if (idInput) idInput.value = cat.id || '';
+      if (arInput) arInput.value = cat.name_ar || cat.name || '';
+      if (enInput) enInput.value = cat.name_en || cat.name || '';
+      if (prodInput) prodInput.value = cat.product_category || cat.name || '';
+      if (iconInput) iconInput.value = cat.icon || '';
+      if (imgInput) imgInput.value = cat.image_url || cat.icon_url || '';
+      if (prevArInput) prevArInput.value = cat.preview_ar || '';
+      if (prevEnInput) prevEnInput.value = cat.preview_en || '';
+      if (sortInput) sortInput.value = cat.sort_order ?? 1;
+      if (hiddenCheck) hiddenCheck.checked = !!cat.hidden;
+    } else {
+      // Create new category
+      if (titleEl) titleEl.innerText = isAr ? 'إضافة تصنيف جديد كمسؤول' : 'Add New Category (Admin)';
+      if (saveBtn) saveBtn.innerText = isAr ? 'إضافة التصنيف الجديد إلى المتجر' : 'Create New Category';
+
+      if (idInput) idInput.value = '';
+      if (arInput) arInput.value = '';
+      if (enInput) enInput.value = '';
+      if (prodInput) prodInput.value = '';
+      if (iconInput) iconInput.value = '📦';
+      if (imgInput) imgInput.value = '/static/img/cat-other.svg';
+      if (prevArInput) prevArInput.value = '';
+      if (prevEnInput) prevEnInput.value = '';
+      if (sortInput) sortInput.value = cats.length ? (cats.length + 1) : 1;
+      if (hiddenCheck) hiddenCheck.checked = false;
+    }
 
     modal.style.display = 'flex';
     api().pushNav('admin_cat_modal', closeAdminCategoryModal);
+  }
+
+  function openAdminCreateCategoryModal() {
+    openAdminCategoryModal(null);
+  }
+
+  function openAdminCategoryEditor(catId, ev) {
+    openAdminCategoryModal(catId, ev);
   }
 
   function closeAdminCategoryModal() {
@@ -433,50 +481,81 @@
   }
 
   async function submitAdminCategoryUpdate() {
-    const id = document.getElementById('admin-edit-cat-id')?.value;
-    const nameAr = document.getElementById('admin-edit-cat-ar')?.value?.trim();
-    const nameEn = document.getElementById('admin-edit-cat-en')?.value?.trim();
-    const prodCat = document.getElementById('admin-edit-cat-prod')?.value?.trim();
-    const imgUrl = document.getElementById('admin-edit-cat-img')?.value?.trim();
+    const isAr = (state().currentAppLanguage === 'ar');
+    const id = document.getElementById('admin-edit-cat-id')?.value?.trim();
+    let nameAr = document.getElementById('admin-edit-cat-ar')?.value?.trim() || '';
+    let nameEn = document.getElementById('admin-edit-cat-en')?.value?.trim() || '';
+    const prodCat = document.getElementById('admin-edit-cat-prod')?.value?.trim() || nameEn || nameAr;
+    const icon = document.getElementById('admin-edit-cat-icon')?.value?.trim() || '📦';
+    const imgUrl = document.getElementById('admin-edit-cat-img')?.value?.trim() || '/static/img/cat-other.svg';
     const prevAr = document.getElementById('admin-edit-cat-prev-ar')?.value?.trim();
     const prevEn = document.getElementById('admin-edit-cat-prev-en')?.value?.trim();
     const sort = parseInt(document.getElementById('admin-edit-cat-sort')?.value || '1', 10);
     const isHidden = !!document.getElementById('admin-edit-cat-hidden')?.checked;
 
-    if (!id || !nameEn) {
-      api().showToast('يرجى التأكد من إدخال اسم التصنيف');
+    if (!nameEn && !nameAr) {
+      api().showToast(isAr ? 'يرجى إدخال اسم التصنيف' : 'Please enter category name');
       return;
+    }
+    if (!nameEn) nameEn = nameAr;
+    if (!nameAr) nameAr = nameEn;
+
+    const isCreate = (!id || id === '0' || id === 'new');
+    const endpoint = isCreate ? '/api/admin/category/create' : '/api/admin/category/update';
+
+    const saveBtn = document.getElementById('admin-category-save-btn');
+    const origBtnText = saveBtn ? saveBtn.innerText : '';
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.innerText = isAr ? 'جاري الحفظ...' : 'Saving...';
     }
 
     api().haptic?.('medium');
     try {
-      const res = await fetch('/api/admin/category/update', {
+      const payload = {
+        admin_tg_id: state().userId,
+        name_ar: nameAr,
+        name_en: nameEn,
+        product_category: prodCat,
+        icon: icon,
+        image_url: imgUrl,
+        preview_ar: prevAr,
+        preview_en: prevEn,
+        sort_order: isNaN(sort) ? 1 : sort,
+        hidden: isHidden
+      };
+      if (!isCreate) {
+        payload.category_id = Number(id);
+      }
+
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          category_id: Number(id),
-          admin_tg_id: state().userId,
-          name_ar: nameAr,
-          name_en: nameEn,
-          product_category: prodCat,
-          image_url: imgUrl,
-          preview_ar: prevAr,
-          preview_en: prevEn,
-          sort_order: isNaN(sort) ? 1 : sort,
-          hidden: isHidden
-        })
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
       if (data.status === 'ok') {
         api().haptic?.('success');
-        api().showToast('تم تحديث التصنيف بنجاح');
+        api().showToast(isCreate
+          ? (isAr ? 'تمت إضافة التصنيف بنجاح' : 'Category created successfully')
+          : (isAr ? 'تم تحديث التصنيف بنجاح' : 'Category updated successfully')
+        );
         closeAdminCategoryModal();
-        if (root.loadStorefrontData) root.loadStorefrontData();
+        if (typeof root.loadStorefrontData === 'function') {
+          root.loadStorefrontData();
+        } else if (typeof root.loadCatalog === 'function') {
+          root.loadCatalog();
+        }
       } else {
-        api().showToast(data.error || 'فشل تحديث بيانات التصنيف');
+        api().showToast(data.error || (isAr ? 'فشل حفظ بيانات التصنيف' : 'Failed to save category'));
       }
     } catch (_) {
-      api().showToast('خطأ في إرسال طلب التحديث');
+      api().showToast(isAr ? 'خطأ في إرسال طلب الحفظ' : 'Error sending save request');
+    } finally {
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.innerText = origBtnText;
+      }
     }
   }
 
@@ -1563,6 +1642,8 @@
     closeAdminProductModal,
     submitAdminProductUpdate,
     openAdminCategoryModal,
+    openAdminCreateCategoryModal,
+    openAdminCategoryEditor,
     closeAdminCategoryModal,
     openAdminFolderModal,
     closeAdminFolderModal,
@@ -1643,6 +1724,8 @@
   root.closeAdminProductModal = closeAdminProductModal;
   root.submitAdminProductUpdate = submitAdminProductUpdate;
   root.openAdminCategoryModal = openAdminCategoryModal;
+  root.openAdminCreateCategoryModal = openAdminCreateCategoryModal;
+  root.openAdminCategoryEditor = openAdminCategoryEditor;
   root.closeAdminCategoryModal = closeAdminCategoryModal;
   root.openAdminFolderModal = openAdminFolderModal;
   root.closeAdminFolderModal = closeAdminFolderModal;

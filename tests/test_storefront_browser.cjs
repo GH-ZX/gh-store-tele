@@ -501,6 +501,46 @@ function runBrowserTests() {
   check(document.getElementById('admin-edit-folder-title-ar')?.value === '', 'new folder title_ar starts empty');
   closeAdminFolderModal();
 
+  // Test 9i. Admin Category Edit and Add Category Modals
+  check(typeof openAdminCategoryModal === 'function', 'openAdminCategoryModal function defined');
+  check(typeof openAdminCreateCategoryModal === 'function', 'openAdminCreateCategoryModal function defined');
+  check(typeof openAdminCategoryEditor === 'function', 'openAdminCategoryEditor function defined');
+  check(typeof submitAdminCategoryUpdate === 'function', 'submitAdminCategoryUpdate function defined');
+
+  // Verify admin button rendering in catalogs grid
+  const prevUserData = StoreAPI.AppState.userData || {};
+  StoreAPI.AppState.userData = { ...prevUserData, id: 999999, is_admin: true, vip_discount: 7 };
+  StorefrontModule.renderCatalogsGrid(StoreAPI.AppState.categoriesList);
+
+  const addCatBar = document.getElementById('admin-add-category-bar');
+  check(addCatBar && addCatBar.style.display !== 'none', 'admin-add-category-bar displayed for admin');
+  const addCatHeaderBtn = document.getElementById('btn-admin-add-category-header');
+  check(addCatHeaderBtn && addCatHeaderBtn.style.display !== 'none', 'btn-admin-add-category-header displayed for admin');
+
+  const editBtns = document.querySelectorAll('.admin-edit-badge-btn');
+  check(editBtns.length > 0, 'admin-edit-badge-btn rendered on category cards for admin');
+
+  // Test opening category editor for existing category 1
+  openAdminCategoryModal(1);
+  const catModal = document.getElementById('admin-category-modal');
+  check(catModal && catModal.style.display !== 'none', 'admin-category-modal opened for edit');
+  check(document.getElementById('admin-edit-cat-id')?.value === '1', 'category 1 id pre-filled');
+  check(document.getElementById('admin-edit-cat-en')?.value === 'AI & Chatbots', 'category name_en pre-filled');
+  check(document.getElementById('admin-edit-cat-ar')?.value === 'الذكاء الاصطناعي', 'category name_ar pre-filled');
+  check(document.getElementById('admin-category-modal-title')?.textContent.includes('تعديل') || document.getElementById('admin-category-modal-title')?.textContent.includes('Edit'), 'category modal title indicates edit mode');
+  closeAdminCategoryModal();
+  check(catModal.style.display === 'none', 'admin-category-modal closed');
+
+  // Test opening category creator via openAdminCreateCategoryModal
+  openAdminCreateCategoryModal();
+  check(catModal && catModal.style.display !== 'none', 'admin-category-modal opened for create');
+  check(document.getElementById('admin-edit-cat-id')?.value === '', 'new category id starts empty');
+  check(document.getElementById('admin-edit-cat-en')?.value === '', 'new category name_en starts empty');
+  check(document.getElementById('admin-edit-cat-ar')?.value === '', 'new category name_ar starts empty');
+  check(document.getElementById('admin-category-modal-title')?.textContent.includes('إضافة') || document.getElementById('admin-category-modal-title')?.textContent.includes('Add'), 'category modal title indicates create mode');
+  closeAdminCategoryModal();
+  check(catModal.style.display === 'none', 'admin-category-modal closed after create cancelled');
+
   // ==========================================
   // 10. GAME & VOUCHER PACK SELECTION AND DROPDOWN TESTS
   // ==========================================
@@ -729,8 +769,12 @@ async function main() {
     <div id="catalogs-collection-mode">
       <button class="view-toggle-btn active" id="btn-view-grid" onclick="setCatalogViewMode('grid')">شبكة</button>
       <button class="view-toggle-btn" id="btn-view-list" onclick="setCatalogViewMode('list')">قائمة</button>
+      <button type="button" id="btn-admin-add-category-header" onclick="openAdminCreateCategoryModal()" style="display: none;">➕</button>
       <div class="catalogs-grid grid-layout" id="catalogs-grid">
         <div class="skeleton-card-item"></div>
+      </div>
+      <div id="admin-add-category-bar" style="display: none;">
+        <button type="button" id="btn-admin-add-category" onclick="openAdminCreateCategoryModal()">إضافة تصنيف جديد</button>
       </div>
     </div>
     <div id="products-catalog-mode" style="display: none;">
@@ -920,6 +964,22 @@ async function main() {
     <input type="number" id="admin-edit-folder-sort">
     <input type="checkbox" id="admin-edit-folder-hidden-check">
     <button id="admin-folder-save-btn" onclick="submitAdminFolderUpdate()"></button>
+  </div>
+
+  <!-- Admin Category Editor Modal Sheet -->
+  <div class="admin-modal-overlay" id="admin-category-modal" style="display: none;">
+    <h3 id="admin-category-modal-title"></h3>
+    <input type="hidden" id="admin-edit-cat-id">
+    <input type="text" id="admin-edit-cat-ar">
+    <input type="text" id="admin-edit-cat-en">
+    <input type="text" id="admin-edit-cat-prod">
+    <input type="text" id="admin-edit-cat-icon">
+    <input type="text" id="admin-edit-cat-img">
+    <input type="text" id="admin-edit-cat-prev-ar">
+    <input type="text" id="admin-edit-cat-prev-en">
+    <input type="number" id="admin-edit-cat-sort">
+    <input type="checkbox" id="admin-edit-cat-hidden">
+    <button id="admin-category-save-btn" onclick="submitAdminCategoryUpdate()"></button>
   </div>
 
   <!-- Dedicated Suppliers View -->

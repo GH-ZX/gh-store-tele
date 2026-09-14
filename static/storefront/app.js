@@ -707,6 +707,10 @@
     if (!d) return;
     const isAr = (state().currentAppLanguage === 'ar');
     const adminCenterCard = document.getElementById('admin-control-center-card');
+    const addCatBar = document.getElementById('admin-add-category-bar');
+    const addCatHeaderBtn = document.getElementById('btn-admin-add-category-header');
+    if (addCatBar) addCatBar.style.display = d.is_admin ? 'flex' : 'none';
+    if (addCatHeaderBtn) addCatHeaderBtn.style.display = d.is_admin ? 'inline-flex' : 'none';
     if (!adminCenterCard) return;
 
     if (!d.is_admin) {
@@ -1381,7 +1385,9 @@ Payment Method: Wallet Balance (USD)
   root.submitAdminProductUpdate = () => admin().submitAdminProductUpdate?.();
   root.onAdminProdCatSelectChange = () => admin().onAdminProdCatSelectChange?.();
   root.onAdminProdFolderSelectChange = () => admin().onAdminProdFolderSelectChange?.();
-  root.openAdminCategoryModal = (id) => admin().openAdminCategoryModal?.(id);
+  root.openAdminCategoryModal = (id, ev) => admin().openAdminCategoryModal?.(id, ev);
+  root.openAdminCreateCategoryModal = () => admin().openAdminCreateCategoryModal?.();
+  root.openAdminCategoryEditor = (id, ev) => admin().openAdminCategoryEditor?.(id, ev);
   root.closeAdminCategoryModal = () => admin().closeAdminCategoryModal?.();
   root.openAdminCurrentCategoryEditor = () => admin().openAdminCurrentCategoryEditor?.();
   root.submitAdminCategoryUpdate = () => admin().submitAdminCategoryUpdate?.();

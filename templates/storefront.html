@@ -109,7 +109,7 @@
   <div class="admin-modal-overlay" id="admin-category-modal">
     <div class="admin-modal-sheet">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
-        <h3 style="font-size: 17px; font-weight: 800;">تعديل التصنيف كمسؤول</h3>
+        <h3 style="font-size: 17px; font-weight: 800;" id="admin-category-modal-title">تعديل التصنيف كمسؤول</h3>
         <button class="circle-icon-btn" onclick="closeAdminCategoryModal()">✕</button>
       </div>
       <input type="hidden" id="admin-edit-cat-id">
@@ -118,7 +118,7 @@
         <input type="text" class="admin-text-input" id="admin-edit-cat-ar" placeholder="الذكاء الاصطناعي">
       </div>
       <div class="admin-input-row">
-        <label class="admin-input-label">الاسم بالإنجليزية</label>
+        <label class="admin-input-label">الاسم بالإنجليزية (Category Key)</label>
         <input type="text" class="admin-text-input" id="admin-edit-cat-en" placeholder="AI & Chatbots">
       </div>
       <div class="admin-input-row">
@@ -126,8 +126,12 @@
         <input type="text" class="admin-text-input" id="admin-edit-cat-prod" placeholder="AI & Chatbots">
       </div>
       <div class="admin-input-row">
+        <label class="admin-input-label">رمز الأيقونة (Emoji / Icon)</label>
+        <input type="text" class="admin-text-input" id="admin-edit-cat-icon" placeholder="📦">
+      </div>
+      <div class="admin-input-row">
         <label class="admin-input-label">رابط صورة التصنيف</label>
-        <input type="text" class="admin-text-input" id="admin-edit-cat-img" placeholder="https://...">
+        <input type="text" class="admin-text-input" id="admin-edit-cat-img" placeholder="https://... أو /static/img/cat-other.svg">
       </div>
       <div class="admin-input-row">
         <label class="admin-input-label">الوصف المختصر بالعربية</label>
@@ -147,7 +151,7 @@
           <input type="checkbox" id="admin-edit-cat-hidden" style="width: 16px; height: 16px; accent-color: var(--accent);">
         </div>
       </div>
-      <button class="btn-action-primary" onclick="submitAdminCategoryUpdate()" style="margin-top: 10px;">حفظ بيانات التصنيف في قاعدة البيانات</button>
+      <button class="btn-action-primary" id="admin-category-save-btn" onclick="submitAdminCategoryUpdate()" style="margin-top: 10px;">حفظ بيانات التصنيف في قاعدة البيانات</button>
     </div>
   </div>
   <!-- ADMIN FOLDER / SUBCATEGORY EDITOR MODAL SHEET -->
@@ -859,7 +863,10 @@
     <!-- Mode A: Catalogs Cards (Homepage Collections with Grid/List Toggle) -->
     <div id="catalogs-collection-mode">
       <div class="section-header-flex">
-        <div class="section-title" id="title-collections">التصنيفات المميزة</div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <div class="section-title" id="title-collections">التصنيفات المميزة</div>
+          <button type="button" id="btn-admin-add-category-header" onclick="openAdminCreateCategoryModal()" style="display: none; width: 26px; height: 26px; border-radius: 50%; border: 1.5px dashed var(--accent); background: rgba(56, 189, 248, 0.12); color: var(--accent); font-size: 13px; font-weight: 800; align-items: center; justify-content: center; cursor: pointer; padding: 0;" title="إضافة تصنيف جديد">➕</button>
+        </div>
         <div class="view-toggle-capsule">
           <button class="view-toggle-btn active" id="btn-view-grid" onclick="setCatalogViewMode('grid')">
             <span id="label-view-grid">شبكة</span>
@@ -902,6 +909,13 @@
               <div class="skeleton-bar sub-bar"></div>
             </div>
           </div>
+      </div>
+      <!-- Admin Add Category Button at Bottom of Homepage -->
+      <div id="admin-add-category-bar" style="display: none; justify-content: center; align-items: center; margin: 20px 0 28px 0;">
+        <button type="button" class="btn-action-secondary" id="btn-admin-add-category" onclick="openAdminCreateCategoryModal()" style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 38px; padding: 0 18px; border-radius: 19px; font-size: 13px; font-weight: 700; border: 1.5px dashed var(--accent); color: var(--accent); background: rgba(56, 189, 248, 0.08); cursor: pointer; transition: all 0.2s ease;" title="إضافة تصنيف جديد">
+          <span style="font-size: 15px; font-weight: 900; line-height: 1;">➕</span>
+          <span id="label-add-new-category">إضافة تصنيف جديد</span>
+        </button>
       </div>
     </div>
 

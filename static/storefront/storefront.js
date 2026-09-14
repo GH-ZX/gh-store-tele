@@ -432,8 +432,9 @@
         ? `<span class="catalog-visual-pill" style="background: rgba(245,158,11,0.25); color: #fbbf24;">${isAr ? 'قريباً' : 'Soon'}</span>`
         : `<span class="catalog-visual-pill">${items.length} ${itemsSuffix}</span>`;
 
-      const adminEditBtn = (isAdmin && catId)
-        ? `<button class="admin-edit-badge-btn" onclick="event.stopPropagation(); openAdminCategoryEditor(${catId}, event)">${isAr ? 'تعديل' : 'Edit'}</button>`
+      const catTargetId = (catId != null && catId !== '') ? catId : catName;
+      const adminEditBtn = (isAdmin && catTargetId)
+        ? `<button type="button" class="admin-edit-badge-btn" data-cat-id="${escAttr(String(catTargetId))}" onclick="event.stopPropagation(); openAdminCategoryModal(this.dataset.catId, event)">${isAr ? 'تعديل' : 'Edit'}</button>`
         : '';
 
       const safeImg = sec().safeUrl ? sec().safeUrl(imageUrl, true) : imageUrl;
@@ -490,6 +491,11 @@
 
     if (container) container.innerHTML = cardsHtml;
     if (testContainer) testContainer.innerHTML = cardsHtml;
+
+    const addCatBar = document.getElementById('admin-add-category-bar');
+    if (addCatBar) addCatBar.style.display = isAdmin ? 'flex' : 'none';
+    const addCatHeaderBtn = document.getElementById('btn-admin-add-category-header');
+    if (addCatHeaderBtn) addCatHeaderBtn.style.display = isAdmin ? 'inline-flex' : 'none';
   }
 
   function renderCategories(categories, activeCatId = null) {
