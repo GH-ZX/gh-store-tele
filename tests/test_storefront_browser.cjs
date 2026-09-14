@@ -618,6 +618,71 @@ function runBrowserTests() {
   onDetailPackSelectChange('2'); // 60 UC Voucher (stock: 17308)
   check(document.getElementById('btn-inapp-purchase')?.style.display !== 'none', 'buy button restored when in-stock pack selected');
 
+  // ==========================================
+  // 11. MULTI-SUPPLIER PAGE & 5SIM INTEGRATION TESTS
+  // ==========================================
+  // 11a. Verify function exports
+  check(typeof openAdminSuppliersPage === 'function', 'openAdminSuppliersPage function exists');
+  check(typeof closeAdminSuppliersPage === 'function', 'closeAdminSuppliersPage function exists');
+  check(typeof loadSuppliersPageDetails === 'function', 'loadSuppliersPageDetails function exists');
+  check(typeof saveSuppliersPageSettings === 'function', 'saveSuppliersPageSettings function exists');
+  check(typeof testFiveSimKeyLiveInSuppliersPage === 'function', 'testFiveSimKeyLiveInSuppliersPage function exists');
+  check(typeof testBatStoreKeyLive === 'function', 'testBatStoreKeyLive function exists');
+  check(typeof testProdSellerKeyLiveInSuppliersPage === 'function', 'testProdSellerKeyLiveInSuppliersPage function exists');
+  check(typeof testG2BulkKeyLiveInSuppliersPage === 'function', 'testG2BulkKeyLiveInSuppliersPage function exists');
+  check(typeof syncAllSupplierCatalogsInSuppliersPage === 'function', 'syncAllSupplierCatalogsInSuppliersPage function exists');
+  check(typeof togglePasswordVisibility === 'function', 'togglePasswordVisibility function exists');
+  check(typeof saveAdminSmsConfig === 'function', 'saveAdminSmsConfig function exists');
+
+  // 11b. Test togglePasswordVisibility
+  const testPwInput = document.getElementById('sup-card-5sim-key');
+  check(testPwInput !== null, 'sup-card-5sim-key exists');
+  check(testPwInput.type === 'password', 'sup-card-5sim-key initially password');
+  togglePasswordVisibility('sup-card-5sim-key');
+  check(testPwInput.type === 'text', 'sup-card-5sim-key toggled to text');
+  togglePasswordVisibility('sup-card-5sim-key');
+  check(testPwInput.type === 'password', 'sup-card-5sim-key toggled back to password');
+
+  // 11c. Test openAdminSuppliersPage & closeAdminSuppliersPage
+  openAdminSuppliersPage();
+  const supView = document.getElementById('view-admin-suppliers');
+  check(supView.classList.contains('active'), 'view-admin-suppliers is active');
+  check(supView.style.display !== 'none', 'view-admin-suppliers is displayed');
+
+  closeAdminSuppliersPage();
+  check(supView.style.display === 'none', 'view-admin-suppliers is hidden after close');
+
+  // 11d. Test 5sim balance rendering in renderAdminControlCenter
+  renderAdminControlCenter({
+    is_admin: true,
+    admin_stats: {
+      supplier_wallets: {
+        batstore_usd: 12.50,
+        prodseller_usd: 34.00,
+        g2bulk_usd: 56.75,
+        fivesim_usd: 18.25,
+        sam_usd: 5.00,
+        sam_syp: 75000,
+        total_supplier_usd: 126.50
+      }
+    }
+  });
+  check(document.getElementById('admin-bal-5sim')?.textContent === '$18.25', 'admin-bal-5sim rendered correctly');
+  check(document.getElementById('admin-wallet-5sim')?.textContent === '$18.25', 'admin-wallet-5sim rendered correctly');
+  check(document.getElementById('admin-bal-total-suppliers-pill')?.textContent.includes('$126.50'), 'admin-bal-total-suppliers-pill includes total');
+
+  // 11e. Test 5sim SMS config fields in admin-sms-modal
+  const smsApiKeyInput = document.getElementById('admin-sms-api-key');
+  check(smsApiKeyInput !== null, 'admin-sms-api-key exists in DOM');
+  const smsApiUrlInput = document.getElementById('admin-sms-api-url');
+  check(smsApiUrlInput !== null, 'admin-sms-api-url exists in DOM');
+  const smsRubRateInput = document.getElementById('admin-sms-rub-rate');
+  check(smsRubRateInput !== null, 'admin-sms-rub-rate exists in DOM');
+  const smsEnabledInput = document.getElementById('admin-sms-is-enabled');
+  check(smsEnabledInput !== null, 'admin-sms-is-enabled exists in DOM');
+  const smsSaveBtn = document.getElementById('btn-save-admin-sms-config');
+  check(smsSaveBtn !== null, 'btn-save-admin-sms-config exists in DOM');
+
   // Mark all tests passed in body
   document.body.textContent = `PASS: ${count} storefront browser coverage checks`;
 }
@@ -754,6 +819,9 @@ async function main() {
       <div id="admin-stat-cost">$0.00</div>
       <div id="admin-stat-profit">$0.00</div>
       <div id="admin-stat-balances">$0.00</div>
+      <div id="admin-bal-5sim">$0.00</div>
+      <div id="admin-wallet-5sim">$0.00</div>
+      <span id="admin-bal-total-suppliers-pill"></span>
     </div>
     <div id="top-avatar-box"><div id="top-avatar-initial">U</div></div>
     <div id="settings-avatar-box"><div id="settings-avatar-initial">U</div></div>
@@ -814,6 +882,12 @@ async function main() {
     <div id="admin-5sim-balance-val"></div>
     <div id="admin-sms-services-list"></div>
     <div id="admin-sms-countries-list"></div>
+    <input type="password" id="admin-sms-api-key">
+    <span id="admin-sms-key-state"></span>
+    <input type="text" id="admin-sms-api-url">
+    <input type="number" id="admin-sms-rub-rate">
+    <input type="checkbox" id="admin-sms-is-enabled">
+    <button id="btn-save-admin-sms-config" onclick="saveAdminSmsConfig()"></button>
   </div>
 
   <!-- Admin Product Editor Modal Sheet -->
@@ -847,6 +921,44 @@ async function main() {
     <input type="checkbox" id="admin-edit-folder-hidden-check">
     <button id="admin-folder-save-btn" onclick="submitAdminFolderUpdate()"></button>
   </div>
+
+  <!-- Dedicated Suppliers View -->
+  <section id="view-admin-suppliers" class="tab-view" style="display: none;">
+    <div id="suppliers-view-total-bal"></div>
+    <div id="sup-card-bat-bal"></div>
+    <div id="sup-card-bat-status"></div>
+    <input type="password" id="sup-card-bat-key">
+    <span id="sup-card-bat-key-state"></span>
+    <input type="checkbox" id="sup-card-bat-sync">
+    <div id="sup-card-bat-count"></div>
+    <div id="sup-card-prod-bal"></div>
+    <div id="sup-card-prod-status"></div>
+    <input type="password" id="sup-card-prod-key">
+    <span id="sup-card-prod-key-state"></span>
+    <input type="checkbox" id="sup-card-prod-sync">
+    <div id="sup-card-prod-count"></div>
+    <div id="sup-card-g2b-bal"></div>
+    <div id="sup-card-g2b-status"></div>
+    <input type="password" id="sup-card-g2b-key">
+    <span id="sup-card-g2b-key-state"></span>
+    <input type="checkbox" id="sup-card-g2b-sync">
+    <div id="sup-card-g2b-count"></div>
+    <div id="sup-card-5sim-bal"></div>
+    <div id="sup-card-5sim-rate-display"></div>
+    <div id="sup-card-5sim-status"></div>
+    <input type="password" id="sup-card-5sim-key">
+    <span id="sup-card-5sim-key-state"></span>
+    <input type="text" id="sup-card-5sim-url">
+    <input type="number" id="sup-card-5sim-rate">
+    <input type="checkbox" id="sup-card-5sim-enabled">
+    <select id="sup-page-routing-select">
+      <option value="auto_cheapest">auto_cheapest</option>
+      <option value="batstore_primary">batstore_primary</option>
+    </select>
+    <input type="checkbox" id="sup-page-failover">
+    <button id="sup-page-save-btn" onclick="saveSuppliersPageSettings()"></button>
+    <button id="btn-sup-page-sync" onclick="syncAllSupplierCatalogsInSuppliersPage()"><span id="sup-page-sync-btn"></span></button>
+  </section>
 
   <!-- Load Modular Scripts -->
   <script>${securitySrc}</script>

@@ -768,9 +768,11 @@ async def get_tma_user_data(request: Request, tg_id: int | None = None):
                         from services.prodseller import ProdSellerService
                         from services.g2bulk import G2BulkService
                         from services.sam import SamService
+                        from services.fivesim import FiveSimService
                         bat_bal = await BatStoreService.get_cached_reseller_balance(session, force_refresh=force_refresh)
                         prod_bal = await ProdSellerService.get_cached_balance(session, force_refresh=force_refresh)
                         g2b_bal = await G2BulkService.get_cached_balance(session, force_refresh=force_refresh)
+                        fivesim_bal = await FiveSimService.get_cached_balance(session, force_refresh=force_refresh)
                         sam_bals = await SamService.get_cached_wallet_balances(session, force_refresh=force_refresh)
                         sam_usd = float(sam_bals.get("usd") or 0.0)
                         sam_syp = float(sam_bals.get("syp") or 0.0)
@@ -789,11 +791,12 @@ async def get_tma_user_data(request: Request, tg_id: int | None = None):
                             )
                             sam_syp_paid = (await session_execute(stmt_sam_syp, session)).scalar() or 0.0
                             sam_syp = round(float(sam_syp_paid)) if sam_syp_paid > 0 else int(round(sam_usd * syp_market))
-                        total_supp = round(bat_bal + prod_bal + g2b_bal + sam_usd, 2)
+                        total_supp = round(bat_bal + prod_bal + g2b_bal + fivesim_bal + sam_usd, 2)
                         _SUPPLIER_WALLETS_CACHE["data"] = {
                             "batstore_usd": bat_bal,
                             "prodseller_usd": prod_bal,
                             "g2bulk_usd": g2b_bal,
+                            "fivesim_usd": fivesim_bal,
                             "sam_usd": sam_usd,
                             "sam_syp": sam_syp,
                             "total_supplier_usd": total_supp,

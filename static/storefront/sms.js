@@ -502,6 +502,21 @@
           balVal.textContent = `${balRub.toFixed(1)} RUB (~$${balUsd.toFixed(2)})`;
         }
 
+        // 5sim API Config Card
+        if (data.config) {
+          const keyInput = document.getElementById('admin-sms-api-key');
+          const keyState = document.getElementById('admin-sms-key-state');
+          const urlInput = document.getElementById('admin-sms-api-url');
+          const rateInput = document.getElementById('admin-sms-rub-rate');
+          const enabledInput = document.getElementById('admin-sms-is-enabled');
+
+          if (keyInput) keyInput.placeholder = data.config.api_key_masked || 'أدخل رمز Bearer API Token...';
+          if (keyState) keyState.textContent = data.config.has_api_key ? 'محفوظ' : 'غير معين';
+          if (urlInput) urlInput.value = data.config.api_url || 'https://5sim.net/v1';
+          if (rateInput) rateInput.value = data.config.rub_usd_rate || 0.011;
+          if (enabledInput) enabledInput.checked = Boolean(data.config.is_enabled);
+        }
+
         // Services
         if (svcsList && data.services) {
           let sHtml = '';
@@ -594,6 +609,59 @@
     }
   }
 
+  async function saveAdminSmsConfig() {
+    api().haptic?.('medium');
+    const keyInput = document.getElementById('admin-sms-api-key');
+    const urlInput = document.getElementById('admin-sms-api-url');
+    const rateInput = document.getElementById('admin-sms-rub-rate');
+    const enabledInput = document.getElementById('admin-sms-is-enabled');
+    const btn = document.getElementById('btn-save-admin-sms-config');
+
+    const payload = {
+      admin_tg_id: state().userId,
+      api_url: urlInput ? urlInput.value.trim() : undefined,
+      rub_usd_rate: rateInput && rateInput.value ? parseFloat(rateInput.value) : undefined,
+      is_enabled: enabledInput ? enabledInput.checked : true
+    };
+    if (keyInput && keyInput.value.trim()) {
+      payload.api_key = keyInput.value.trim();
+    }
+
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'جاري الحفظ... ⏳';
+    }
+
+    try {
+      const res = await fetch('/api/admin/sms/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.status === 'ok') {
+        api().haptic?.('success');
+        api().showToast?.('تم حفظ إعدادات 5sim بنجاح');
+        if (keyInput) keyInput.value = '';
+        await loadAdminSmsSettings();
+        if (typeof root.loadSuppliersPageDetails === 'function') {
+          root.loadSuppliersPageDetails();
+        }
+      } else {
+        api().haptic?.('error');
+        api().showToast?.(data.error || 'فشل حفظ الإعدادات');
+      }
+    } catch (_) {
+      api().haptic?.('error');
+      api().showToast?.('خطأ أثناء حفظ إعدادات 5sim');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = '💾 حفظ إعدادات مفتاح 5sim';
+      }
+    }
+  }
+
   // --- Export Namespace ---
   root.SmsModule = {
     openSmsModal,
@@ -608,8 +676,11 @@
     openAdminSmsModal,
     closeAdminSmsModal,
     loadAdminSmsSettings,
+    saveAdminSmsConfig,
     toggleAdminSmsService,
     toggleAdminSmsCountry
   };
+
+  root.saveAdminSmsConfig = saveAdminSmsConfig;
 
 })(typeof window !== 'undefined' ? window : globalThis);

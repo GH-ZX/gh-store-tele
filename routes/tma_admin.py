@@ -1101,6 +1101,10 @@ async def admin_get_supplier_details(tg_id: int, request: Request):
         bat_key = await ConfigService.get(session, "BATSTORE_API_KEY", env_fallback=os.environ.get("BATSTORE_API_KEY", ""))
         prod_key = await ConfigService.get(session, "PRODSELLER_API_KEY", env_fallback=os.environ.get("PRODSELLER_API_KEY", ""))
         g2b_key = await ConfigService.get(session, "G2BULK_API_KEY", env_fallback=os.environ.get("G2BULK_API_KEY", ""))
+        fivesim_key = await ConfigService.get(session, "FIVESIM_API_KEY", env_fallback=os.environ.get("FIVESIM_API_KEY", ""))
+        fivesim_url = await ConfigService.get(session, "FIVESIM_API_URL", default="https://5sim.net/v1")
+        fivesim_enabled = (await ConfigService.get(session, "FIVESIM_ENABLED", default="true")).lower() == "true"
+        fivesim_rate = float(await ConfigService.get(session, "FIVESIM_RUB_USD_RATE", default="0.011") or 0.011)
         strategy = await ConfigService.get(session, "SUPPLIER_ROUTING_STRATEGY", default="auto_cheapest")
         bat_sync = (await ConfigService.get(session, "BATSTORE_SYNC_ENABLED", default="true")).lower() == "true"
         prod_sync = (await ConfigService.get(session, "PRODSELLER_SYNC_ENABLED", default="true")).lower() == "true"
@@ -1115,6 +1119,7 @@ async def admin_get_supplier_details(tg_id: int, request: Request):
         from services.prodseller import ProdSellerService
         from services.g2bulk import G2BulkService
         from services.sam import SamService
+        from services.fivesim import FiveSimService
         force_refresh = request.query_params.get("refresh") == "true"
         bat_bal = await BatStoreService.get_cached_reseller_balance(session, force_refresh=force_refresh)
         prod_bal = await ProdSellerService.get_cached_balance(session, force_refresh=force_refresh)
@@ -1122,7 +1127,18 @@ async def admin_get_supplier_details(tg_id: int, request: Request):
         sam_bals = await SamService.get_cached_wallet_balances(session, force_refresh=force_refresh)
         sam_usd = float(sam_bals.get("usd") or 0.0)
         sam_syp = float(sam_bals.get("syp") or 0.0)
-        total_supp = round(bat_bal + prod_bal + g2b_bal + sam_usd, 2)
+
+        fivesim_usd = 0.0
+        fivesim_rub = 0.0
+        fivesim_bal_info = {}
+        try:
+            fivesim_bal_info = await FiveSimService.get_balance(session=session)
+            fivesim_rub = float(fivesim_bal_info.get("balance_rub") or 0.0)
+            fivesim_usd = float(fivesim_bal_info.get("balance_usd") or 0.0)
+        except Exception as e:
+            fivesim_bal_info = {"error": str(e)}
+
+        total_supp = round(bat_bal + prod_bal + g2b_bal + fivesim_usd + sam_usd, 2)
     return {
         "batstore": {
             "name": "سيرفر 1: BatStore / VenteBot",
@@ -1154,6 +1170,20 @@ async def admin_get_supplier_details(tg_id: int, request: Request):
             "product_count": g2b_prod_count,
             "balance": g2b_bal,
         },
+        "fivesim": {
+            "name": "سيرفر 4: 5sim (أرقام وتفعيل SMS)",
+            "badge": "سيرفر 4 (5sim SMS)",
+            "api_url": fivesim_url,
+            "api_key_configured": bool(fivesim_key),
+            "api_key_masked": (fivesim_key[:6] + "..." + fivesim_key[-4:]) if len(fivesim_key or "") > 10 else ("configured" if fivesim_key else ""),
+            "enabled": fivesim_enabled,
+            "rub_usd_rate": fivesim_rate,
+            "balance_rub": fivesim_rub,
+            "balance_usd": fivesim_usd,
+            "email": fivesim_bal_info.get("email"),
+            "rating": fivesim_bal_info.get("rating"),
+            "error": fivesim_bal_info.get("error"),
+        },
         "sam": {
             "usd": sam_usd,
             "syp": sam_syp,
@@ -1162,6 +1192,8 @@ async def admin_get_supplier_details(tg_id: int, request: Request):
             "batstore_usd": bat_bal,
             "prodseller_usd": prod_bal,
             "g2bulk_usd": g2b_bal,
+            "fivesim_usd": fivesim_usd,
+            "fivesim_rub": fivesim_rub,
             "sam_usd": sam_usd,
             "sam_syp": sam_syp,
             "total_supplier_usd": total_supp,
@@ -1185,6 +1217,10 @@ async def admin_update_supplier_config(request: Request):
     bat_key = str(body.get("batstore_api_key") or "").strip()
     prod_key = str(body.get("prodseller_api_key") or "").strip()
     g2b_key = str(body.get("g2bulk_api_key") or "").strip()
+    fivesim_key = str(body.get("fivesim_api_key") or "").strip()
+    fivesim_url = str(body.get("fivesim_api_url") or "").strip()
+    fivesim_enabled = body.get("fivesim_enabled")
+    fivesim_rate = body.get("fivesim_rub_usd_rate")
     strategy = str(body.get("routing_strategy") or "auto_cheapest").strip().lower()
     bat_sync = body.get("batstore_sync_enabled")
     prod_sync = body.get("prodseller_sync_enabled")
@@ -1200,6 +1236,19 @@ async def admin_update_supplier_config(request: Request):
             await ConfigService.set(session, "G2BULK_API_KEY", g2b_key)
         if g2b_sync is not None:
             await ConfigService.set(session, "G2BULK_SYNC_ENABLED", "true" if g2b_sync else "false")
+        if fivesim_key:
+            await ConfigService.set(session, "FIVESIM_API_KEY", fivesim_key)
+        if fivesim_url:
+            await ConfigService.set(session, "FIVESIM_API_URL", fivesim_url)
+        if fivesim_enabled is not None:
+            await ConfigService.set(session, "FIVESIM_ENABLED", "true" if fivesim_enabled else "false")
+        if fivesim_rate is not None and str(fivesim_rate).strip():
+            try:
+                rate_val = float(fivesim_rate)
+                if rate_val > 0:
+                    await ConfigService.set(session, "FIVESIM_RUB_USD_RATE", str(rate_val))
+            except ValueError:
+                pass
         if strategy in ("auto_cheapest", "batstore_primary", "prodseller_primary", "g2bulk_primary"):
             await ConfigService.set(session, "SUPPLIER_ROUTING_STRATEGY", strategy)
         if bat_sync is not None:
@@ -1211,6 +1260,83 @@ async def admin_update_supplier_config(request: Request):
         await session_commit(session)
 
     return {"status": "ok", "routing_strategy": strategy}
+
+
+@router.post("/api/admin/supplier/test-key")
+async def admin_test_supplier_key(request: Request):
+    """Live validation of supplier API credentials before saving."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+
+    admin_id = body.get("admin_tg_id") or body.get("tg_id")
+    if not verify_admin(admin_id, request):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+
+    supplier = str(body.get("supplier") or "").strip().lower()
+    custom_key = str(body.get("api_key") or "").strip() or None
+    custom_url = str(body.get("api_url") or "").strip() or None
+
+    async with get_db_session() as session:
+        try:
+            if supplier in ("5sim", "fivesim"):
+                from services.fivesim import FiveSimService
+                bal = await FiveSimService.get_balance(session=session, custom_key=custom_key, custom_url=custom_url)
+                rub = float(bal.get("balance_rub") or 0.0)
+                usd = float(bal.get("balance_usd") or 0.0)
+                return {
+                    "status": "ok",
+                    "supplier": "5sim",
+                    "balance_usd": usd,
+                    "balance_rub": rub,
+                    "email": bal.get("email"),
+                    "rating": bal.get("rating"),
+                    "message": f"اتصال ناجح! الرصيد: {rub:.1f} RUB (~${usd:.2f} USD)"
+                }
+            elif supplier == "prodseller":
+                from services.prodseller import ProdSellerService
+                bal_info = await ProdSellerService.get_balance(session, custom_key=custom_key)
+                bal = float(bal_info.get("balance") or 0.0)
+                membership = bal_info.get("membership") or "standard"
+                return {
+                    "status": "ok",
+                    "supplier": "prodseller",
+                    "balance_usd": bal,
+                    "membership": membership,
+                    "message": f"اتصال ناجح! الرصيد المتاح: ${bal:.2f} USDT ({membership})"
+                }
+            elif supplier == "g2bulk":
+                from services.g2bulk import G2BulkService
+                bal_info = await G2BulkService.get_balance(session, custom_key=custom_key, custom_url=custom_url)
+                bal = float(bal_info.get("balance") or 0.0)
+                return {
+                    "status": "ok",
+                    "supplier": "g2bulk",
+                    "balance_usd": bal,
+                    "message": f"اتصال ناجح! الرصيد المتاح: ${bal:.2f} USD"
+                }
+            elif supplier == "batstore":
+                from services.batstore import BatStoreService
+                me_info = await BatStoreService.me(session, key_override=custom_key)
+                raw_b = me_info.get("wallet_balance")
+                if raw_b is None:
+                    raw_b = me_info.get("wallet", {}).get("balance", 0.0)
+                bal = float(raw_b or 0.0)
+                return {
+                    "status": "ok",
+                    "supplier": "batstore",
+                    "balance_usd": bal,
+                    "message": f"اتصال ناجح! الرصيد المتاح: ${bal:.2f} USD"
+                }
+            else:
+                return JSONResponse({"error": "unknown_supplier"}, status_code=400)
+        except Exception as e:
+            return JSONResponse({
+                "status": "error",
+                "error": str(e),
+                "message": f"فشل فحص الاتصال: {e}"
+            }, status_code=200)
 
 
 @router.post("/api/admin/supplier/sync")

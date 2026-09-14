@@ -466,19 +466,32 @@ async def admin_get_sms_settings(request: Request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
 
     async with get_db_session() as session:
+        from services.config import ConfigService
         svcs = (await session.execute(select(SmsServiceConfig).order_by(SmsServiceConfig.sort_order))).scalars().all()
         ctries = (await session.execute(select(SmsCountryConfig).order_by(SmsCountryConfig.sort_order))).scalars().all()
+
+        fivesim_key = await ConfigService.get(session, "FIVESIM_API_KEY", env_fallback=getattr(config, "FIVESIM_API_KEY", "") or "")
+        fivesim_url = await ConfigService.get(session, "FIVESIM_API_URL", default="https://5sim.net/v1")
+        fivesim_enabled = (await ConfigService.get(session, "FIVESIM_ENABLED", default="true")).lower() == "true"
+        fivesim_rate = float(await ConfigService.get(session, "FIVESIM_RUB_USD_RATE", default="0.011") or 0.011)
 
         # Fetch 5sim wallet balance
         balance_info = {}
         try:
-            balance_info = await FiveSimService.get_balance()
+            balance_info = await FiveSimService.get_balance(session=session)
         except Exception as e:
             balance_info = {"error": str(e)}
 
         return {
             "status": "ok",
             "balance": balance_info,
+            "config": {
+                "api_key_configured": bool(fivesim_key),
+                "api_key_masked": (fivesim_key[:6] + "..." + fivesim_key[-4:]) if len(fivesim_key or "") > 10 else ("configured" if fivesim_key else ""),
+                "api_url": fivesim_url,
+                "is_enabled": fivesim_enabled,
+                "rub_usd_rate": fivesim_rate,
+            },
             "services": [
                 {
                     "id": s.id,
@@ -501,6 +514,42 @@ async def admin_get_sms_settings(request: Request):
                 for c in ctries
             ],
         }
+
+
+@router.post("/api/admin/sms/config")
+async def admin_update_sms_config(request: Request):
+    """Admin updates 5sim API key, URL, enabled status, and rate."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    admin_id = body.get("admin_tg_id")
+    if not verify_admin(admin_id, request):
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+
+    api_key = str(body.get("api_key") or "").strip()
+    api_url = str(body.get("api_url") or "").strip()
+    is_enabled = body.get("is_enabled")
+    rate = body.get("rub_usd_rate")
+
+    async with get_db_session() as session:
+        from services.config import ConfigService
+        if api_key:
+            await ConfigService.set(session, "FIVESIM_API_KEY", api_key)
+        if api_url:
+            await ConfigService.set(session, "FIVESIM_API_URL", api_url)
+        if is_enabled is not None:
+            await ConfigService.set(session, "FIVESIM_ENABLED", "true" if is_enabled else "false")
+        if rate is not None and str(rate).strip():
+            try:
+                r_val = float(rate)
+                if r_val > 0:
+                    await ConfigService.set(session, "FIVESIM_RUB_USD_RATE", str(r_val))
+            except ValueError:
+                pass
+        await session_commit(session)
+
+    return {"status": "ok"}
 
 
 @router.post("/api/admin/sms/services/toggle")

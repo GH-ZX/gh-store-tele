@@ -678,6 +678,7 @@
     }
     window.scrollTo({ top: 0, behavior: 'instant' });
     api().pushNav?.('admin_suppliers', closeAdminSuppliersPage);
+    loadSuppliersPageDetails();
   }
 
   function closeAdminSuppliersPage() {
@@ -692,6 +693,298 @@
       setView.style.display = 'block';
     }
     window.scrollTo({ top: 0, behavior: 'instant' });
+  }
+
+  function togglePasswordVisibility(inputId) {
+    const el = document.getElementById(inputId);
+    if (!el) return;
+    el.type = el.type === 'password' ? 'text' : 'password';
+  }
+
+  async function loadSuppliersPageDetails(forceRefresh = false) {
+    const tgId = state().userId;
+    if (!tgId) return;
+
+    try {
+      const url = `/api/admin/supplier/details?tg_id=${tgId}${forceRefresh ? '&refresh=true' : ''}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.error) {
+        api().showToast?.(data.error);
+        return;
+      }
+
+      // Master balance banner
+      const totalBalEl = document.getElementById('suppliers-view-total-bal');
+      if (totalBalEl && data.balances?.total_supplier_usd !== undefined) {
+        totalBalEl.textContent = `$${Number(data.balances.total_supplier_usd).toFixed(2)} USD`;
+      }
+
+      // 1. BatStore (Server 1)
+      if (data.batstore) {
+        const bat = data.batstore;
+        const balEl = document.getElementById('sup-card-bat-bal');
+        if (balEl) balEl.textContent = `$${Number(bat.balance || 0).toFixed(2)} USD`;
+        const countEl = document.getElementById('sup-card-bat-count');
+        if (countEl) countEl.textContent = `${bat.product_count || 0} منتج مرتبط`;
+        const keyInput = document.getElementById('sup-card-bat-key');
+        if (keyInput) keyInput.placeholder = bat.api_key_masked || 'ادخل مفتاح API...';
+        const keyState = document.getElementById('sup-card-bat-key-state');
+        if (keyState) keyState.textContent = bat.api_key_configured ? 'محفوظ' : 'غير معين';
+        const syncEl = document.getElementById('sup-card-bat-sync');
+        if (syncEl) syncEl.checked = Boolean(bat.sync_enabled);
+      }
+
+      // 2. ProdSeller (Server 2)
+      if (data.prodseller) {
+        const prod = data.prodseller;
+        const balEl = document.getElementById('sup-card-prod-bal');
+        if (balEl) balEl.textContent = `$${Number(prod.balance || 0).toFixed(2)} USDT`;
+        const countEl = document.getElementById('sup-card-prod-count');
+        if (countEl) countEl.textContent = `${prod.product_count || 0} منتج مرتبط`;
+        const keyInput = document.getElementById('sup-card-prod-key');
+        if (keyInput) keyInput.placeholder = prod.api_key_masked || 'psk_...';
+        const keyState = document.getElementById('sup-card-prod-key-state');
+        if (keyState) keyState.textContent = prod.api_key_configured ? 'محفوظ' : 'غير معين';
+        const syncEl = document.getElementById('sup-card-prod-sync');
+        if (syncEl) syncEl.checked = Boolean(prod.sync_enabled);
+      }
+
+      // 3. G2Bulk (Server 3)
+      if (data.g2bulk) {
+        const g2b = data.g2bulk;
+        const balEl = document.getElementById('sup-card-g2b-bal');
+        if (balEl) balEl.textContent = `$${Number(g2b.balance || 0).toFixed(2)} USD`;
+        const countEl = document.getElementById('sup-card-g2b-count');
+        if (countEl) countEl.textContent = `${g2b.product_count || 0} منتج مرتبط`;
+        const keyInput = document.getElementById('sup-card-g2b-key');
+        if (keyInput) keyInput.placeholder = g2b.api_key_masked || 'أدخل مفتاح X-API-Key...';
+        const keyState = document.getElementById('sup-card-g2b-key-state');
+        if (keyState) keyState.textContent = g2b.api_key_configured ? 'محفوظ' : 'غير معين';
+        const syncEl = document.getElementById('sup-card-g2b-sync');
+        if (syncEl) syncEl.checked = Boolean(g2b.sync_enabled);
+      }
+
+      // 4. 5sim (Server 4)
+      if (data.fivesim) {
+        const f5 = data.fivesim;
+        const balEl = document.getElementById('sup-card-5sim-bal');
+        if (balEl) {
+          const rub = Number(f5.balance_rub || 0).toFixed(1);
+          const usd = Number(f5.balance_usd || 0).toFixed(2);
+          balEl.textContent = `${rub} RUB (~$${usd} USD)`;
+        }
+        const rateDisp = document.getElementById('sup-card-5sim-rate-display');
+        if (rateDisp) {
+          rateDisp.textContent = `سعر الصرف: 1 RUB ≈ ${f5.rub_usd_rate || 0.011} USD`;
+        }
+        const keyInput = document.getElementById('sup-card-5sim-key');
+        if (keyInput) keyInput.placeholder = f5.api_key_masked || 'أدخل رمز Bearer API Token من 5sim...';
+        const keyState = document.getElementById('sup-card-5sim-key-state');
+        if (keyState) keyState.textContent = f5.api_key_configured ? 'محفوظ' : 'غير معين';
+        const urlInput = document.getElementById('sup-card-5sim-url');
+        if (urlInput) urlInput.value = f5.api_url || 'https://5sim.net/v1';
+        const rateInput = document.getElementById('sup-card-5sim-rate');
+        if (rateInput) rateInput.value = f5.rub_usd_rate || 0.011;
+        const enableEl = document.getElementById('sup-card-5sim-enabled');
+        if (enableEl) enableEl.checked = Boolean(f5.enabled);
+      }
+
+      // Routing & Failover
+      const routeSelect = document.getElementById('sup-page-routing-select');
+      if (routeSelect && data.routing_strategy) {
+        routeSelect.value = data.routing_strategy;
+      }
+      const failoverEl = document.getElementById('sup-page-failover');
+      if (failoverEl && data.auto_failover !== undefined) {
+        failoverEl.checked = Boolean(data.auto_failover);
+      }
+    } catch (e) {
+      console.error('Failed to load supplier details:', e);
+      api().showToast?.('فشل تحميل تفاصيل الموردين');
+    }
+  }
+
+  async function saveSuppliersPageSettings() {
+    api().haptic?.('medium');
+    const tgId = state().userId;
+    if (!tgId) return;
+
+    const batKey = document.getElementById('sup-card-bat-key')?.value.trim() || undefined;
+    const prodKey = document.getElementById('sup-card-prod-key')?.value.trim() || undefined;
+    const g2bKey = document.getElementById('sup-card-g2b-key')?.value.trim() || undefined;
+    const batSync = document.getElementById('sup-card-bat-sync')?.checked;
+    const prodSync = document.getElementById('sup-card-prod-sync')?.checked;
+    const g2bSync = document.getElementById('sup-card-g2b-sync')?.checked;
+
+    const fivesimKey = document.getElementById('sup-card-5sim-key')?.value.trim() || undefined;
+    const fivesimUrl = document.getElementById('sup-card-5sim-url')?.value.trim() || undefined;
+    const fivesimRateVal = document.getElementById('sup-card-5sim-rate')?.value;
+    const fivesimRate = (fivesimRateVal && !isNaN(parseFloat(fivesimRateVal))) ? parseFloat(fivesimRateVal) : undefined;
+    const fivesimEnabled = document.getElementById('sup-card-5sim-enabled')?.checked;
+
+    const routeStrategy = document.getElementById('sup-page-routing-select')?.value;
+    const autoFailover = document.getElementById('sup-page-failover')?.checked;
+
+    const payload = {
+      admin_tg_id: tgId,
+      batstore_api_key: batKey,
+      prodseller_api_key: prodKey,
+      g2bulk_api_key: g2bKey,
+      batstore_sync_enabled: batSync,
+      prodseller_sync_enabled: prodSync,
+      g2bulk_sync_enabled: g2bSync,
+      fivesim_api_key: fivesimKey,
+      fivesim_api_url: fivesimUrl,
+      fivesim_rub_usd_rate: fivesimRate,
+      fivesim_enabled: fivesimEnabled,
+      routing_strategy: routeStrategy,
+      auto_failover: autoFailover
+    };
+
+    const saveBtn = document.getElementById('sup-page-save-btn');
+    if (saveBtn) {
+      saveBtn.textContent = 'جاري الحفظ... ⏳';
+    }
+
+    try {
+      const res = await fetch('/api/admin/supplier/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.status === 'ok') {
+        api().haptic?.('success');
+        api().showToast?.('تم حفظ إعدادات ومفاتيح الموردين بنجاح');
+        ['sup-card-bat-key', 'sup-card-prod-key', 'sup-card-g2b-key', 'sup-card-5sim-key'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.value = '';
+        });
+        await loadSuppliersPageDetails();
+      } else {
+        api().haptic?.('error');
+        api().showToast?.(data.error || 'فشل حفظ الإعدادات');
+      }
+    } catch (_) {
+      api().haptic?.('error');
+      api().showToast?.('خطأ أثناء حفظ إعدادات الموردين');
+    } finally {
+      if (saveBtn) {
+        saveBtn.textContent = 'حفظ إعدادات ومفاتيح الموردين الأربعة';
+      }
+    }
+  }
+
+  async function _testSupplierKeyHelper(supplier, keyInputId, statusId, balId, extraUrlId = null) {
+    api().haptic?.('medium');
+    const tgId = state().userId;
+    const statusEl = document.getElementById(statusId);
+    if (statusEl) {
+      statusEl.style.display = 'block';
+      statusEl.style.color = 'var(--hint)';
+      statusEl.textContent = 'جاري التحقق من الاتصال والرصيد... ⏳';
+    }
+
+    const customKey = document.getElementById(keyInputId)?.value.trim() || undefined;
+    const customUrl = extraUrlId ? (document.getElementById(extraUrlId)?.value.trim() || undefined) : undefined;
+
+    try {
+      const res = await fetch('/api/admin/supplier/test-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          admin_tg_id: tgId,
+          supplier: supplier,
+          api_key: customKey,
+          api_url: customUrl
+        })
+      });
+      const data = await res.json();
+
+      if (data.status === 'ok') {
+        api().haptic?.('success');
+        if (statusEl) {
+          statusEl.style.display = 'block';
+          statusEl.style.color = 'var(--success)';
+          statusEl.textContent = `✅ ${data.message || 'اتصال ناجح!'}`;
+        }
+        if (balId) {
+          const balEl = document.getElementById(balId);
+          if (balEl) {
+            if (supplier === '5sim' || supplier === 'fivesim') {
+              balEl.textContent = `${Number(data.balance_rub || 0).toFixed(1)} RUB (~$${Number(data.balance_usd || 0).toFixed(2)} USD)`;
+            } else if (supplier === 'prodseller') {
+              balEl.textContent = `$${Number(data.balance_usd || 0).toFixed(2)} USDT`;
+            } else {
+              balEl.textContent = `$${Number(data.balance_usd || 0).toFixed(2)} USD`;
+            }
+          }
+        }
+      } else {
+        api().haptic?.('error');
+        if (statusEl) {
+          statusEl.style.display = 'block';
+          statusEl.style.color = 'var(--danger)';
+          statusEl.textContent = `❌ ${data.message || data.error || 'فشل الاتصال'}`;
+        }
+      }
+    } catch (e) {
+      api().haptic?.('error');
+      if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.style.color = 'var(--danger)';
+        statusEl.textContent = '❌ خطأ أثناء اختبار الاتصال بالسيرفر';
+      }
+    }
+  }
+
+  function testBatStoreKeyLive() {
+    return _testSupplierKeyHelper('batstore', 'sup-card-bat-key', 'sup-card-bat-status', 'sup-card-bat-bal');
+  }
+
+  function testProdSellerKeyLiveInSuppliersPage() {
+    return _testSupplierKeyHelper('prodseller', 'sup-card-prod-key', 'sup-card-prod-status', 'sup-card-prod-bal');
+  }
+
+  function testG2BulkKeyLiveInSuppliersPage() {
+    return _testSupplierKeyHelper('g2bulk', 'sup-card-g2b-key', 'sup-card-g2b-status', 'sup-card-g2b-bal');
+  }
+
+  function testFiveSimKeyLiveInSuppliersPage() {
+    return _testSupplierKeyHelper('5sim', 'sup-card-5sim-key', 'sup-card-5sim-status', 'sup-card-5sim-bal', 'sup-card-5sim-url');
+  }
+
+  async function syncAllSupplierCatalogsInSuppliersPage() {
+    api().haptic?.('heavy');
+    const tgId = state().userId;
+    const btn = document.getElementById('btn-sup-page-sync');
+    const label = document.getElementById('sup-page-sync-btn');
+    if (btn) btn.disabled = true;
+    if (label) label.textContent = 'جاري مزامنة كافة المنتجات من الموردين... ⏳';
+
+    try {
+      const res = await fetch('/api/admin/supplier/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ admin_tg_id: tgId })
+      });
+      const data = await res.json();
+      if (data.status === 'ok') {
+        api().haptic?.('success');
+        api().showToast?.('تمت مزامنة كتالوج كافة الموردين بنجاح');
+        await loadSuppliersPageDetails(true);
+      } else {
+        api().haptic?.('error');
+        api().showToast?.(data.error || 'فشلت المزامنة');
+      }
+    } catch (_) {
+      api().haptic?.('error');
+      api().showToast?.('خطأ أثناء المزامنة');
+    } finally {
+      if (btn) btn.disabled = false;
+      if (label) label.textContent = 'مزامنة كافة المنتجات من الموردين الآن';
+    }
   }
 
   function openAdminUsersPage() {
@@ -1292,6 +1585,14 @@
     closeAdminStoreSettingsPage,
     openAdminSuppliersPage,
     closeAdminSuppliersPage,
+    togglePasswordVisibility,
+    loadSuppliersPageDetails,
+    saveSuppliersPageSettings,
+    testBatStoreKeyLive,
+    testProdSellerKeyLiveInSuppliersPage,
+    testG2BulkKeyLiveInSuppliersPage,
+    testFiveSimKeyLiveInSuppliersPage,
+    syncAllSupplierCatalogsInSuppliersPage,
     openAdminUsersPage,
     closeAdminUsersPage,
     openAdminStuckOrdersPage,
@@ -1364,6 +1665,14 @@
   root.closeAdminStoreSettingsPage = closeAdminStoreSettingsPage;
   root.openAdminSuppliersPage = openAdminSuppliersPage;
   root.closeAdminSuppliersPage = closeAdminSuppliersPage;
+  root.togglePasswordVisibility = togglePasswordVisibility;
+  root.loadSuppliersPageDetails = loadSuppliersPageDetails;
+  root.saveSuppliersPageSettings = saveSuppliersPageSettings;
+  root.testBatStoreKeyLive = testBatStoreKeyLive;
+  root.testProdSellerKeyLiveInSuppliersPage = testProdSellerKeyLiveInSuppliersPage;
+  root.testG2BulkKeyLiveInSuppliersPage = testG2BulkKeyLiveInSuppliersPage;
+  root.testFiveSimKeyLiveInSuppliersPage = testFiveSimKeyLiveInSuppliersPage;
+  root.syncAllSupplierCatalogsInSuppliersPage = syncAllSupplierCatalogsInSuppliersPage;
   root.openAdminUsersPage = openAdminUsersPage;
   root.closeAdminUsersPage = closeAdminUsersPage;
   root.openAdminStuckOrdersPage = openAdminStuckOrdersPage;

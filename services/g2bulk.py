@@ -278,10 +278,14 @@ class G2BulkService:
     # ------------------------------------------------------------- Wallet & Profile
 
     @staticmethod
-    async def get_balance(session: AsyncSession | Session | None = None) -> dict[str, Any]:
+    async def get_balance(session: AsyncSession | Session | None = None, custom_key: str | None = None, custom_url: str | None = None) -> dict[str, Any]:
         """Fetch current G2Bulk wallet balance and user profile (/v1/getMe)."""
-        base_url = await G2BulkService.resolve_api_url(session)
-        headers = await G2BulkService._headers(session, auth_required=True)
+        base_url = custom_url.rstrip("/") if custom_url else await G2BulkService.resolve_api_url(session)
+        headers = {
+            "X-API-Key": custom_key,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        } if custom_key else await G2BulkService._headers(session, auth_required=True)
         async with await G2BulkService._client() as client:
             try:
                 resp = await client.get(f"{base_url}/getMe", headers=headers)

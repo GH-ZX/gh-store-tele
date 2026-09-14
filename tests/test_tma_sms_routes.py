@@ -16,6 +16,7 @@ from routes.tma_sms import (
     cancel_sms_order,
     ban_sms_order,
     admin_get_sms_settings,
+    admin_update_sms_config,
     admin_toggle_sms_service,
     admin_toggle_sms_country,
 )
@@ -318,6 +319,31 @@ async def test_admin_toggle_sms_country():
         assert res["status"] == "ok"
         assert res["is_enabled"] is False
         assert ctry.is_enabled is False
+
+
+@pytest.mark.asyncio
+async def test_admin_update_sms_config():
+    from services.config import ConfigService
+    mock_session = AsyncMock()
+
+    config_req = FakeRequest(json_data={
+        "admin_tg_id": 1,
+        "api_key": "new_secret_key_12345",
+        "api_url": "https://5sim.net/v1",
+        "rub_usd_rate": 0.012,
+        "is_enabled": True
+    })
+
+    with patch("routes.tma_sms.verify_admin", return_value=True), \
+         patch.object(ConfigService, "set", AsyncMock()) as mock_set, \
+         patch("routes.tma_sms.get_db_session", return_value=_SessionContext(mock_session)):
+
+        res = await admin_update_sms_config(config_req)
+        assert res["status"] == "ok"
+        mock_set.assert_any_await(mock_session, "FIVESIM_API_KEY", "new_secret_key_12345")
+        mock_set.assert_any_await(mock_session, "FIVESIM_API_URL", "https://5sim.net/v1")
+        mock_set.assert_any_await(mock_session, "FIVESIM_RUB_USD_RATE", "0.012")
+        mock_set.assert_any_await(mock_session, "FIVESIM_ENABLED", "true")
 
 
 @pytest.mark.asyncio

@@ -636,6 +636,41 @@
           <button class="btn-action-secondary" onclick="loadAdminSmsSettings()" style="height: 34px; font-size: 12px; padding: 0 10px;">🔄 تحديث</button>
         </div>
 
+        <!-- 5sim API & Credentials Settings Card -->
+        <div style="background: var(--card); border-radius: 12px; padding: 12px; border: 1px solid rgba(56, 189, 248, 0.35);">
+          <div style="font-size: 13px; font-weight: 800; color: var(--accent); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+            <span>🔑</span>
+            <span>إعدادات مفتاح 5sim API وبيئة التشغيل</span>
+          </div>
+          <div style="margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <label style="font-size: 11px; font-weight: 700; color: var(--text);" for="admin-sms-api-key">مفتاح 5sim API (Bearer Token)</label>
+              <span style="font-size: 10px; color: var(--hint);" id="admin-sms-key-state">محفوظ</span>
+            </div>
+            <div style="display: flex; gap: 6px;">
+              <input type="password" class="admin-text-input" id="admin-sms-api-key" placeholder="أدخل رمز Bearer API Token..." style="flex: 1; font-family: monospace; font-size: 11px;">
+              <button class="btn-copy-mini" onclick="togglePasswordVisibility('admin-sms-api-key')" style="padding: 0 8px; font-size: 10px;" title="إظهار/إخفاء">👁️</button>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-bottom: 10px;">
+            <div>
+              <label style="font-size: 11px; font-weight: 700; color: var(--text); display: block; margin-bottom: 4px;">رابط الـ API الأساسي (URL)</label>
+              <input type="text" class="admin-text-input" id="admin-sms-api-url" placeholder="https://5sim.net/v1" style="font-family: monospace; font-size: 11px;">
+            </div>
+            <div>
+              <label style="font-size: 11px; font-weight: 700; color: var(--text); display: block; margin-bottom: 4px;">سعر الصرف (RUB->USD)</label>
+              <input type="number" step="0.001" class="admin-text-input" id="admin-sms-rub-rate" placeholder="0.011" style="font-family: monospace; font-size: 11px;">
+            </div>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 2px; margin-bottom: 10px;">
+            <span style="font-size: 11px; color: var(--hint);">تفعيل خدمة الأرقام في المتجر</span>
+            <input type="checkbox" id="admin-sms-is-enabled" checked style="width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer;">
+          </div>
+          <button class="btn-action-primary" onclick="saveAdminSmsConfig()" id="btn-save-admin-sms-config" style="width: 100%; height: 38px; font-size: 12px; font-weight: 800;">
+            💾 حفظ إعدادات مفتاح 5sim
+          </button>
+        </div>
+
         <!-- Services Toggle List -->
         <div>
           <h4 style="font-size: 14px; font-weight: 700; margin-bottom: 8px;">الخدمات المدعومة (Services):</h4>
@@ -1631,6 +1666,58 @@
         </div>
       </div>
 
+      <!-- SERVER 4: 5sim SMS & Virtual Numbers Card -->
+      <div class="inset-card" style="border: 1px solid rgba(56, 189, 248, 0.4); background: var(--card); padding: 14px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+          <div style="display: inline-flex; align-items: center; gap: 6px;">
+            <span style="font-size: 18px;">📱</span>
+            <div>
+              <div style="font-size: 13px; font-weight: 800; color: var(--text);" id="sup-card-5sim-title">سيرفر 4: 5sim أرقام وتفعيل SMS</div>
+              <div style="font-size: 10px; color: var(--hint);" id="sup-card-5sim-subtitle">أرقام افتراضية مؤقتة لاستقبال كود التفعيل</div>
+            </div>
+          </div>
+          <span class="pill-badge" style="background: rgba(56, 189, 248, 0.15); color: var(--accent); font-size: 11px; font-weight: 700;" id="sup-card-5sim-badge">نشط</span>
+        </div>
+        <div style="background: var(--input-bg); border-radius: 10px; padding: 10px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <div style="font-size: 10px; color: var(--hint);" id="sup-card-5sim-avail-lbl">الرصيد المتاح:</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--accent);" id="sup-card-5sim-bal">0.0 RUB (~$0.00 USD)</div>
+            <div style="font-size: 9px; color: var(--hint);" id="sup-card-5sim-rate-display">سعر الصرف: 1 RUB ≈ 0.011 USD</div>
+          </div>
+          <button class="btn-action-secondary" onclick="testFiveSimKeyLiveInSuppliersPage()" id="btn-test-5sim" style="height: 34px; padding: 0 12px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; border-color: var(--accent); color: var(--accent);">
+            🔄 <span id="sup-card-5sim-test-btn">فحص الرصيد</span>
+          </button>
+        </div>
+        <div id="sup-card-5sim-status" style="font-size: 11px; margin-bottom: 10px; display: none;"></div>
+        <div style="margin-bottom: 10px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label style="font-size: 11px; font-weight: 700; color: var(--text);" for="sup-card-5sim-key">مفتاح 5sim API (Bearer Token)</label>
+            <span style="font-size: 10px; color: var(--hint);" id="sup-card-5sim-key-state">محفوظ</span>
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <input type="password" class="admin-text-input" id="sup-card-5sim-key" placeholder="أدخل رمز Bearer API Token من 5sim..." style="flex: 1; font-family: monospace; font-size: 11px;">
+            <button class="btn-copy-mini" onclick="togglePasswordVisibility('sup-card-5sim-key')" style="padding: 0 8px; font-size: 10px;" title="إظهار/إخفاء">👁️</button>
+          </div>
+        </div>
+        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-bottom: 10px;">
+          <div>
+            <label style="font-size: 11px; font-weight: 700; color: var(--text); display: block; margin-bottom: 4px;">رابط الـ API الأساسي (API URL)</label>
+            <input type="text" class="admin-text-input" id="sup-card-5sim-url" placeholder="https://5sim.net/v1" style="font-family: monospace; font-size: 11px;">
+          </div>
+          <div>
+            <label style="font-size: 11px; font-weight: 700; color: var(--text); display: block; margin-bottom: 4px;">سعر صرف الروبل (RUB->USD)</label>
+            <input type="number" step="0.001" class="admin-text-input" id="sup-card-5sim-rate" placeholder="0.011" style="font-family: monospace; font-size: 11px;">
+          </div>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 4px; margin-bottom: 10px;">
+          <span style="font-size: 11px; color: var(--hint);" id="sup-card-5sim-enable-lbl">تفعيل خدمة أرقام 5sim في المتجر</span>
+          <input type="checkbox" id="sup-card-5sim-enabled" checked style="width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer;">
+        </div>
+        <button class="btn-action-secondary" onclick="openAdminSmsModal()" style="width: 100%; height: 36px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border-color: rgba(56, 189, 248, 0.4); color: var(--accent);">
+          ⚙️ إدارة خدمات ودول 5sim المتاحة (Manage Services & Countries)
+        </button>
+      </div>
+
     </div>
 
     <!-- SMART ROUTING STRATEGY & FAILOVER CONTROLS -->
@@ -1667,11 +1754,11 @@
     <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px;">
       <button class="btn-action-primary" onclick="saveSuppliersPageSettings()" style="height: 46px; font-size: 13px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-        <span id="sup-page-save-btn">حفظ إعدادات ومفاتيح الموردين الثلاثة</span>
+        <span id="sup-page-save-btn">حفظ إعدادات ومفاتيح الموردين الأربعة</span>
       </button>
       <button class="btn-action-secondary" onclick="syncAllSupplierCatalogsInSuppliersPage()" id="btn-sup-page-sync" style="height: 44px; font-size: 12px; font-weight: 700; background: linear-gradient(135deg, #6366f1, #4f46e5); color: #fff; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
-        <span id="sup-page-sync-btn">مزامنة كافة المنتجات من الموردين الثلاثة الآن</span>
+        <span id="sup-page-sync-btn">مزامنة كافة المنتجات من الموردين الآن</span>
       </button>
     </div>
   </section>
@@ -2040,9 +2127,9 @@
         <div style="font-size: 12px; color: var(--hint);" id="admin-reserves-sub">لوحة السيولة والتحكم المالي للمتجر</div>
       </div>
 
-      <!-- 3 APIs Supplier Reserves & Liquidity Grid -->
-      <div class="section-title" style="margin-top: 16px;" id="admin-reserves-sec-title">أرصدة محافظ الموردين والسيولة (4 APIs)</div>
-      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px;">
+      <!-- 4 APIs Supplier Reserves & Liquidity Grid -->
+      <div class="section-title" style="margin-top: 16px;" id="admin-reserves-sec-title">أرصدة محافظ الموردين والسيولة (4 سيرفرات + SAM)</div>
+      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px;">
         <!-- 1. BatStore (Server 1) -->
         <div class="inset-card" style="padding: 10px; text-align: center; border-radius: 12px; border: 1px solid rgba(16, 185, 129, 0.3); background: linear-gradient(180deg, rgba(16, 185, 129, 0.06) 0%, var(--input-bg) 100%);">
           <div style="font-size: 10px; font-weight: 800; color: #10b981; margin-bottom: 4px;" id="admin-reserves-s1-title">⚡ سيرفر 1 (BatStore)</div>
@@ -2060,6 +2147,12 @@
           <div style="font-size: 10px; font-weight: 800; color: #c084fc; margin-bottom: 4px;" id="admin-reserves-s3-title">🎮 سيرفر 3 (G2Bulk)</div>
           <div style="font-size: 16px; font-weight: 900; color: #c084fc;" id="admin-wallet-g2bulk">$0.00</div>
           <div style="font-size: 9px; color: var(--hint); margin-top: 3px;" id="admin-reserves-s3-sub">ألعاب وقسائم (USD)</div>
+        </div>
+        <!-- 4. 5sim (Server 4) -->
+        <div class="inset-card" style="padding: 10px; text-align: center; border-radius: 12px; border: 1px solid rgba(56, 189, 248, 0.3); background: linear-gradient(180deg, rgba(56, 189, 248, 0.06) 0%, var(--input-bg) 100%);">
+          <div style="font-size: 10px; font-weight: 800; color: #38bdf8; margin-bottom: 4px;" id="admin-reserves-s4-title">📱 سيرفر 4 (5sim)</div>
+          <div style="font-size: 16px; font-weight: 900; color: #38bdf8;" id="admin-wallet-5sim">$0.00</div>
+          <div style="font-size: 9px; color: var(--hint); margin-top: 3px;" id="admin-reserves-s4-sub">أرقام SMS (USD)</div>
         </div>
       </div>
 
@@ -2190,7 +2283,7 @@
             <span style="font-size: 11px; color: var(--hint);" id="admin-sup-details-link">تفاصيل ←</span>
           </div>
         </div>
-        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px;">
+        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px;">
           <div style="background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 6px 4px; text-align: center;">
             <div style="font-size: 9px; font-weight: 700; color: var(--hint); margin-bottom: 2px;" id="admin-sup-s1-title">سيرفر 1 (BatStore)</div>
             <div style="font-size: 13px; font-weight: 800; color: var(--accent);" id="admin-bal-batstore">$0.00</div>
@@ -2205,6 +2298,11 @@
             <div style="font-size: 9px; font-weight: 700; color: var(--hint); margin-bottom: 2px;" id="admin-sup-s3-title">سيرفر 3 (G2Bulk)</div>
             <div style="font-size: 13px; font-weight: 800; color: #c084fc;" id="admin-bal-g2bulk">$0.00</div>
             <div style="font-size: 8px; color: var(--hint);">ألعاب</div>
+          </div>
+          <div style="background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 6px 4px; text-align: center;">
+            <div style="font-size: 9px; font-weight: 700; color: var(--hint); margin-bottom: 2px;" id="admin-sup-s4-title">سيرفر 4 (5sim)</div>
+            <div style="font-size: 13px; font-weight: 800; color: var(--accent);" id="admin-bal-5sim">$0.00</div>
+            <div style="font-size: 8px; color: var(--hint);" id="admin-sup-s4-sub">أرقام SMS</div>
           </div>
           <div style="background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 6px 4px; text-align: center;">
             <div style="font-size: 9px; font-weight: 700; color: var(--hint); margin-bottom: 2px;" id="admin-sup-sam-title">محفظة SAM</div>

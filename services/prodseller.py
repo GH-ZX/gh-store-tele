@@ -90,9 +90,13 @@ class ProdSellerService:
         }
 
     @staticmethod
-    async def get_balance(session: AsyncSession | Session | None = None) -> dict[str, Any]:
+    async def get_balance(session: AsyncSession | Session | None = None, custom_key: str | None = None) -> dict[str, Any]:
         """Fetch current ProdSeller wallet balance and membership tier."""
-        headers = await ProdSellerService._headers(session)
+        headers = {
+            "X-API-Key": custom_key,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        } if custom_key else await ProdSellerService._headers(session)
         async with await ProdSellerService._client() as client:
             try:
                 resp = await client.get(f"{ProdSellerService.BASE_URL}/balance", headers=headers)

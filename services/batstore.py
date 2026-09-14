@@ -105,8 +105,8 @@ class BatStoreService:
                     return await client.request(method, f"{base_sec}{path}", headers=headers, **kwargs)
                 raise
     @staticmethod
-    async def me(session: AsyncSession | Session) -> dict:
-        resp = await BatStoreService._request("GET", "/api/reseller/me", session)
+    async def me(session: AsyncSession | Session, key_override: str | None = None) -> dict:
+        resp = await BatStoreService._request("GET", "/api/reseller/me", session, key_override=key_override)
         if resp.status_code != 200:
             raise BatStoreAPIError(f"GET /me {resp.status_code}: {resp.text[:200]}")
         data = resp.json()

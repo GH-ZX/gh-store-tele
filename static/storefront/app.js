@@ -732,6 +732,7 @@
       setVal('admin-bal-batstore', `$${(sw.batstore_usd || 0.0).toFixed(2)}`);
       setVal('admin-bal-prodseller', `$${(sw.prodseller_usd || 0.0).toFixed(2)}`);
       setVal('admin-bal-g2bulk', `$${(sw.g2bulk_usd || 0.0).toFixed(2)}`);
+      setVal('admin-bal-5sim', `$${(sw.fivesim_usd || 0.0).toFixed(2)}`);
       setVal('admin-bal-sam-usd', `$${(sw.sam_usd || 0.0).toFixed(2)} USD`);
       setVal('admin-bal-sam-syp', `${Math.round(sw.sam_syp || 0.0).toLocaleString()} ${isAr ? 'ل.س' : 'SYP'}`);
       setVal('admin-bal-total-suppliers-pill', `${isAr ? 'إجمالي:' : 'Total:'} $${(sw.total_supplier_usd || 0.0).toFixed(2)}`);
@@ -740,6 +741,7 @@
       setVal('admin-wallet-batstore', `$${(sw.batstore_usd || 0.0).toFixed(2)}`);
       setVal('admin-wallet-prodseller', `$${(sw.prodseller_usd || 0.0).toFixed(2)}`);
       setVal('admin-wallet-g2bulk', `$${(sw.g2bulk_usd || 0.0).toFixed(2)}`);
+      setVal('admin-wallet-5sim', `$${(sw.fivesim_usd || 0.0).toFixed(2)}`);
       setVal('admin-wallet-sam-usd', `$${(sw.sam_usd || 0.0).toFixed(2)}`);
       setVal('admin-wallet-sam-syp', `${Math.round(sw.sam_syp || 0.0).toLocaleString()} ${isAr ? 'ل.س' : 'SYP'}`);
       setVal('admin-wallet-users-total', `$${(stats.total_user_balances || 0.0).toFixed(2)}`);
