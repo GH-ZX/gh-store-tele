@@ -1321,6 +1321,8 @@ Payment Method: Wallet Balance (USD)
   root.closeReviewsModal = () => storefront().closeReviewsModal?.();
   root.openSupportModal = () => storefront().openSupportModal?.();
   root.closeSupportModal = () => storefront().closeSupportModal?.();
+  root.onDetailPackSelectChange = (val) => storefront().onDetailPackSelectChange?.(val);
+  root.onDetailPackCardClick = (id) => storefront().onDetailPackCardClick?.(id);
 
   // Wallet Proxies
   root.setCurrencyPreference = (c) => wallet().setCurrencyPreference?.(c);

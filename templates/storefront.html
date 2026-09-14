@@ -989,9 +989,21 @@
 
     <!-- IN-PAGE ITEM / DENOMINATION VARIANT SELECTOR -->
     <div class="inset-card" id="detail-variants-container" style="display: none;">
-      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-        <div style="font-size: 12px; font-weight: 700; color: var(--accent);" id="label-variants-title">اختر الفئة أو الباقة | Select Item</div>
-        <span class="catalog-visual-pill" id="variants-count-badge" style="display: none;"></span>
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+        <div style="font-size: 13px; font-weight: 800; color: var(--accent); display: flex; align-items: center; gap: 6px;" id="label-variants-title">
+          <span>📦</span>
+          <span>اختر الفئة أو الباقة | Select Pack</span>
+        </div>
+        <span class="catalog-visual-pill" id="variants-count-badge" style="display: none; background: rgba(56, 189, 248, 0.15); color: var(--accent); font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px;"></span>
+      </div>
+      <div style="margin-bottom: 12px;" id="detail-pack-select-group">
+        <label for="detail-pack-select" style="font-size: 12px; font-weight: 700; color: var(--text); display: block; margin-bottom: 5px;" id="label-pack-select">
+          اختر الباقة من القائمة المنسدلة:
+        </label>
+        <select id="detail-pack-select" class="admin-text-input" onchange="onDetailPackSelectChange(this.value)" style="width: 100%; height: 44px; background: var(--input-bg); border: 1px solid var(--border); border-radius: 10px; color: var(--text); padding: 8px 12px; font-size: 13px; font-weight: 700; outline: none; cursor: pointer;"></select>
+      </div>
+      <div id="detail-packs-loading" style="display: none; text-align: center; padding: 10px; font-size: 12px; color: var(--hint);">
+        <span>جاري تحميل الباقات المتوفرة من المزود... ⏳</span>
       </div>
       <div class="detail-variants-grid" id="detail-variants-list"></div>
     </div>

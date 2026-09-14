@@ -1272,3 +1272,93 @@ async def get_game_fields_api(code: str):
     except Exception as e:
         logging.debug("Error fetching game fields for %s: %s", clean_code, e)
         return JSONResponse({"error": str(e)}, status_code=502)
+
+
+@router.get("/api/products/{product_id}/packs")
+async def get_product_packs_api(product_id: int):
+    """Fetch all available packs/denominations for a product (games and vouchers)."""
+    async with get_db_session() as session:
+        product = await BatStoreProductRepository.get_by_product_id(product_id, session)
+        if not product:
+            return JSONResponse({"error": "product_not_found"}, status_code=404)
+
+        meta = product.extra_meta or {}
+        items = list(meta.get("items") or [])
+        m_type = meta.get("type") or ("direct_topup" if product.delivery_type in ("direct_topup", "game_recharge") else product.delivery_type)
+
+        # If g2bulk and items are empty, fetch live catalogue from G2Bulk
+        if product.supplier == "g2bulk" and (not items or len(items) == 0):
+            from services.g2bulk import G2BulkService
+            from services.sale_pricing import compute_reseller_price
+            global_margin_pct = float(await ConfigService.get(session, "MARGIN_PERCENT", default="12.0") or 12.0)
+            global_margin_fixed = float(await ConfigService.get(session, "MARGIN_FIXED", default="0.15") or 0.15)
+            global_reseller_margin = float(await ConfigService.get(session, "GLOBAL_RESELLER_MARGIN_PERCENT", default="8.0") or 8.0)
+
+            if m_type == "instant_recharge" or product.delivery_type in ("direct_topup", "game_recharge"):
+                game_code = meta.get("game_code") or product.reseller_key_override
+                if game_code:
+                    try:
+                        cat_items = await G2BulkService.get_game_catalogue(game_code, session)
+                        processed = []
+                        for it in cat_items:
+                            c_cost = float(it.get("amount") or 0.0)
+                            c_sell = round((c_cost * (1.0 + global_margin_pct / 100.0)) + global_margin_fixed, 2)
+                            c_resell = compute_reseller_price(cost=c_cost, retail_price=c_sell, global_reseller_margin_pct=global_reseller_margin)
+                            processed.append({
+                                "id": it.get("id"),
+                                "name": it.get("name"),
+                                "cost": c_cost,
+                                "price": c_sell,
+                                "reseller_price": c_resell,
+                            })
+                        if processed:
+                            items = processed
+                            meta["items"] = items
+                            product.extra_meta = meta
+                            await session_commit(session)
+                    except Exception as e:
+                        logging.debug("Error fetching live game catalogue for %s: %s", game_code, e)
+            elif m_type == "voucher" or product.delivery_type == "voucher":
+                cat_id = meta.get("category_id") or (product.product_id - 35000000 if product.product_id >= 35000000 else None)
+                if cat_id is not None:
+                    try:
+                        all_v = await G2BulkService.get_voucher_products(session)
+                        v_items = [v for v in all_v if v.get("category_id") == int(cat_id)]
+                        processed = []
+                        for it in v_items:
+                            c_cost = float(it.get("unit_price") or 0.0)
+                            c_sell = round((c_cost * (1.0 + global_margin_pct / 100.0)) + global_margin_fixed, 2)
+                            c_resell = compute_reseller_price(cost=c_cost, retail_price=c_sell, global_reseller_margin_pct=global_reseller_margin)
+                            processed.append({
+                                "id": it.get("id"),
+                                "name": it.get("title"),
+                                "cost": c_cost,
+                                "price": c_sell,
+                                "reseller_price": c_resell,
+                                "face_value": it.get("face_value"),
+                                "stock": it.get("stock", 0),
+                            })
+                        if processed:
+                            items = processed
+                            meta["items"] = items
+                            product.extra_meta = meta
+                            await session_commit(session)
+                    except Exception as e:
+                        logging.debug("Error fetching live voucher catalogue for %s: %s", cat_id, e)
+
+        # Sort items by price ascending
+        items.sort(key=lambda x: (float(x.get("price") or 0.0), float(x.get("cost") or 0.0)))
+
+        return {
+            "status": "ok",
+            "product_id": product.product_id,
+            "product_name": product.name,
+            "type": m_type,
+            "delivery_type": product.delivery_type,
+            "supplier": product.supplier,
+            "items": items,
+            "instructions_ar": meta.get("instructions_ar", []),
+            "instructions_en": meta.get("instructions_en", []),
+            "redemption_url": meta.get("redemption_url", ""),
+        }
+

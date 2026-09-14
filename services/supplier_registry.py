@@ -269,6 +269,12 @@ class G2BulkAdapter(SupplierAdapter):
             game_code = game_code or "aoem"
 
             catalogue_name = extra_params.get("catalogue_name")
+            selected_item_id = extra_params.get("selected_item_id")
+            if (not catalogue_name or not str(catalogue_name).strip()) and selected_item_id and getattr(product, "extra_meta", None):
+                for it in product.extra_meta.get("items", []):
+                    if str(it.get("id")) == str(selected_item_id):
+                        catalogue_name = it.get("name")
+                        break
             if not catalogue_name and getattr(product, "extra_meta", None):
                 items = product.extra_meta.get("items", [])
                 if items:

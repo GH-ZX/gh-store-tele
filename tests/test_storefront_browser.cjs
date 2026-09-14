@@ -448,6 +448,123 @@ function runBrowserTests() {
   closeAdminFolderModal();
   check(folderModal.style.display === 'none', 'admin-folder-modal closes');
 
+  // ==========================================
+  // 10. GAME & VOUCHER PACK SELECTION AND DROPDOWN TESTS
+  // ==========================================
+  const pubgGameProduct = {
+    id: 30000011,
+    name: 'PUBG Mobile (Instant Recharge)',
+    name_ar: 'ببجي موبايل (شحن فوري)',
+    category: 'Games',
+    delivery_type: 'direct_topup',
+    supplier: 'g2bulk',
+    cost_usd: 0.90,
+    sell_price_usd: 1.26,
+    stock: 9999,
+    extra_meta: {
+      type: 'instant_recharge',
+      game_code: 'pubg_mobile',
+      required_fields: ['userid'],
+      items: [
+        { id: 264, name: '60 UC', cost: 0.90, price: 1.26, reseller_price: 0.97 },
+        { id: 3, name: '325 UC', cost: 4.45, price: 6.23, reseller_price: 4.81 },
+        { id: 4, name: '660 UC', cost: 8.90, price: 12.46, reseller_price: 9.61 },
+        { id: 5, name: '1800 UC', cost: 22.38, price: 31.33, reseller_price: 24.17 }
+      ]
+    }
+  };
+
+  const pubgVoucherProduct = {
+    id: 35000001,
+    name: 'PUBG MOBILE UC Vouchers (Digital Vouchers)',
+    name_ar: 'قسائم ببجي موبايل الرقمية',
+    category: 'Games',
+    delivery_type: 'voucher',
+    supplier: 'g2bulk',
+    cost_usd: 0.89,
+    sell_price_usd: 1.25,
+    stock: 9999,
+    extra_meta: {
+      type: 'voucher',
+      category_id: 1,
+      redemption_url: 'https://www.midasbuy.com',
+      instructions_ar: [
+        'توجه إلى موقع midasbuy.com الرسمي',
+        'أدخل معرف اللاعب (Player ID)',
+        'أدخل كود القسيمة (PIN) واضغط تأكيد'
+      ],
+      instructions_en: [
+        'Visit www.midasbuy.com',
+        'Enter your Player ID',
+        'Enter the voucher PIN and confirm'
+      ],
+      items: [
+        { id: 2, name: '60 Uc Voucher', cost: 0.89, price: 1.25, reseller_price: 0.96, face_value: 1, stock: 17308 },
+        { id: 4, name: '660 Uc Voucher', cost: 8.90, price: 12.46, reseller_price: 9.61, face_value: 10, stock: 3679 },
+        { id: 7, name: '8100 Uc Voucher', cost: 88.0, price: 123.20, reseller_price: 95.04, face_value: 100, stock: 0 }
+      ]
+    }
+  };
+
+  StoreAPI.AppState.allProducts.push(pubgGameProduct);
+  StoreAPI.AppState.allProducts.push(pubgVoucherProduct);
+
+  // 10a. Open PUBG Game product
+  openProductDetail(30000011);
+  const variantsContainer = document.getElementById('detail-variants-container');
+  check(variantsContainer !== null, 'detail-variants-container exists');
+  check(variantsContainer.style.display !== 'none', 'detail-variants-container displayed for game with packs');
+
+  const packSelect = document.getElementById('detail-pack-select');
+  check(packSelect !== null, 'detail-pack-select exists');
+  check(packSelect.tagName === 'SELECT', 'detail-pack-select is a SELECT element');
+  check(packSelect.options.length === 4, 'detail-pack-select has 4 pack options');
+  check(packSelect.options[0].value === '264', 'first pack option is 60 UC (lowest price first)');
+  check(StoreAPI.AppState.selectedProduct?.selectedPack?.id === 264, 'selectedPack default is 60 UC');
+
+  // 10b. Change pack selection via dropdown to 660 UC (id: 4)
+  onDetailPackSelectChange('4');
+  check(StoreAPI.AppState.selectedProduct?.selectedPack?.id === 4, 'selectedPack updated to 660 UC');
+  check(packSelect.value === '4', 'detail-pack-select value synced to 4');
+  const activeCard = document.querySelector('.detail-variant-card.active');
+  check(activeCard !== null, 'active variant card exists');
+  check(activeCard.getAttribute('data-pack-id') === '4', 'active card matches selected pack 4');
+  check(document.getElementById('prod-total-price')?.textContent === '$11.59', 'total price updated to 660 UC price ($11.59 with VIP discount)');
+  check(document.getElementById('prod-original-price')?.textContent === '$12.46', 'original price is $12.46 before VIP discount');
+
+  // 10c. Change pack selection via card click to 325 UC (id: 3)
+  onDetailPackCardClick('3');
+  check(StoreAPI.AppState.selectedProduct?.selectedPack?.id === 3, 'selectedPack updated to 325 UC via card click');
+  check(packSelect.value === '3', 'detail-pack-select value synced to 3 after card click');
+  check(document.getElementById('prod-total-price')?.textContent === '$5.79', 'total price updated to 325 UC price ($5.79 with VIP discount)');
+  check(document.getElementById('prod-original-price')?.textContent === '$6.23', 'original price is $6.23 before VIP discount');
+
+  // 10d. Open PUBG Voucher product and verify redemption instructions
+  openProductDetail(35000001);
+  check(variantsContainer.style.display !== 'none', 'detail-variants-container displayed for voucher product');
+  check(packSelect.options.length === 3, 'detail-pack-select populated with 3 voucher packs');
+
+  const voucherManual = document.getElementById('detail-voucher-manual-container');
+  check(voucherManual !== null, 'detail-voucher-manual-container exists');
+  check(voucherManual.style.display !== 'none', 'detail-voucher-manual-container displayed for voucher product');
+
+  const stepsList = document.getElementById('detail-voucher-steps-list');
+  check(stepsList !== null, 'detail-voucher-steps-list exists');
+  check(stepsList.innerHTML.includes('midasbuy.com'), 'voucher instructions contain redemption steps');
+
+  const officialSiteLink = document.getElementById('link-voucher-official-site');
+  check(officialSiteLink !== null, 'link-voucher-official-site exists');
+  check(officialSiteLink.href.includes('midasbuy.com'), 'official site link points to midasbuy.com');
+
+  // 10e. Out-of-stock pack disables buy button and shows restock alert
+  onDetailPackSelectChange('7'); // 8100 UC Voucher (stock: 0)
+  check(document.getElementById('btn-inapp-purchase')?.style.display === 'none', 'buy button hidden when out-of-stock pack selected');
+  check(document.getElementById('restock-alert-box')?.style.display !== 'none', 'restock alert displayed for out-of-stock pack');
+
+  // Select in-stock pack restores buy button
+  onDetailPackSelectChange('2'); // 60 UC Voucher (stock: 17308)
+  check(document.getElementById('btn-inapp-purchase')?.style.display !== 'none', 'buy button restored when in-stock pack selected');
+
   // Mark all tests passed in body
   document.body.textContent = `PASS: ${count} storefront browser coverage checks`;
 }
@@ -512,6 +629,21 @@ async function main() {
   </div>
   <section id="view-product-detail" class="tab-view" style="display: none;">
     <button class="btn-back-catalog" onclick="closeProductDetailPage()"></button>
+    <div class="inset-card" id="detail-variants-container" style="display: none;">
+      <div id="label-variants-title">اختر الفئة أو الباقة | Select Pack</div>
+      <span class="catalog-visual-pill" id="variants-count-badge" style="display: none;"></span>
+      <div id="detail-pack-select-group">
+        <label for="detail-pack-select" id="label-pack-select">اختر الباقة من القائمة:</label>
+        <select id="detail-pack-select" class="admin-text-input" onchange="onDetailPackSelectChange(this.value)"></select>
+      </div>
+      <div id="detail-packs-loading" style="display: none;"></div>
+      <div class="detail-variants-grid" id="detail-variants-list"></div>
+    </div>
+    <div class="inset-card" id="detail-voucher-manual-container" style="display: none;">
+      <div id="label-voucher-manual-title">طريقة الاستخدام واسترداد الكود</div>
+      <a href="#" id="link-voucher-official-site" style="display: none;">الموقع الرسمي</a>
+      <div class="voucher-steps-list" id="detail-voucher-steps-list"></div>
+    </div>
     <div id="detail-game-fields-container" style="display: none;">
       <div id="group-player-id">
         <input type="text" id="game-player-id-input" oninput="onPlayerInputChanged()">
@@ -520,6 +652,11 @@ async function main() {
         <input type="text" id="game-server-id-input" oninput="onPlayerInputChanged()">
       </div>
     </div>
+    <div id="prod-total-price"></div>
+    <div id="prod-original-price" style="display: none;"></div>
+    <div id="btn-price-tag"></div>
+    <div id="prod-stock-badge"></div>
+    <div id="restock-alert-box" style="display: none;"></div>
     <button id="btn-inapp-purchase" onclick="buyNow(StoreAPI.AppState.activeProduct)"></button>
   </section>
   <section id="view-search" class="tab-view" style="display: none;">

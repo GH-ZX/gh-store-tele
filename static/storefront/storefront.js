@@ -116,13 +116,16 @@
 
   function calculateProductPrices(product) {
     const u = state().userData;
-    const origPrice = Number(product.sell_price_usd || product.price || 0);
-    const costUsd = Number(product.cost_price_usd || product.cost_usd || product.original_price || 0);
+    const pack = product?.selectedPack;
+    const origPrice = Number(pack?.price ?? product?.sell_price_usd ?? product?.price ?? 0);
+    const costUsd = Number(pack?.cost ?? product?.cost_price_usd ?? product?.cost_usd ?? product?.original_price ?? 0);
 
     const isReseller = !!(u && (u.is_reseller || u.role === 'reseller'));
     if (isReseller && u.reseller_margin_percent !== undefined) {
       const mPct = Number(u.reseller_margin_percent) || 0;
-      const resPrice = Math.round(costUsd * (1 + mPct / 100) * 100) / 100;
+      const resPrice = (pack?.reseller_price !== undefined && pack?.reseller_price !== null)
+        ? Number(pack.reseller_price)
+        : Math.round(costUsd * (1 + mPct / 100) * 100) / 100;
       const profitUsd = Math.max(0, Math.round((resPrice - costUsd) * 100) / 100);
       return {
         origPrice,
@@ -163,7 +166,10 @@
 
   function checkProductEffectiveStock(product) {
     if (!product) return { isOutOfStock: true, effectiveStock: 0 };
-    const stock = (product.stock !== null && product.stock !== undefined) ? Number(product.stock) : null;
+    const pack = product?.selectedPack;
+    const stock = (pack && pack.stock !== null && pack.stock !== undefined)
+      ? Number(pack.stock)
+      : ((product.stock !== null && product.stock !== undefined) ? Number(product.stock) : null);
     return {
       isOutOfStock: stock !== null && (!Number.isFinite(stock) || stock <= 0),
       effectiveStock: stock
@@ -967,6 +973,33 @@
     const adminGift = document.getElementById('admin-detail-gift-container');
     if (adminGift) adminGift.style.display = (state().userData && state().userData.is_admin) ? 'block' : 'none';
 
+    // Reset selected pack state
+    selectedProduct.selectedPack = null;
+    state().selectedPack = null;
+
+    // Render packs/denominations for games & vouchers
+    const meta = selectedProduct.extra_meta || {};
+    const items = meta.items || [];
+    const isG2Bulk = (selectedProduct.supplier === 'g2bulk');
+    const isGameOrVoucher = isG2Bulk || selectedProduct.delivery_type === 'direct_topup' || selectedProduct.delivery_type === 'voucher' || (items.length > 0);
+
+    if (items.length > 0) {
+      renderProductPacks(items, selectedProduct);
+      if (isG2Bulk) fetchProductPacks(selectedProduct.id);
+    } else if (isGameOrVoucher) {
+      const container = document.getElementById('detail-variants-container');
+      if (container) container.style.display = 'block';
+      const loader = document.getElementById('detail-packs-loading');
+      if (loader) loader.style.display = 'block';
+      fetchProductPacks(selectedProduct.id);
+    } else {
+      const container = document.getElementById('detail-variants-container');
+      if (container) container.style.display = 'none';
+    }
+
+    // Render voucher manual if applicable
+    renderVoucherManual(selectedProduct);
+
     // Quantity reset
     const qtyVal = document.getElementById('prod-qty-val');
     if (qtyVal) qtyVal.innerText = '1';
@@ -1029,6 +1062,213 @@
     window.scrollTo({ top: 0, behavior: 'instant' });
 
     api().pushNav?.('product_detail', closeProductDetailPage);
+  }
+
+  function renderProductPacks(rawItems, product) {
+    const container = document.getElementById('detail-variants-container');
+    const selectEl = document.getElementById('detail-pack-select');
+    const listEl = document.getElementById('detail-variants-list');
+    const countBadge = document.getElementById('variants-count-badge');
+    const titleLabel = document.getElementById('label-variants-title');
+    const loader = document.getElementById('detail-packs-loading');
+    if (loader) loader.style.display = 'none';
+    if (!container) return;
+
+    if (!rawItems || rawItems.length === 0) {
+      container.style.display = 'none';
+      return;
+    }
+
+    const isAr = (state().currentAppLanguage === 'ar');
+    const isReseller = !!(state().userData && (state().userData.is_reseller || state().userData.role === 'reseller'));
+
+    // Sort items ascending by price
+    const items = [...rawItems].sort((a, b) => {
+      const pa = Number(a.price || a.unit_price || a.cost || 0);
+      const pb = Number(b.price || b.unit_price || b.cost || 0);
+      return pa - pb;
+    });
+
+    container.style.display = 'block';
+
+    // Title & count badge
+    if (titleLabel) {
+      const isVoucher = (product?.delivery_type === 'voucher') || ((product?.extra_meta || {}).type === 'voucher');
+      titleLabel.innerHTML = isVoucher
+        ? (isAr ? '<span>🎟️</span><span>اختر الفئة أو القسيمة (Packs)</span>' : '<span>🎟️</span><span>Select Voucher Pack</span>')
+        : (isAr ? '<span>⚡</span><span>اختر باقة الشحن (Denomination)</span>' : '<span>⚡</span><span>Select Recharge Pack</span>');
+    }
+
+    if (countBadge) {
+      countBadge.textContent = `${items.length} ${isAr ? 'باقة متاحة' : 'packs'}`;
+      countBadge.style.display = 'inline-block';
+    }
+
+    // Determine current active pack
+    let currentPack = product.selectedPack;
+    if (!currentPack || !items.some(it => String(it.id) === String(currentPack.id))) {
+      currentPack = items.find(it => (it.stock === undefined || it.stock === null || Number(it.stock) > 0)) || items[0];
+    }
+    product.selectedPack = currentPack;
+    state().selectedPack = currentPack;
+
+    // Populate select dropdown
+    if (selectEl) {
+      selectEl.innerHTML = items.map(it => {
+        const isSelected = (String(it.id) === String(currentPack.id));
+        const pVal = (isReseller && it.reseller_price) ? it.reseller_price : (it.price || it.unit_price || 0);
+        const isOos = (it.stock !== undefined && it.stock !== null && Number(it.stock) <= 0);
+        const oosBadge = isOos ? (isAr ? ' [نفد المخزون ⚠️]' : ' [Out of Stock ⚠️]') : '';
+        return `<option value="${it.id}" ${isSelected ? 'selected' : ''}>${escAttr(it.name)} — $${Number(pVal).toFixed(2)}${oosBadge}</option>`;
+      }).join('');
+      selectEl.value = String(currentPack.id);
+    }
+
+    // Populate quick cards list
+    if (listEl) {
+      listEl.innerHTML = items.map(it => {
+        const isSelected = (String(it.id) === String(currentPack.id));
+        const pVal = (isReseller && it.reseller_price) ? it.reseller_price : (it.price || it.unit_price || 0);
+        const isOos = (it.stock !== undefined && it.stock !== null && Number(it.stock) <= 0);
+        const stockMsg = isOos
+          ? `<div style="font-size: 11px; color: #ef4444; font-weight: 700;">${isAr ? 'نفد المخزون ⚠️' : 'Out of Stock ⚠️'}</div>`
+          : ((it.stock !== undefined && it.stock !== null) ? `<div style="font-size: 11px; color: var(--hint);">${isAr ? 'المتوفر:' : 'Stock:'} ${it.stock}</div>` : '');
+        const faceValMsg = it.face_value ? `<div style="font-size: 11px; color: var(--hint);">${isAr ? 'القيمة:' : 'Face value:'} ${escAttr(it.face_value)}</div>` : '';
+
+        return `
+          <div class="detail-variant-card ${isSelected ? 'active' : ''} ${isOos ? 'disabled' : ''}"
+               data-pack-id="${it.id}"
+               onclick="onDetailPackCardClick('${it.id}')">
+            <div style="flex: 1; min-width: 0;">
+              <div class="variant-card-title">${escAttr(it.name)}</div>
+              ${faceValMsg}
+              ${stockMsg}
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span class="variant-card-price">$${Number(pVal).toFixed(2)}</span>
+              <div class="variant-radio-circle">${isSelected ? '✓' : ''}</div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    updateDetailPagePrice();
+    syncPackStockUI(currentPack);
+  }
+
+  function syncPackStockUI(pack) {
+    const isAr = (state().currentAppLanguage === 'ar');
+    const isOos = pack && (pack.stock !== undefined && pack.stock !== null && Number(pack.stock) <= 0);
+    const buyBtn = document.getElementById('btn-inapp-purchase');
+    const restockBox = document.getElementById('restock-alert-box');
+    const stockBadge = document.getElementById('prod-stock-badge');
+
+    if (isOos) {
+      if (buyBtn) buyBtn.style.display = 'none';
+      if (restockBox) restockBox.style.display = 'block';
+      if (stockBadge) {
+        stockBadge.innerText = isAr ? 'نفد المخزون' : 'Out of Stock';
+        stockBadge.className = 'pill-badge spec-pill stock-out';
+      }
+    } else {
+      if (buyBtn) buyBtn.style.display = 'flex';
+      if (restockBox) restockBox.style.display = 'none';
+      if (stockBadge) {
+        stockBadge.innerText = (pack && pack.stock)
+          ? `${isAr ? 'متوفر' : 'In Stock'} (${pack.stock})`
+          : (isAr ? 'متوفر' : 'In Stock');
+        stockBadge.className = 'pill-badge in-stock';
+      }
+    }
+  }
+
+  function onDetailPackSelectChange(packId) {
+    if (!selectedProduct) return;
+    api().haptic?.('selection');
+    const items = (selectedProduct.extra_meta || {}).items || [];
+    const pack = items.find(it => String(it.id) === String(packId));
+    if (!pack) return;
+
+    selectedProduct.selectedPack = pack;
+    state().selectedPack = pack;
+
+    const sel = document.getElementById('detail-pack-select');
+    if (sel && sel.value !== String(packId)) sel.value = String(packId);
+
+    document.querySelectorAll('.detail-variant-card').forEach(card => {
+      const isThis = (card.getAttribute('data-pack-id') === String(packId));
+      card.classList.toggle('active', isThis);
+      const radio = card.querySelector('.variant-radio-circle');
+      if (radio) radio.textContent = isThis ? '✓' : '';
+    });
+
+    updateDetailPagePrice();
+    syncPackStockUI(pack);
+  }
+
+  function onDetailPackCardClick(packId) {
+    onDetailPackSelectChange(packId);
+  }
+
+  function renderVoucherManual(product) {
+    const container = document.getElementById('detail-voucher-manual-container');
+    if (!container) return;
+    const meta = product?.extra_meta || {};
+    const isAr = (state().currentAppLanguage === 'ar');
+    const instructions = isAr
+      ? (meta.instructions_ar || product?.instructions_ar || [])
+      : (meta.instructions_en || product?.instructions_en || []);
+    const isVoucher = (product?.delivery_type === 'voucher') || (meta.type === 'voucher') || (instructions && instructions.length > 0);
+
+    if (!isVoucher || !instructions || instructions.length === 0) {
+      container.style.display = 'none';
+      return;
+    }
+
+    container.style.display = 'block';
+    const listEl = document.getElementById('detail-voucher-steps-list') || document.getElementById('voucher-instructions-list');
+    if (listEl) {
+      listEl.innerHTML = `
+        <ol style="padding-left: 20px; padding-right: 20px; margin: 0; display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--text);">
+          ${instructions.map(step => `<li>${escAttr(step)}</li>`).join('')}
+        </ol>
+      `;
+    }
+    const linkEl = document.getElementById('link-voucher-official-site');
+    const redUrl = meta.redemption_url || '';
+    if (linkEl) {
+      if (redUrl) {
+        linkEl.href = redUrl;
+        linkEl.style.display = 'inline-block';
+      } else {
+        linkEl.style.display = 'none';
+      }
+    }
+  }
+
+  async function fetchProductPacks(productId) {
+    try {
+      const res = await fetch(`/api/products/${productId}/packs`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.status === 'ok' && Array.isArray(data.items) && data.items.length > 0) {
+        if (selectedProduct && Number(selectedProduct.id) === Number(productId)) {
+          selectedProduct.extra_meta = selectedProduct.extra_meta || {};
+          selectedProduct.extra_meta.items = data.items;
+          if (data.instructions_ar) selectedProduct.extra_meta.instructions_ar = data.instructions_ar;
+          if (data.instructions_en) selectedProduct.extra_meta.instructions_en = data.instructions_en;
+          if (data.redemption_url) selectedProduct.extra_meta.redemption_url = data.redemption_url;
+          renderProductPacks(data.items, selectedProduct);
+          renderVoucherManual(selectedProduct);
+        }
+      }
+    } catch (e) {
+      // quiet catch
+    } finally {
+      const loader = document.getElementById('detail-packs-loading');
+      if (loader) loader.style.display = 'none';
+    }
   }
 
   function openProductDetailPage(productId) {
@@ -1547,7 +1787,13 @@
     checkProductEffectiveStock,
     getProductFamilyKey,
     productMetaLine,
-    renderDurationBadge
+    renderDurationBadge,
+    renderProductPacks,
+    syncPackStockUI,
+    onDetailPackSelectChange,
+    onDetailPackCardClick,
+    renderVoucherManual,
+    fetchProductPacks
   };
 
   root.StorefrontModule = Module;
@@ -1579,5 +1825,11 @@
   root.shareCurrentProduct = shareCurrentProduct;
   root.productMetaLine = productMetaLine;
   root.renderDurationBadge = renderDurationBadge;
+  root.renderProductPacks = renderProductPacks;
+  root.syncPackStockUI = syncPackStockUI;
+  root.onDetailPackSelectChange = onDetailPackSelectChange;
+  root.onDetailPackCardClick = onDetailPackCardClick;
+  root.renderVoucherManual = renderVoucherManual;
+  root.fetchProductPacks = fetchProductPacks;
 
 })(typeof window !== 'undefined' ? window : globalThis);

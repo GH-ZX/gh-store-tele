@@ -54,7 +54,10 @@
     if (count > 0) {
       floatEl.style.display = 'flex';
       if (countEl) countEl.textContent = String(count);
-      const total = items.reduce((sum, it) => sum + (Number(it.product?.sell_price_usd || 0) * (Number(it.quantity) || 1)), 0);
+      const total = items.reduce((sum, it) => {
+        const pPrice = (it.options && it.options.pack_price !== undefined) ? Number(it.options.pack_price) : Number(it.product?.sell_price_usd || 0);
+        return sum + (pPrice * (Number(it.quantity) || 1));
+      }, 0);
       if (totalEl) totalEl.textContent = `$${total.toFixed(2)}`;
     } else {
       floatEl.style.display = 'none';
@@ -66,12 +69,21 @@
     api().haptic?.('pop');
     api().playAudioTick?.();
 
-    const pid = String(product.id);
+    const pack = product.selectedPack;
+    const pid = pack ? `${product.id}_pack_${pack.id}` : String(product.id);
+    const packOpts = pack ? {
+      selected_item_id: String(pack.id),
+      catalogue_name: String(pack.name || ''),
+      pack_name: pack.name,
+      pack_price: Number(pack.price || 0)
+    } : {};
+    const combinedOptions = { ...packOpts, ...(options || {}) };
+
     if (cartMap[pid]) {
       cartMap[pid].quantity = (Number(cartMap[pid].quantity) || 1) + Number(quantity);
-      cartMap[pid].options = { ...(cartMap[pid].options || {}), ...options };
+      cartMap[pid].options = { ...(cartMap[pid].options || {}), ...combinedOptions };
     } else {
-      cartMap[pid] = { product, quantity: Number(quantity), options };
+      cartMap[pid] = { product, quantity: Number(quantity), options: combinedOptions };
     }
     saveCart();
     api().showToast(api().t('toast-added-cart', 'تمت الإضافة إلى السلة 🛒'));
@@ -138,22 +150,24 @@
 
     items.forEach(it => {
       const p = it.product;
-      const title = isAr ? (p.name_ar || p.name) : (p.name || p.name_ar);
-      const lineTotal = Number(p.sell_price_usd || 0) * Number(it.quantity || 1);
+      const baseTitle = isAr ? (p.name_ar || p.name) : (p.name || p.name_ar);
+      const title = it.options?.pack_name ? `${baseTitle} (${it.options.pack_name})` : baseTitle;
+      const unitPrice = (it.options && it.options.pack_price !== undefined) ? Number(it.options.pack_price) : Number(p.sell_price_usd || 0);
+      const lineTotal = unitPrice * Number(it.quantity || 1);
       subtotal += lineTotal;
 
       html += `<div class="cart-line-item">
         <div class="cart-line-info">
           <div class="cart-line-title">${api().escapeAttr(title)}</div>
-          <div class="cart-line-unit">$${Number(p.sell_price_usd || 0).toFixed(2)} × ${it.quantity}</div>
+          <div class="cart-line-unit">$${unitPrice.toFixed(2)} × ${it.quantity}</div>
         </div>
         <div class="cart-line-stepper">
-          <button class="cart-step-btn" onclick="changeCartQty(${p.id}, -1)">-</button>
+          <button class="cart-step-btn" onclick="changeCartQty('${it.product?.id}${it.options?.selected_item_id ? `_pack_${it.options.selected_item_id}` : ''}', -1)">-</button>
           <span class="cart-step-qty">${it.quantity}</span>
-          <button class="cart-step-btn" onclick="changeCartQty(${p.id}, 1)">+</button>
+          <button class="cart-step-btn" onclick="changeCartQty('${it.product?.id}${it.options?.selected_item_id ? `_pack_${it.options.selected_item_id}` : ''}', 1)">+</button>
         </div>
         <div class="cart-line-price">$${lineTotal.toFixed(2)}</div>
-        <button class="cart-line-del" onclick="removeFromCart(${p.id})">✕</button>
+        <button class="cart-line-del" onclick="removeFromCart('${it.product?.id}${it.options?.selected_item_id ? `_pack_${it.options.selected_item_id}` : ''}')">✕</button>
       </div>`;
     });
 
@@ -498,6 +512,11 @@
       custom_fields: customFields
     };
 
+    if (product.selectedPack) {
+      payload.selected_item_id = String(product.selectedPack.id);
+      payload.catalogue_name = String(product.selectedPack.name || '');
+    }
+
     const idempotencyKey = security().checkoutKey ? security().checkoutKey('buy', payload) : `buy-${Date.now()}`;
     payload.idempotency_key = idempotencyKey;
 
@@ -546,7 +565,8 @@
         api().showToast(msg, 3500);
         if (data.error === 'insufficient_balance') {
           const userBal = Number(state().userData?.balance || 0);
-          const unitPrice = Number(product.sell_price_usd ?? product.price ?? 0);
+          const pack = product.selectedPack;
+          const unitPrice = Number(pack?.price ?? product.sell_price_usd ?? product.price ?? 0);
           const totalDue = unitPrice * qty;
           const shortfall = Math.max(0.01, +(totalDue - userBal).toFixed(2));
 
