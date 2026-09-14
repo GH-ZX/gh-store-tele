@@ -1,46 +1,57 @@
-"""One-shot data migration: point category covers at local DB-driven art.
+"""Import admin-editable category image URLs from a JSON data manifest.
 
-Replaces external/slow cover URLs (Unsplash, postimg, empty) with the
-local artwork paths defined in services.storefront_images, stored per-row
-in storefront_categories.image_url (editable anytime via SQLAdmin / TMA admin).
-Safe to re-run: only touches rows whose URL is empty or external.
+Preview by default; --apply requires a backup path. Matches canonical
+product_category first, then display name. No runtime image mapping is embedded.
 """
+import argparse
 import asyncio
+import json
+from pathlib import Path
 import sys
+from urllib.parse import urlparse
 
-sys.path.insert(0, ".")
-
-from db import get_db_session, session_commit
-from services.storefront_images import DEFAULT_CATEGORY_IMAGES, LOCAL_CATEGORY_PLACEHOLDER
-
-_EXTERNAL_PREFIXES = ("http://", "https://")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
-def _needs_refresh(url: str | None) -> bool:
-    u = (url or "").strip()
-    if not u:
-        return True
-    if u.startswith("/static/img/"):
-        return False
-    return u.startswith(_EXTERNAL_PREFIXES)
-
-
-async def main() -> int:
+async def main(args) -> int:
     from sqlalchemy import select
+    from db import get_db_session, session_commit
     from models.storefront_category import StorefrontCategory
+
+    mapping = json.loads(Path(args.manifest).read_text())
+    if not isinstance(mapping, dict) or not mapping:
+        raise ValueError("Manifest must map category names to image URLs")
+    for key, value in mapping.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            raise ValueError("Category names and URLs must be strings")
+        if urlparse(value).scheme != "https" or not urlparse(value).netloc:
+            raise ValueError(f"Expected HTTPS image URL for {key}")
+    if args.apply and not args.backup:
+        raise ValueError("--apply requires --backup for the previous image records")
 
     async with get_db_session() as session:
         rows = list((await session.execute(select(StorefrontCategory))).scalars().all())
-        updated = 0
-        for c in rows:
-            if _needs_refresh(c.image_url):
-                c.image_url = DEFAULT_CATEGORY_IMAGES.get(c.name, LOCAL_CATEGORY_PLACEHOLDER)
-                updated += 1
-        if updated:
+        changes = []
+        for row in rows:
+            new_url = mapping.get(row.product_category) or mapping.get(row.name)
+            if new_url and new_url != row.image_url:
+                changes.append({"id": row.id, "name": row.name,
+                                "image_url": row.image_url, "new_image_url": new_url})
+                if args.apply:
+                    row.image_url = new_url
+        if args.apply and changes:
+            # Never overwrite a prior backup.
+            with Path(args.backup).open("x") as backup:
+                json.dump(changes, backup, ensure_ascii=False, indent=2)
             await session_commit(session)
-        print(f"[refresh-images] checked={len(rows)} updated={updated}")
+        print(json.dumps({"applied": args.apply, "checked": len(rows),
+                          "changed": len(changes), "changes": changes}, ensure_ascii=False))
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(asyncio.run(main()))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--manifest", required=True)
+    parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--backup")
+    raise SystemExit(asyncio.run(main(parser.parse_args())))

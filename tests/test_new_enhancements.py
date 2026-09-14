@@ -293,26 +293,19 @@ def test_storefront_image_resolution_is_db_driven():
     from services.storefront_images import (
         resolve_category_image,
         resolve_product_image,
-        DEFAULT_CATEGORY_IMAGES,
         LOCAL_PRODUCT_PLACEHOLDER,
     )
     # DB value always wins
     assert resolve_category_image("AI & Chatbots", "https://admin-set.example/cover.png", {}) == "https://admin-set.example/cover.png"
     assert resolve_product_image("https://admin-set.example/p.png", "Other", "", {}) == "https://admin-set.example/p.png"
-    # Empty DB value -> local per-category art, never a remote hardcoded URL
-    cover = resolve_category_image("AI & Chatbots", "", {})
-    assert cover == DEFAULT_CATEGORY_IMAGES["AI & Chatbots"]
-    assert cover.startswith("/static/")
-    # Existing bundled DB covers upgrade without replacing custom category artwork.
-    for name, new_cover in DEFAULT_CATEGORY_IMAGES.items():
-        legacy_cover = new_cover.replace("-v2.webp", ".svg")
-        assert resolve_category_image(name, legacy_cover, {}) == new_cover
-        assert resolve_product_image("", name, legacy_cover, {}) == new_cover
+    # Category names do not select hardcoded artwork; the DB/global setting wins.
+    assert resolve_category_image("AI & Chatbots", "", {}) == "/static/img/cat-other.svg"
+    assert resolve_category_image("Games", "/static/img/cat-games.svg", {}) == "/static/img/cat-games.svg"
     assert resolve_category_image("Games", "/static/uploads/custom.webp", {}) == "/static/uploads/custom.webp"
     # Unknown category + empty -> placeholder, Admin override respected
     assert resolve_category_image("Nope", "", {}) == "/static/img/cat-other.svg"
     assert resolve_category_image("Nope", "", {"category_placeholder": "https://admin.example/c.png"}) == "https://admin.example/c.png"
     # Product falls back through category then placeholder
-    assert resolve_product_image("", "AI & Chatbots", "", {}) == DEFAULT_CATEGORY_IMAGES["AI & Chatbots"]
+    assert resolve_product_image("", "AI & Chatbots", "", {}) == LOCAL_PRODUCT_PLACEHOLDER
     assert resolve_product_image("", "Nope", "", {}) == LOCAL_PRODUCT_PLACEHOLDER
     assert resolve_product_image("", "Nope", "", {"product_placeholder": "https://admin.example/p.png"}) == "https://admin.example/p.png"

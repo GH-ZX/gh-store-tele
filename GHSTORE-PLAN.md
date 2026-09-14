@@ -16,10 +16,15 @@ artwork and its integration were implemented in this pass.
 - [x] Save production assets in `static/img/cat-*-v2.webp`: 768 × 512 pixels,
   approximately 10–20 KB each. Dark navy backgrounds, recognizable 3D objects,
   restrained category accents, and quiet space below the subject for labels.
-- [x] Use the new covers as category defaults and resolve exact old bundled SVG
-  paths to their matching WebP covers. This handles existing seeded category rows
-  without rewriting the database. Custom uploaded and remote image URLs still win.
-  Product thumbnails that fall back to a category cover also use the new artwork.
+- [x] Store the new GitHub URLs in `storefront_categories.image_url`, using the
+  canonical `product_category` to handle renamed categories. Runtime rendering
+  reads that editable database value directly; there is no category-art mapping
+  in application code. Custom images can be changed through the admin editor.
+- [x] Publish immutable URLs in [category-image-urls.json](static/img/category-image-urls.json).
+  The data import is `scripts/refresh_category_images.py --manifest
+  static/img/category-image-urls.json`; add `--apply --backup <new-file.json>` to
+  commit it. It previews changes by default, backs up previous values, and is
+  idempotent. The manifest is deployment data, not a runtime configuration override.
 - [x] Keep original SVG files as compatibility assets. Unknown categories still
   have the existing generic SVG fallback unless an admin configures another image.
 - [x] Record the exact generation prompts and built-in `image_gen` provenance in
@@ -44,10 +49,10 @@ artwork and its integration were implemented in this pass.
 These are category-card backgrounds, not full-page wallpapers. Keep shopping,
 forms, and checkout surfaces plain. The existing card overlay protects label
 readability; review the actual crop and contrast on devices before release.
-The assets and resolver are ready in the working tree; deployment was not performed.
+The initial artwork was pushed in commit `b582232`; see the deployment notes below.
 
-Validation: all 13 mapped WebP files exist (190,348 bytes combined); bundled legacy
-cover resolution and custom-image preservation are covered by regression checks.
+Validation: all 13 mapped WebP files exist (190,348 bytes combined); database image
+precedence and custom-image preservation are covered by regression checks.
 The project inspector passed, including 268 Python syntax checks and 346 tests
 (one warning). Live Telegram device review remains part of the checklist below.
 
