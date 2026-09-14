@@ -288,6 +288,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+from middleware.catalog_compression import CatalogCompressionMiddleware
+app.add_middleware(CatalogCompressionMiddleware)
 from middleware.rate_limit import RateLimitMiddleware
 app.add_middleware(RateLimitMiddleware, redis_client=redis)
 from middleware.session_revocation import SessionRevocationMiddleware
@@ -453,4 +455,3 @@ def main() -> None:
         proxy_headers=True,
         forwarded_allow_ips="*",
     )
-

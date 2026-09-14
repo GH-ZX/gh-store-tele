@@ -64,7 +64,20 @@
     setSessionToken('');
   }
 
-  async function ensureAuthSession() {
+  let authSessionPromise = null;
+  let authenticatedToken = '';
+
+  function ensureAuthSession() {
+    if (getSessionToken() && getSessionToken() === authenticatedToken) {
+      return Promise.resolve({ status: 'ok', token: authenticatedToken, tg_id: AppState.userId });
+    }
+    if (!authSessionPromise) {
+      authSessionPromise = exchangeAuthSession().finally(() => { authSessionPromise = null; });
+    }
+    return authSessionPromise;
+  }
+
+  async function exchangeAuthSession() {
     const tgObj = getTg();
     const currentToken = getSessionToken();
     const initData = tgObj?.initData || '';
@@ -89,6 +102,7 @@
           const d = await res.json();
           if (d.status === 'ok' && d.token) {
             setSessionToken(d.token);
+            authenticatedToken = d.token;
             if (d.tg_id) AppState.userId = Number(d.tg_id);
             return d;
           }
@@ -154,6 +168,28 @@
     return root.Telegram?.WebApp || null;
   }
 
+  function syncTelegramTheme() {
+    const tg = getTg();
+    if (!tg) return;
+    const isDark = tg.colorScheme === 'dark' || !tg.colorScheme;
+    try {
+      if (tg.setHeaderColor) {
+        tg.setHeaderColor(isDark ? '#090e1a' : '#f8fafc');
+      }
+      if (tg.setBackgroundColor) {
+        tg.setBackgroundColor(isDark ? '#090e1a' : '#f8fafc');
+      }
+      if (tg.setBottomBarColor) {
+        tg.setBottomBarColor(isDark ? '#151d30' : '#ffffff');
+      }
+    } catch (_) {}
+
+    const storedTheme = root.localStorage?.getItem('ghstore_theme');
+    if (!storedTheme && tg.colorScheme && root.setAppTheme) {
+      root.setAppTheme(tg.colorScheme);
+    }
+  }
+
   function initTelegramPlatform() {
     const tg = getTg();
     if (!tg) return;
@@ -176,6 +212,23 @@
         });
       } catch (_) {}
     }
+
+    // Sync chrome colors with Telegram theme
+    syncTelegramTheme();
+
+    // Safe area, theme, and viewport listeners
+    try {
+      tg.onEvent?.('safeAreaChanged', updateSafeAreaInsets);
+      tg.onEvent?.('contentSafeAreaChanged', updateSafeAreaInsets);
+      tg.onEvent?.('themeChanged', syncTelegramTheme);
+      tg.onEvent?.('viewportChanged', ({ isStateStable }) => {
+        if (isStateStable && tg.viewportStableHeight) {
+          document.documentElement.style.setProperty('--viewport-height', tg.viewportStableHeight + 'px');
+          document.documentElement.style.setProperty('--tg-viewport-stable-height', tg.viewportStableHeight + 'px');
+        }
+        updateSafeAreaInsets();
+      });
+    } catch (_) {}
   }
 
   function updateSafeAreaInsets() {
@@ -433,7 +486,8 @@
     currentAppLanguage: 'ar',
     activeTab: 'store',
     currentCurrency: 'USD',
-    sypRate: 14500,
+    sypRate: null,
+    starsUsdRate: null,
     categoriesList: [],
     allProducts: [],
     selectedProduct: null,
@@ -456,7 +510,7 @@
       'quick-subscriptions': 'اشتراكات',
       'quick-games': 'ألعاب وشحن',
       'quick-software': 'برامج ومفاتيح',
-      'search-placeholder': 'ابحث عن منتج، اشتراك، لعبة...',
+      'search-placeholder': 'ابحث عن الخدمات والباقات...',
       'btn-buy': 'شراء فوري',
       'btn-add-cart': 'أضف للسلة',
       'btn-view-all': 'عرض جميع الباقات',
@@ -495,7 +549,7 @@
       'quick-subscriptions': 'Subscriptions',
       'quick-games': 'Games & Top-up',
       'quick-software': 'Software & Keys',
-      'search-placeholder': 'Search products, subscriptions, games...',
+      'search-placeholder': 'Search services and plans...',
       'btn-buy': 'Buy Now',
       'btn-add-cart': 'Add to Cart',
       'btn-view-all': 'View all variants',
@@ -586,9 +640,10 @@
       }
     });
 
-    // 2. Mobile keyboard handling: scroll focused input smoothly into view
+    // 2. Mobile keyboard handling: toggle body.keyboard-open and scroll focused input smoothly into view
     document.addEventListener('focusin', (e) => {
-      if (['INPUT', 'TEXTAREA'].includes(e.target?.tagName)) {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target?.tagName)) {
+        if (document.body) document.body.classList.add('keyboard-open');
         setTimeout(() => {
           try {
             e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -596,6 +651,25 @@
         }, 280);
       }
     });
+
+    document.addEventListener('focusout', (e) => {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target?.tagName)) {
+        setTimeout(() => {
+          const activeTag = document.activeElement?.tagName;
+          if (!['INPUT', 'TEXTAREA', 'SELECT'].includes(activeTag)) {
+            if (document.body) document.body.classList.remove('keyboard-open');
+          }
+        }, 120);
+      }
+    });
+
+    // 3. Visual Viewport resize listener for soft-keyboard detection
+    if (typeof window !== 'undefined' && window.visualViewport) {
+      window.visualViewport.addEventListener('resize', () => {
+        const isKeyboardOpen = window.visualViewport.height < (window.innerHeight * 0.75);
+        if (document.body) document.body.classList.toggle('keyboard-open', isKeyboardOpen);
+      });
+    }
   }
 
   if (typeof document !== 'undefined') {
@@ -862,7 +936,9 @@
     formatRichDescription,
     instructionStepsHTML,
     normalizeCredentialItem,
-    renderStructuredCredentials
+    renderStructuredCredentials,
+    syncTelegramTheme
   };
+  root.syncTelegramTheme = syncTelegramTheme;
 
 })(typeof window !== 'undefined' ? window : globalThis);

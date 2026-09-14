@@ -279,6 +279,104 @@ function runBrowserTests() {
   check(prodDetailEl && prodDetailEl.style.display === 'none', 'product detail page hidden after closing');
   check(storeViewEl && storeViewEl.style.display !== 'none', 'view-store restored after closing product detail');
 
+  // Test 8h. Admin Orders and Live Radar functions exist on window
+  check(typeof loadAdminOrders === 'function', 'loadAdminOrders is defined on window');
+  check(typeof loadAdminLiveRadar === 'function', 'loadAdminLiveRadar is defined on window');
+  check(typeof openAdminOrdersModal === 'function', 'openAdminOrdersModal is defined on window');
+
+  // Test 8i. renderUserActivity renders structured credentials for delivered orders
+  StoreAPI.AppState.userOrders = [{
+    id: 999,
+    status: 'completed',
+    total_sell: 12.0,
+    products: 'Gemini Pro Subscription',
+    goods: ['https://serviceactivation.google.com/token/test12345']
+  }];
+  StoreAPI.AppState.userRecharges = [];
+  renderUserActivity();
+  const ordersContainer = document.getElementById('orders-container-box') || document.getElementById('orders-history-list');
+  check(ordersContainer.innerHTML.includes('Gemini Pro Activation Token') || ordersContainer.innerHTML.includes('كود تفعيل اشتراك Gemini Pro'), 'renderUserActivity uses renderStructuredCredentials for Gemini Pro URLs');
+  check(ordersContainer.innerHTML.includes('openExternalPaymentUrl'), 'orders view contains direct activation action');
+
+  // Test 8j. openOrderDetail opens view-order-detail with correct ID
+  openOrderDetail(999);
+  const orderDetailView = document.getElementById('view-order-detail');
+  const idTitleEl = document.getElementById('order-detail-id-title');
+  check(orderDetailView && orderDetailView.style.display !== 'none', 'order detail view visible upon openOrderDetail');
+  check(idTitleEl && idTitleEl.innerText.includes('999'), 'order detail ID title set to order #999');
+
+  // Test 8k. closeOrderDetailView restores orders view
+  closeOrderDetailView();
+  check(orderDetailView && orderDetailView.style.display === 'none', 'order detail view hidden after closeOrderDetailView');
+  check(document.getElementById('view-orders')?.style.display !== 'none', 'orders view restored after closing order detail');
+
+  // Test 8l. proceedToTopupForProduct sets pending buy in sessionStorage and checkPendingBuyResume handles it
+  proceedToTopupForProduct(101, 2, 15.0);
+  const pendingRaw = sessionStorage.getItem('ghstore_pending_buy_resume');
+  check(pendingRaw && JSON.parse(pendingRaw).productId === 101, 'proceedToTopupForProduct stored pending buy intent');
+
+  // --- Item 15: Task-Based Usability Checks ---
+  // Task 1: Search & Find a Service
+  openSearchPage();
+  check(document.getElementById('view-search')?.style.display !== 'none', 'Task 1: Search view opens cleanly');
+  const searchPageInput = document.getElementById('search-page-input');
+  if (searchPageInput) {
+    searchPageInput.value = 'unknown_xyz_no_match';
+    handleSearchPageInput();
+    const searchList = document.getElementById('search-page-products-list');
+    check(searchList && searchList.innerHTML.includes('applyQuickSearch'), 'Task 1: Search empty state renders suggestions and quick search buttons');
+
+    applyQuickSearch('ChatGPT');
+    check(searchPageInput.value === 'ChatGPT', 'Task 1: applyQuickSearch updates search input value');
+    check(searchList && searchList.querySelectorAll('.product-row').length >= 1, 'Task 1: search results rendered for matched query');
+
+    // Query preservation
+    StorefrontModule.openProductDetail(101);
+    StorefrontModule.closeProductDetailPage();
+    check(searchPageInput.value === 'ChatGPT', 'Task 1: Search query preserved after viewing and closing product detail');
+    closeSearchPage();
+  }
+
+  // Task 2: Compare Two Plans / Variants Under a Service
+  const sampleP1 = { id: 101, name: 'ChatGPT Plus', duration_en: '1 Month', delivery_type: 'activation', stock: 10, sell_price_usd: 15.0 };
+  const sampleP2 = { id: 102, name: 'ChatGPT Team', duration_en: '1 Year', delivery_type: 'stock', stock: 5, sell_price_usd: 120.0 };
+  const durBadge1 = renderDurationBadge(sampleP1.duration_en);
+  const durBadge2 = renderDurationBadge(sampleP2.duration_en);
+  const meta1 = productMetaLine({ isOutOfStock: false, isActivation: true, duration: sampleP1.duration_en, multiCount: 0, stockText: 'In stock (10)' });
+  const meta2 = productMetaLine({ isOutOfStock: false, isActivation: false, duration: sampleP2.duration_en, multiCount: 0, stockText: 'In stock (5)' });
+  check(durBadge1.includes('prod-dur-badge') && durBadge1.includes('1 Month'), 'Task 2: Duration badge renders cleanly');
+  check(meta1.includes('prod-type-label') && (meta1.includes('تفعيل') || meta1.includes('Activation')), 'Task 2: Plan comparison meta contains delivery tag');
+  check(meta2.includes('prod-type-label') && (meta2.includes('حساب') || meta2.includes('Account')), 'Task 2: Variant comparison meta contains consistent tags');
+
+  // Task 3: Balance Shortfall Recovery Flow & Input Preservation
+  StoreAPI.AppState.userId = sampleUser.telegram_id;
+  const gameFieldsContainer = document.getElementById('detail-game-fields-container');
+  if (gameFieldsContainer) gameFieldsContainer.style.display = 'block';
+  const playerInp = document.getElementById('game-player-id-input');
+  if (playerInp) playerInp.value = '';
+  buyNow(sampleP1);
+  check(document.querySelector('.inline-field-error') !== null, 'Task 3: Missing required custom field renders inline error');
+  check(playerInp && playerInp.style.borderColor.includes('239'), 'Task 3: Input highlighted with error border');
+
+  // Typing clears error inline while preserving value
+  if (playerInp) {
+    playerInp.value = 'PlayerUID999';
+    onPlayerInputChanged();
+  }
+  check(document.querySelector('.inline-field-error') === null, 'Task 3: Typing clears inline error');
+  check(playerInp && playerInp.value === 'PlayerUID999', 'Task 3: Typed input is preserved');
+
+  // Shortfall recovery preserves fields
+  proceedToTopupForProduct(101, 1, 15.0);
+  const pendingBuy = JSON.parse(sessionStorage.getItem('ghstore_pending_buy_resume') || '{}');
+  check(pendingBuy.productId === 101 && pendingBuy.customFields?.player_id === 'PlayerUID999', 'Task 3: Shortfall recovery preserved product and entered custom fields');
+
+  // Task 4: Retrieve Delivered Order & Contextual Support
+  openOrderDetail(999);
+  const credsBox = document.getElementById('order-detail-credentials-box');
+  check(credsBox && (credsBox.innerHTML.includes('Gemini Pro') || credsBox.innerHTML.includes('serviceactivation')), 'Task 4: Delivered credentials retrieved with activation token');
+  closeOrderDetailView();
+
   // Mark all tests passed in body
   document.body.textContent = `PASS: ${count} storefront browser coverage checks`;
 }
@@ -341,8 +439,40 @@ async function main() {
     <div id="categories-container"></div>
     <div id="products-container"></div>
   </div>
-  <section id="view-product-detail" class="tab-view" style="display: none;"></section>
-  <section id="view-search" class="tab-view" style="display: none;"></section>
+  <section id="view-product-detail" class="tab-view" style="display: none;">
+    <button class="btn-back-catalog" onclick="closeProductDetailPage()"></button>
+    <div id="detail-game-fields-container" style="display: none;">
+      <div id="group-player-id">
+        <input type="text" id="game-player-id-input" oninput="onPlayerInputChanged()">
+      </div>
+      <div id="group-server-id" style="display: none;">
+        <input type="text" id="game-server-id-input" oninput="onPlayerInputChanged()">
+      </div>
+    </div>
+    <button id="btn-inapp-purchase" onclick="buyNow(StoreAPI.AppState.activeProduct)"></button>
+  </section>
+  <section id="view-search" class="tab-view" style="display: none;">
+    <button class="btn-back-catalog" onclick="closeSearchPage()"></button>
+    <input type="text" id="search-page-input" oninput="handleSearchPageInput()">
+    <span class="search-page-clear-btn" id="search-page-clear-btn" onclick="clearSearchPageInput()" style="display: none;">✕</span>
+    <div id="search-page-empty-state" style="display: flex;"></div>
+    <div id="search-page-results" style="display: none;">
+      <div id="search-results-count-bar"></div>
+      <div id="search-page-products-list"></div>
+    </div>
+  </section>
+  <section id="view-order-detail" class="tab-view" style="display: none;">
+    <div id="order-detail-id-title"></div>
+    <div id="order-detail-date"></div>
+    <div id="order-detail-products-title"></div>
+    <div id="order-detail-total-amount"></div>
+    <div id="order-detail-status-badge"></div>
+    <div id="order-detail-stepper-fill"></div>
+    <div id="order-step-node-1"></div>
+    <div id="order-step-node-2"></div>
+    <div id="order-step-node-3"></div>
+    <div id="order-detail-credentials-box"></div>
+  </section>
   <div id="view-orders" style="display: none;"><div id="orders-history-list"></div></div>
   <div id="view-wallet" style="display: none;">
     <span id="top-balance-str">$0.00</span>

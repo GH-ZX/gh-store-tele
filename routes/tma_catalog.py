@@ -836,6 +836,7 @@ async def get_tma_user_data(request: Request, tg_id: int | None = None):
             "balance": balance,
             "currency_preference": curr_pref,
             "syp_rate": syp_market,
+            "stars_usd_rate": float(await ConfigService.get(session, "GHSTORE_STARS_TO_USD", env_fallback=config.GHSTORE_STARS_TO_USD)),
             "formatted_balance": format_currency_display(balance, curr_pref, syp_market),
             "vip_tier": tier_label,
             "vip_discount": discount_pct,

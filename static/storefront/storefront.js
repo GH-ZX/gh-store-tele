@@ -163,9 +163,9 @@
 
   function checkProductEffectiveStock(product) {
     if (!product) return { isOutOfStock: true, effectiveStock: 0 };
-    const stock = (product.stock !== null && product.stock !== undefined) ? Number(product.stock) : 999;
+    const stock = (product.stock !== null && product.stock !== undefined) ? Number(product.stock) : null;
     return {
-      isOutOfStock: stock <= 0,
+      isOutOfStock: stock !== null && (!Number.isFinite(stock) || stock <= 0),
       effectiveStock: stock
     };
   }
@@ -207,16 +207,24 @@
 
   function productMetaLine(o) {
     const isAr = (state().currentAppLanguage === 'ar');
-    if (o.isOutOfStock) {
-      const lbl = isAr ? 'نفد المخزون' : 'Out of stock';
-      return `<div class="prod-meta oos"><i class="dot"></i><span>${lbl}</span></div>`;
+    const isOutOfStock = Boolean(o.isOutOfStock);
+
+    let delivery = '';
+    if (o.isActivation || o.deliveryType === 'activation') {
+      delivery = isAr ? '⚡ تفعيل مخصص' : '⚡ Custom Activation';
+    } else if (o.deliveryType === 'key') {
+      delivery = isAr ? '🔑 مفتاح ترخيص' : '🔑 License Key';
+    } else {
+      delivery = isAr ? '👤 حساب جاهز' : '👤 Ready Account';
     }
+
+    if (isOutOfStock) {
+      const oosLabel = isAr ? 'نفد المخزون' : 'Out of stock';
+      return `<div class="prod-meta oos"><span class="prod-type-label">${escAttr(delivery)}</span><span class="sep">·</span><i class="dot"></i><span>${oosLabel}</span></div>`;
+    }
+
     const stock = o.stockText || (isAr ? 'متوفر' : 'In stock');
-    if (o.isActivation) {
-      const delivery = isAr ? 'تفعيل مخصص' : 'Activation';
-      return `<div class="prod-meta"><i class="dot"></i><span>${escAttr(stock)}</span><span class="sep">·</span><span>${delivery}</span></div>`;
-    }
-    return `<div class="prod-meta"><i class="dot"></i><span>${escAttr(stock)}</span></div>`;
+    return `<div class="prod-meta"><span class="prod-type-label">${escAttr(delivery)}</span><span class="sep">·</span><i class="dot"></i><span>${escAttr(stock)}</span></div>`;
   }
 
   function renderPriceBoxHTML(product, isMulti, favSvg, tapHint) {
@@ -273,6 +281,58 @@
     `;
   }
 
+  const CATEGORY_LABEL_OVERRIDES = {
+    'AI & Chatbots': { en: 'AI Tools', ar: 'أدوات الذكاء الاصطناعي' },
+    'AI Tools': { en: 'AI Tools', ar: 'أدوات الذكاء الاصطناعي' },
+    'الذكاء الاصطناعي': { en: 'AI Tools', ar: 'أدوات الذكاء الاصطناعي' },
+    'Streaming & Entertainment': { en: 'Streaming', ar: 'خدمات البث' },
+    'Streaming & Media': { en: 'Streaming', ar: 'خدمات البث' },
+    'Streaming': { en: 'Streaming', ar: 'خدمات البث' },
+    'البث والترفيه': { en: 'Streaming', ar: 'خدمات البث' },
+    'VPN & Security': { en: 'Security', ar: 'الحماية والـ VPN' },
+    'Security': { en: 'Security', ar: 'الحماية والـ VPN' },
+    'الحماية والـ VPN': { en: 'Security', ar: 'الحماية والـ VPN' },
+    'Design & Creative': { en: 'Creative Tools', ar: 'أدوات التصميم' },
+    'Creative Tools': { en: 'Creative Tools', ar: 'أدوات التصميم' },
+    'التصميم والإبداع': { en: 'Creative Tools', ar: 'أدوات التصميم' },
+    'Productivity': { en: 'Software', ar: 'البرامج والإنتاجية' },
+    'Office & Productivity': { en: 'Software', ar: 'البرامج والإنتاجية' },
+    'Office & Business': { en: 'Software', ar: 'البرامج والإنتاجية' },
+    'الإنتاجية والأدوات': { en: 'Software', ar: 'البرامج والإنتاجية' },
+    'برامج الأوفيس والأعمال': { en: 'Software', ar: 'البرامج والإنتاجية' },
+    'Accounts & Email': { en: 'Accounts & Email', ar: 'الحسابات والبريد' },
+    'الحسابات والبريد الإلكتروني': { en: 'Accounts & Email', ar: 'الحسابات والبريد' },
+    'Software Keys': { en: 'Software Keys', ar: 'مفاتيح البرامج' },
+    'Software Licenses': { en: 'Software Keys', ar: 'مفاتيح البرامج' },
+    'مفاتيح وتراخيص البرامج': { en: 'Software Keys', ar: 'مفاتيح البرامج' },
+    'Education': { en: 'Education', ar: 'التعليم والدراسة' },
+    'Education & Learning': { en: 'Education', ar: 'التعليم والدراسة' },
+    'التعليم والمنصات الدراسية': { en: 'Education', ar: 'التعليم والدراسة' },
+    'Communication': { en: 'Communication', ar: 'برامج التواصل' },
+    'برامج التواصل والمحادثات': { en: 'Communication', ar: 'برامج التواصل' },
+    'Social Media': { en: 'Social Media', ar: 'وسائل التواصل' },
+    'وسائل التواصل الاجتماعي': { en: 'Social Media', ar: 'وسائل التواصل' },
+    'Other': { en: 'Other Services', ar: 'خدمات متنوعة' },
+    'Digital Subscriptions': { en: 'Other Services', ar: 'خدمات متنوعة' },
+    'منتجات رقمية متنوعة': { en: 'Other Services', ar: 'خدمات متنوعة' }
+  };
+
+  function getCustomerCategoryTitle(catItem, isAr) {
+    const rawName = (typeof catItem === 'object' && catItem.name) ? catItem.name : String(catItem);
+    if (typeof catItem === 'object') {
+      const tEn = catItem.name_en || catItem.name || rawName;
+      const tAr = catItem.name_ar || tEn;
+      const cleanTarget = stripEmojis(isAr ? tAr : tEn).trim();
+      const override = CATEGORY_LABEL_OVERRIDES[cleanTarget] || CATEGORY_LABEL_OVERRIDES[rawName];
+      if (override) return isAr ? override.ar : override.en;
+      return cleanTarget || rawName;
+    }
+    const cleanRaw = stripEmojis(rawName).trim();
+    const override = CATEGORY_LABEL_OVERRIDES[cleanRaw] || CATEGORY_LABEL_OVERRIDES[rawName];
+    if (override) return isAr ? override.ar : override.en;
+    return cleanRaw || rawName;
+  }
+
   // --- Dynamic Categories Rendering (Eliminates Shimmer Skeletons Forever) ---
   function renderCatalogsGrid(categories = null) {
     const cats = categories || state().categoriesList || [];
@@ -305,25 +365,39 @@
       return;
     }
 
-    const cardsHtml = cats.map(catItem => {
+    // Sort categories: Available ones (with products) first, empty categories sink to bottom
+    const sortedCats = [...cats].sort((a, b) => {
+      const aName = (typeof a === 'object' && a.name) ? a.name : String(a);
+      const bName = (typeof b === 'object' && b.name) ? b.name : String(b);
+      const aId = (typeof a === 'object' && a.id) ? a.id : null;
+      const bId = (typeof b === 'object' && b.id) ? b.id : null;
+      const aCount = allProds.filter(p => p.category === aName || p.category_name === aName || String(p.category_id) === String(aId)).length;
+      const bCount = allProds.filter(p => p.category === bName || p.category_name === bName || String(p.category_id) === String(bId)).length;
+      const aEmpty = (aCount === 0) ? 1 : 0;
+      const bEmpty = (bCount === 0) ? 1 : 0;
+      if (aEmpty !== bEmpty) return aEmpty - bEmpty;
+      const aOrder = (typeof a === 'object' && a.sort_order != null) ? a.sort_order : 99;
+      const bOrder = (typeof b === 'object' && b.sort_order != null) ? b.sort_order : 99;
+      return aOrder - bOrder;
+    });
+
+    const cardsHtml = sortedCats.map((catItem, index) => {
       const catName = (typeof catItem === 'object' && catItem.name) ? catItem.name : String(catItem);
       const catId = (typeof catItem === 'object' && catItem.id) ? catItem.id : null;
       const items = allProds.filter(p => p.category === catName || p.category_name === catName || String(p.category_id) === String(catId));
       const isEmpty = (!items || !items.length);
 
-      let displayTitle = catName;
+      let displayTitle = getCustomerCategoryTitle(catItem, isAr);
       let displayPreview = '';
       let imageUrl = '/static/img/cat-other.svg';
 
       if (typeof catItem === 'object') {
-        const tEn = catItem.name_en || catItem.name || catName;
-        const tAr = catItem.name_ar || tEn;
-        displayTitle = stripEmojis(isAr ? tAr : tEn) || catName;
         displayPreview = (isAr && catItem.preview_ar) ? catItem.preview_ar : (catItem.preview_en || '');
         imageUrl = (catItem.image_url || catItem.icon_url || '/static/img/cat-other.svg');
       }
 
-      const minPrice = isEmpty ? 0 : Math.min(...items.map(p => Number(p.sell_price_usd || p.price || 999)));
+      const prices = items.map(p => Number(p.sell_price_usd ?? p.price)).filter(p => Number.isFinite(p) && p >= 0);
+      const minPrice = prices.length ? Math.min(...prices) : null;
       const itemsSuffix = isAr ? 'منتج' : 'items';
       const startsFrom = isAr ? 'من' : 'Starts from';
       const soonPill = isEmpty
@@ -338,7 +412,9 @@
 
       if (isGrid) {
         return `
-          <div class="catalog-visual-card${isEmpty ? ' is-empty' : ''}" style="background-image: url('${safeImg}');" data-category="${escAttr(catName)}" onclick="openCollection(this.dataset.category)">
+          <article class="catalog-visual-card${isEmpty ? ' is-empty' : ''}">
+            <img class="catalog-cover" src="${escAttr(safeImg)}" alt="" width="768" height="512" loading="${index < 2 ? 'eager' : 'lazy'}" decoding="async" onerror="this.style.display='none'">
+            <button type="button" class="catalog-open" data-category="${escAttr(catName)}" onclick="openCollection(this.dataset.category)" aria-label="${escAttr(displayTitle)}"></button>
             <div class="catalog-visual-overlay"></div>
             <div class="catalog-visual-top">
               ${soonPill}
@@ -349,20 +425,21 @@
               <div class="catalog-visual-sub">
                 ${isEmpty
                   ? `<span>${isAr ? 'منتجات جديدة قريباً' : 'New products soon'}</span>`
-                  : `<span>${startsFrom} ${formatPrice(minPrice)}</span>`}
+                  : `<span>${minPrice === null ? (isAr ? 'عرض الباقات' : 'View plans') : startsFrom + ' ' + formatPrice(minPrice)}</span>`}
                 <span style="font-size: 15px; font-weight: 800;">${isAr ? '‹' : '›'}</span>
               </div>
             </div>
-          </div>
+          </article>
         `;
       }
 
       // List layout
       const chevron = isAr ? '‹' : '›';
       return `
-        <div class="catalog-list-card${isEmpty ? ' is-empty' : ''}" data-category="${escAttr(catName)}" onclick="openCollection(this.dataset.category)">
+        <article class="catalog-list-card${isEmpty ? ' is-empty' : ''}">
+          <button type="button" class="catalog-open" data-category="${escAttr(catName)}" onclick="openCollection(this.dataset.category)" aria-label="${escAttr(displayTitle)}"></button>
           <div class="catalog-left">
-            <div class="catalog-thumb"><img src="${safeImg}" alt="" loading="lazy" onerror="this.style.display='none'"></div>
+            <div class="catalog-thumb"><img src="${escAttr(safeImg)}" alt="" width="48" height="48" loading="${index < 4 ? 'eager' : 'lazy'}" decoding="async" onerror="this.style.display='none'"></div>
             <div class="catalog-info">
               <div style="display:flex; align-items:center;">
                 <span class="catalog-name">${escAttr(displayTitle)}</span>
@@ -371,7 +448,7 @@
               <div class="catalog-sub">
                 ${isEmpty
                   ? `<span style="color: #fbbf24; font-weight: 700;">${isAr ? 'قريباً' : 'Soon'}</span>`
-                  : `<span>${items.length} ${itemsSuffix}</span> · <span style="color: var(--accent); font-weight: 700;">${startsFrom} ${formatPrice(minPrice)}</span>`}
+                  : `<span>${items.length} ${itemsSuffix}</span> · <span style="color: var(--accent); font-weight: 700;">${minPrice === null ? (isAr ? 'عرض الباقات' : 'View plans') : startsFrom + ' ' + formatPrice(minPrice)}</span>`}
               </div>
               <div style="font-size: 11px; color: var(--hint); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
                 ${escAttr(displayPreview)}
@@ -379,7 +456,7 @@
             </div>
           </div>
           <span class="chevron-icon">${chevron}</span>
-        </div>
+        </article>
       `;
     }).join('');
 
@@ -407,10 +484,10 @@
     const cats = state().categoriesList || [];
     let catObj = cats.find(c => (typeof c === 'object' ? (c.name === catName || c.name_en === catName || c.name_ar === catName) : c === catName));
     let dispTitle = catName;
-    if (catObj && typeof catObj === 'object') {
-      const tEn = catObj.name_en || catObj.name || catName;
-      const tAr = catObj.name_ar || tEn;
-      dispTitle = stripEmojis(isAr ? tAr : tEn) || catName;
+    if (catObj) {
+      dispTitle = getCustomerCategoryTitle(catObj, isAr);
+    } else if (CATEGORY_LABEL_OVERRIDES[catName]) {
+      dispTitle = isAr ? CATEGORY_LABEL_OVERRIDES[catName].ar : CATEGORY_LABEL_OVERRIDES[catName].en;
     }
 
     const titleEl = document.getElementById('active-collection-title');
@@ -531,7 +608,25 @@
 
     const isAr = (state().currentAppLanguage === 'ar');
     if (!products || !products.length) {
-      const emptyHtml = `<div style="text-align: center; padding: 40px 16px; color: var(--hint);">${isAr ? 'لا توجد منتجات مطابقة لهذا الفلتر.' : 'No products found matching this filter.'}</div>`;
+      const isCatalogView = Boolean(activeCatalog);
+      const emptyHtml = isCatalogView ? `
+        <div class="empty-state-card" style="text-align: center; padding: 48px 20px; color: var(--hint); background: var(--card); border: 1px solid var(--border); border-radius: 16px; margin: 12px 0;">
+          <div style="font-size: 42px; margin-bottom: 12px;">📦</div>
+          <div style="font-size: 16px; font-weight: 800; color: var(--text); margin-bottom: 6px;">
+            ${isAr ? 'لا توجد منتجات متوفرة حالياً في هذا القسم' : 'No products currently available in this category'}
+          </div>
+          <p style="font-size: 13px; margin-bottom: 20px; line-height: 1.5; color: var(--hint); max-width: 320px; margin-inline: auto;">
+            ${isAr ? 'نعمل على توفير وتحديث مخزون باقات جديدة قريباً. يمكنك تصفح الأقسام الأخرى المتوفرة الآن.' : 'New plans for this service will be stocked soon. Browse other active categories.'}
+          </p>
+          <button type="button" class="btn-action-primary" onclick="returnToCollections()" style="width: auto; padding: 0 24px; margin: 0 auto; height: 44px; font-size: 13px; font-weight: 700;">
+            ${isAr ? '🛍️ تصفح التصنيفات المتوفرة' : '🛍️ Browse Available Categories'}
+          </button>
+        </div>
+      ` : `
+        <div style="text-align: center; padding: 40px 16px; color: var(--hint);">
+          ${isAr ? 'لا توجد منتجات مطابقة لهذا الفلتر.' : 'No products found matching this filter.'}
+        </div>
+      `;
       if (container) container.innerHTML = emptyHtml;
       if (testContainer) testContainer.innerHTML = emptyHtml;
       return;
@@ -652,6 +747,11 @@
     if (testContainer) testContainer.innerHTML = html;
   }
 
+  function refreshVisibleCatalog() {
+    const products = state().allProducts || [];
+    renderProductItems(activeCatalog ? products.filter(p => p.category === activeCatalog || p.category_name === activeCatalog) : products);
+  }
+
   function renderStorefrontFolderCards(products) {
     renderProductItems(products);
   }
@@ -752,6 +852,7 @@
 
   // --- Dedicated Product Detail View ---
   let lastActiveViewId = 'view-store';
+  let lastSearchScrollTop = 0;
   let _closingProductDetail = false;
 
   function openProductDetail(productId) {
@@ -876,6 +977,9 @@
     const currentActive = document.querySelector('.tab-view.active') || Array.from(document.querySelectorAll('.tab-view')).find(el => el.style.display === 'block');
     if (currentActive && currentActive.id !== 'view-product-detail') {
       lastActiveViewId = currentActive.id;
+      if (currentActive.id === 'view-search') {
+        lastSearchScrollTop = window.scrollY || document.documentElement.scrollTop || 0;
+      }
     }
 
     // Switch view: Hide all views and show view-product-detail ONLY
@@ -936,6 +1040,11 @@
         if (prevEl) {
           prevEl.classList.add('active');
           prevEl.style.display = 'block';
+        }
+        if (lastActiveViewId === 'view-search' && lastSearchScrollTop > 0) {
+          setTimeout(() => {
+            window.scrollTo({ top: lastSearchScrollTop, behavior: 'instant' });
+          }, 0);
         }
       } else {
         const storeView = document.getElementById('view-store');
@@ -1074,7 +1183,6 @@
       searchView.classList.add('active');
       searchView.style.display = 'block';
     }
-    window.scrollTo({ top: 0, behavior: 'instant' });
 
     const isAr = (state().currentAppLanguage === 'ar');
     const arrowEl = document.getElementById('search-page-back-icon');
@@ -1084,7 +1192,19 @@
 
     const inp = document.getElementById('search-page-input');
     if (inp) {
+      if (inp.value && inp.value.trim()) {
+        handleSearchPageInput();
+        if (lastSearchScrollTop > 0) {
+          setTimeout(() => {
+            window.scrollTo({ top: lastSearchScrollTop, behavior: 'instant' });
+          }, 0);
+        }
+      } else {
+        window.scrollTo({ top: 0, behavior: 'instant' });
+      }
       setTimeout(() => { try { inp.focus(); } catch (_) {} }, 100);
+    } else {
+      window.scrollTo({ top: 0, behavior: 'instant' });
     }
 
     api().pushNav?.('search_page', closeSearchPage);
@@ -1097,7 +1217,8 @@
     try {
       api().haptic?.('light');
       const inp = document.getElementById('search-page-input');
-      if (inp) { inp.value = ''; try { inp.blur(); } catch (_) {} }
+      if (inp) { try { inp.blur(); } catch (_) {} }
+      // NOTE: Intentionally preserve inp.value so returning to search keeps the user's query intact
 
       document.querySelectorAll('.tab-view').forEach(el => {
         el.classList.remove('active');
@@ -1133,6 +1254,17 @@
     handleSearchPageInput();
   }
 
+  function applyQuickSearch(term) {
+    api().haptic?.('light');
+    const inp = document.getElementById('search-page-input') || document.getElementById('search-input');
+    if (inp) {
+      inp.value = term;
+      handleSearchPageInput();
+      try { inp.focus(); } catch (_) {}
+    }
+  }
+  root.applyQuickSearch = applyQuickSearch;
+
   function handleSearchPageInput() {
     const inp = document.getElementById('search-page-input');
     const rawQ = (inp?.value || '').trim().toLowerCase();
@@ -1149,18 +1281,21 @@
       return;
     }
 
-    if (clearBtn) clearBtn.style.display = 'block';
+    if (clearBtn) clearBtn.style.display = 'flex';
     if (emptyState) emptyState.style.display = 'none';
     if (resultsBox) resultsBox.style.display = 'block';
 
-    let queryTokens = [rawQ];
-    for (const [k, aliases] of Object.entries(SEARCH_ALIASES)) {
-      if (rawQ.includes(k) || k.includes(rawQ)) {
-        queryTokens.push(...aliases);
-      }
-    }
-
     const all = state().allProducts || [];
+    const wishlistSet = new Set(state().userWishlist || []);
+
+    // Multi-token search with SEARCH_ALIASES expansion
+    const queryTokens = rawQ.split(/\s+/).filter(Boolean);
+    queryTokens.forEach(tok => {
+      if (SEARCH_ALIASES[tok]) {
+        queryTokens.push(...SEARCH_ALIASES[tok]);
+      }
+    });
+
     let matched = all.filter(p => {
       const nameStr = ((p.clean_name || '') + ' ' + (p.name || '') + ' ' + (p.custom_name || '') + ' ' + (p.custom_name_ar || '')).toLowerCase();
       const descStr = ((p.description || '') + ' ' + (p.description_ar || '')).toLowerCase();
@@ -1178,9 +1313,20 @@
     if (!matched.length) {
       if (listContainer) {
         listContainer.innerHTML = `
-          <div style="text-align: center; padding: 40px 20px; color: var(--hint);">
+          <div class="empty-state-card" style="text-align: center; padding: 32px 16px; color: var(--hint); border: 1px dashed var(--border); border-radius: 16px; margin: 12px 0;">
             <div style="font-size: 32px; margin-bottom: 8px;">🔍</div>
-            <div style="font-size: 14px; font-weight: 700; color: var(--text);">${isAr ? 'لا توجد نتائج مطابقة' : 'No matching results'}</div>
+            <div style="font-size: 15px; font-weight: 800; color: var(--text); margin-bottom: 4px;">${isAr ? 'لم نتمكن من العثور على نتائج مطابقة' : 'No matching results found'}</div>
+            <div style="font-size: 12px; margin-bottom: 14px; line-height: 1.5;">${isAr ? 'تأكد من كتابة الكلمات بشكل صحيح أو جرّب البحث بكلمات شائعة:' : 'Check your spelling or try popular search terms:'}</div>
+            <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-bottom: 18px;">
+              <button type="button" class="filter-chip" onclick="applyQuickSearch('ChatGPT')">ChatGPT</button>
+              <button type="button" class="filter-chip" onclick="applyQuickSearch('Netflix')">Netflix</button>
+              <button type="button" class="filter-chip" onclick="applyQuickSearch('Telegram')">Telegram</button>
+              <button type="button" class="filter-chip" onclick="applyQuickSearch('VPN')">VPN</button>
+            </div>
+            <button type="button" class="btn-action-secondary" onclick="closeSearchPage()" style="margin: 0 auto; min-height: 40px; padding: 0 16px; font-size: 13px; font-weight: 700;">
+              <span>🛍️</span>
+              <span>${isAr ? 'تصفح كافة التصنيفات' : 'Browse all categories'}</span>
+            </button>
           </div>
         `;
       }
@@ -1326,6 +1472,7 @@
     applyCatalogFilter,
     renderProductItems,
     renderStorefrontFolderCards,
+    refreshVisibleCatalog,
     openServiceVariantsByIndex,
     returnFromVariantsToPrevious,
     openProductDetail,
@@ -1355,7 +1502,9 @@
     formatPrice,
     calculateProductPrices,
     checkProductEffectiveStock,
-    getProductFamilyKey
+    getProductFamilyKey,
+    productMetaLine,
+    renderDurationBadge
   };
 
   root.StorefrontModule = Module;
@@ -1385,5 +1534,7 @@
   root.clearSearchPageInput = clearSearchPageInput;
   root.toggleCurrentProductWishlist = toggleCurrentProductWishlist;
   root.shareCurrentProduct = shareCurrentProduct;
+  root.productMetaLine = productMetaLine;
+  root.renderDurationBadge = renderDurationBadge;
 
 })(typeof window !== 'undefined' ? window : globalThis);

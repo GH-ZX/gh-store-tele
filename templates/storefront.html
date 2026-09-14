@@ -766,11 +766,11 @@
       <button class="circle-icon-btn search-nav-btn" id="header-search-btn" onclick="openSearchPage()" title="بحث">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
       </button>
-      <div class="header-balance-pill" onclick="switchTab('wallet')" title="المحفظة">
+      <div class="header-balance-pill" onclick="switchTab('wallet')" role="button" tabindex="0" title="المحفظة" aria-label="المحفظة والرصيد">
         <span class="bal-pill-amount" id="top-balance-str">$0.00</span>
         <span class="bal-pill-plus" id="top-balance-plus">➕</span>
       </div>
-      <div class="header-user-badge" onclick="switchTab('settings')" title="الإعدادات">
+      <div class="header-user-badge" onclick="switchTab('settings')" role="button" tabindex="0" title="الإعدادات" aria-label="إعدادات الحساب">
         <div id="top-avatar-box">
           <div class="avatar-fallback" id="top-avatar-initial">U</div>
         </div>
@@ -780,6 +780,12 @@
 
   <!-- TAB 1: STORE VIEW -->
   <main id="view-store" class="tab-view active">
+
+    <button type="button" class="store-search-entry" onclick="openSearchPage()" aria-label="ابحث عن الخدمات والباقات">
+      <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="10.5" cy="10.5" r="7.5"/><path d="m16 16 5 5"/></svg>
+      <span data-i18n="search-placeholder">ابحث عن الخدمات والباقات...</span>
+    </button>
+    <div id="catalog-load-status" role="status" hidden></div>
 
     <!-- Flash Sale Countdown Banner -->
     <div class="flash-sale-banner" id="flash-sale-banner" style="display: none;">
@@ -829,7 +835,7 @@
       <div class="catalogs-grid grid-layout" id="catalogs-grid">
           <div class="skeleton-card-item">
             <div class="skeleton-shimmer"></div>
-            <div class="skeleton-thumb-circle"></div>
+            <div class="skeleton-pill-bar"></div>
             <div class="skeleton-text-group">
               <div class="skeleton-bar title-bar"></div>
               <div class="skeleton-bar sub-bar"></div>
@@ -837,7 +843,7 @@
           </div>
           <div class="skeleton-card-item">
             <div class="skeleton-shimmer"></div>
-            <div class="skeleton-thumb-circle"></div>
+            <div class="skeleton-pill-bar"></div>
             <div class="skeleton-text-group">
               <div class="skeleton-bar title-bar"></div>
               <div class="skeleton-bar sub-bar"></div>
@@ -845,7 +851,7 @@
           </div>
           <div class="skeleton-card-item">
             <div class="skeleton-shimmer"></div>
-            <div class="skeleton-thumb-circle"></div>
+            <div class="skeleton-pill-bar"></div>
             <div class="skeleton-text-group">
               <div class="skeleton-bar title-bar"></div>
               <div class="skeleton-bar sub-bar"></div>
@@ -853,7 +859,7 @@
           </div>
           <div class="skeleton-card-item">
             <div class="skeleton-shimmer"></div>
-            <div class="skeleton-thumb-circle"></div>
+            <div class="skeleton-pill-bar"></div>
             <div class="skeleton-text-group">
               <div class="skeleton-bar title-bar"></div>
               <div class="skeleton-bar sub-bar"></div>
@@ -916,7 +922,7 @@
       </button>
       <div class="search-page-input-wrapper">
         <span class="search-page-input-icon">🔍</span>
-        <input type="text" id="search-page-input" placeholder="ابحث عن منتج، اشتراك، خدمة..." oninput="handleSearchPageInput()" autocomplete="off">
+        <input type="text" id="search-page-input" placeholder="ابحث عن الخدمات والباقات..." oninput="handleSearchPageInput()" autocomplete="off">
         <span class="search-page-clear-btn" id="search-page-clear-btn" onclick="clearSearchPageInput()" style="display: none;">✕</span>
       </div>
     </div>
@@ -995,7 +1001,7 @@
           <span>🎮</span>
           <span id="label-game-fields-title">بيانات الشحن داخل اللعبة</span>
         </div>
-        <span class="game-instant-pill" id="badge-game-instant" style="background: rgba(16, 185, 129, 0.15); color: #10b981; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px;">⚡ شحن فوري</span>
+        <span class="game-instant-pill" id="badge-game-instant" hidden style="background: rgba(16, 185, 129, 0.15); color: #10b981; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px;">⚡ شحن فوري</span>
       </div>
       <div id="game-fields-notes" style="display: none; font-size: 11px; color: var(--hint); margin-bottom: 10px; background: rgba(56, 189, 248, 0.06); padding: 6px 10px; border-radius: 8px; border: 1px solid rgba(56, 189, 248, 0.2);"></div>
 
@@ -1870,7 +1876,7 @@
     <div class="section-title" id="title-orders-history">العمليات والسجل</div>
     <div class="filter-chips-row" id="activity-filter-row" style="margin-bottom: 14px;">
       <div class="filter-chip active" id="act-filter-all" onclick="filterActivityView('all')">الكل</div>
-      <div class="filter-chip" id="act-filter-orders" onclick="filterActivityView('orders')" style="display: none;">🛍️ الطلبات</div>
+      <div class="filter-chip" id="act-filter-orders" onclick="filterActivityView('orders')">🛍️ الطلبات</div>
       <div class="filter-chip" id="act-filter-recharges" onclick="filterActivityView('recharges')">عمليات الشحن</div>
       <div class="filter-chip" id="act-filter-transfers" onclick="filterActivityView('transfers')" style="display: none;">💸 تحويلات الإدارة</div>
       <div class="filter-chip" id="act-filter-vault" onclick="filterActivityView('vault')">🔐 خزنة المفاتيح</div>
@@ -1891,7 +1897,7 @@
       </div>
 
       <!-- VIP Progress Bar -->
-      <div class="inset-card" id="wallet-vip-progress-card" style="padding: 14px;">
+      <div class="inset-card" id="wallet-vip-progress-card" hidden style="padding: 14px;">
         <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px;">
           <span><span id="label-vip-progress-prefix">التقدم نحو رتبة</span> <strong id="next-vip-rank" style="color: var(--warning);">Gold VIP</strong></span>
           <span id="vip-progress-num" style="color: var(--accent); font-weight: 700;">60%</span>
@@ -2343,23 +2349,23 @@
   </main>
 
   <!-- FLOATING LIQUID GLASS BOTTOM NAVBAR (Flyout Capsule) -->
-  <nav class="liquid-glass-nav">
-    <div class="liquid-tab-item active" id="tab-store" onclick="switchTab('store')">
+  <nav class="liquid-glass-nav" role="tablist" aria-label="شريط التنقل الرئيسي">
+    <button type="button" class="liquid-tab-item active" id="tab-store" onclick="switchTab('store')" role="tab" aria-selected="true" aria-label="المتجر">
       <svg viewBox="0 0 24 24"><path d="M19 6h-2c0-2.76-2.24-5-5-5S7 3.24 7 6H5c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-7-3c1.66 0 3 1.34 3 3H9c0-1.66 1.34-3 3-3zm7 17H5V8h14v12zm-7-8c-1.66 0-3-1.34-3-3H7c0 2.76 2.24 5 5 5s5-2.24 5-5h-2c0 1.66-1.34 3-3 3z"/></svg>
       <span class="liquid-tab-label" id="i18n-tab-store">المتجر</span>
-    </div>
-    <div class="liquid-tab-item" id="tab-orders" onclick="switchTab('orders')">
+    </button>
+    <button type="button" class="liquid-tab-item" id="tab-orders" onclick="switchTab('orders')" role="tab" aria-selected="false" aria-label="العمليات والطلبات">
       <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
       <span class="liquid-tab-label" id="i18n-tab-orders">العمليات</span>
-    </div>
-    <div class="liquid-tab-item" id="tab-wallet" onclick="switchTab('wallet')">
+    </button>
+    <button type="button" class="liquid-tab-item" id="tab-wallet" onclick="switchTab('wallet')" role="tab" aria-selected="false" aria-label="المحفظة والرصيد">
       <svg viewBox="0 0 24 24"><path d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>
       <span class="liquid-tab-label" id="i18n-tab-wallet">المحفظة</span>
-    </div>
-    <div class="liquid-tab-item" id="tab-settings" onclick="switchTab('settings')">
+    </button>
+    <button type="button" class="liquid-tab-item" id="tab-settings" onclick="switchTab('settings')" role="tab" aria-selected="false" aria-label="الإعدادات">
       <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
       <span class="liquid-tab-label" id="i18n-tab-settings">الإعدادات</span>
-    </div>
+    </button>
   </nav>
 
   <script src="/static/storefront/security.js"></script>

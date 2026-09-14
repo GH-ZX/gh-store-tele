@@ -354,9 +354,13 @@
     ['store', 'orders', 'wallet', 'settings'].forEach(t => {
       const tabBtn = document.getElementById(`tab-${t}`);
       const viewEl = document.getElementById(`view-${t}`);
-      if (tabBtn) tabBtn.classList.toggle('active', t === tab);
+      const isCurrent = (t === tab);
+      if (tabBtn) {
+        tabBtn.classList.toggle('active', isCurrent);
+        tabBtn.setAttribute('aria-selected', isCurrent ? 'true' : 'false');
+      }
       if (viewEl) {
-        if (t === tab) {
+        if (isCurrent) {
           viewEl.classList.add('active');
           viewEl.style.display = 'block';
         } else {
@@ -367,8 +371,26 @@
     });
     window.scrollTo({ top: 0, behavior: 'instant' });
 
-    if (tab === 'orders') loadUserOrders();
-    else if (tab === 'wallet') wallet().renderWalletBalances();
+    if (tab === 'orders') {
+      const isAdmin = !!(state().userData?.is_admin || window.userData?.is_admin);
+      const radarHeader = document.getElementById('admin-radar-header-box');
+      const attChip = document.getElementById('act-filter-attention');
+      const trChip = document.getElementById('act-filter-transfers');
+      if (isAdmin) {
+        if (radarHeader) radarHeader.style.display = 'block';
+        if (attChip) attChip.style.display = 'inline-block';
+        if (trChip) trChip.style.display = 'inline-block';
+        if (root.loadAdminLiveRadar) root.loadAdminLiveRadar();
+        else loadUserOrders();
+      } else {
+        if (radarHeader) radarHeader.style.display = 'none';
+        if (attChip) attChip.style.display = 'none';
+        if (trChip) trChip.style.display = 'none';
+        loadUserOrders();
+      }
+    } else if (tab === 'wallet') {
+      wallet().renderWalletBalances?.();
+    }
   }
 
   // --- Copy Credential Helper ---
@@ -386,20 +408,55 @@
   }
 
   // --- Data Loading & Synchronization ---
-  async function loadStorefrontData() {
+  let catalogRequest = null;
+  function loadStorefrontData() {
+    if (!catalogRequest) {
+      catalogRequest = fetchStorefrontData().finally(() => { catalogRequest = null; });
+    }
+    return catalogRequest;
+  }
+
+  async function fetchStorefrontData() {
     try {
       const res = await fetch('/api/catalog');
-      if (res.ok) {
+      if (!res.ok) throw new Error('Catalog HTTP ' + res.status);
+      {
         const data = await res.json();
+        if (!Array.isArray(data.categories) || !Array.isArray(data.products)) throw new Error('Invalid catalog response');
         state().categoriesList = data.categories || [];
         state().allProducts = data.products || [];
         if (data.store_logo_url) applyStoreLogo(data.store_logo_url);
         if (data.flash_sale) storefront().initFlashSaleTimer?.(data.flash_sale);
         storefront().renderCatalogsGrid?.(state().categoriesList);
-        storefront().renderStorefrontFolderCards?.(state().allProducts);
+        const productsView = document.getElementById('products-catalog-mode');
+        if (productsView && productsView.style.display !== 'none') {
+          storefront().refreshVisibleCatalog?.();
+        }
+        const status = document.getElementById('catalog-load-status');
+        if (status) { status.hidden = true; status.replaceChildren(); }
       }
     } catch (e) {
       console.warn('Failed to fetch catalog:', e);
+      const isAr = state().currentAppLanguage === 'ar';
+      const status = document.getElementById('catalog-load-status');
+      if (status) {
+        status.hidden = false;
+        status.innerHTML = `<p>${isAr ? 'تعذر تحديث المتجر. تحقق من اتصالك وحاول مجدداً.' : 'Could not update the store. Check your connection and try again.'}</p><button type="button" class="btn-action-secondary" onclick="loadStorefrontData()">${isAr ? 'إعادة المحاولة' : 'Retry'}</button>`;
+      }
+      if (!state().allProducts.length) {
+        document.querySelectorAll('#catalogs-grid .skeleton-card-item').forEach(el => el.remove());
+        const grid = document.getElementById('catalogs-grid');
+        if (grid && !grid.children.length) {
+          grid.innerHTML = `
+            <div class="empty-state-card" style="grid-column: 1 / -1; text-align: center; padding: 36px 16px; color: var(--hint); border: 1px dashed var(--border); border-radius: 18px; margin-block-end: 20px;">
+              <div style="font-size: 32px; margin-bottom: 8px;">📡</div>
+              <div style="font-size: 15px; font-weight: 800; color: var(--text); margin-bottom: 4px;">${isAr ? 'تعذر تحميل المنتجات والتصنيفات' : 'Failed to load catalog'}</div>
+              <div style="font-size: 13px; margin-bottom: 16px;">${isAr ? 'تأكد من الاتصال بالإنترنت ثم حاول مجدداً.' : 'Check your network connection and try again.'}</div>
+              <button type="button" class="btn-action-primary" onclick="loadStorefrontData()" style="max-width: 180px; margin: 0 auto; min-height: 40px; font-size: 13px; font-weight: 700;">${isAr ? 'إعادة المحاولة ↻' : 'Retry ↻'}</button>
+            </div>
+          `;
+        }
+      }
     }
   }
 
@@ -407,12 +464,18 @@
 
   function filterActivityView(filterKey) {
     activeActivityFilter = filterKey;
+    root.activeActivityFilter = filterKey;
     api().haptic?.('selection');
-    ['all', 'orders', 'recharges', 'vault'].forEach(k => {
+    ['all', 'attention', 'orders', 'recharges', 'transfers', 'vault'].forEach(k => {
       const chip = document.getElementById(`act-filter-${k}`);
       if (chip) chip.classList.toggle('active', k === filterKey);
     });
-    renderUserActivity();
+    const isAdmin = !!(state().userData?.is_admin || window.userData?.is_admin);
+    if (isAdmin && root.renderAdminLiveRadar) {
+      root.renderAdminLiveRadar();
+    } else {
+      renderUserActivity();
+    }
   }
 
   function renderUserActivity() {
@@ -451,6 +514,8 @@
       return;
     }
 
+    const renderFn = root.renderStructuredCredentials || api().renderStructuredCredentials;
+
     container.innerHTML = list.map(it => {
       if (it.type === 'order') {
         const isCompleted = (it.status === 'completed');
@@ -462,7 +527,7 @@
         const totalNum = Number(it.total || it.total_sell || 0).toFixed(2);
 
         return `
-          <div class="order-history-card" style="background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-bottom: 10px;">
+          <div class="order-history-card" onclick="openOrderDetail(${it.id})" role="button" tabindex="0" style="background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-bottom: 10px; cursor: pointer;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
               <span style="font-size: 12px; font-weight: 800; color: var(--accent);">#${it.id}</span>
               <span class="activity-status-pill ${statusClass}" style="font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 8px;">${statusLabel}</span>
@@ -470,25 +535,18 @@
             <div style="font-size: 14px; font-weight: 800; color: var(--text); margin-bottom: 4px;">
               🛍️ ${escapeAttr(prodName)}
             </div>
-            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--hint); margin-bottom: ${goods.length ? '10px' : '0'};">
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--hint); margin-bottom: 6px;">
               <span>💰 $${totalNum} USD</span>
               <span>${it.created_at || ''}</span>
             </div>
             ${goods.length ? `
-              <div style="background: var(--input-bg); border-radius: 10px; padding: 10px; border: 1px solid var(--border); margin-top: 6px;">
-                <div style="font-size: 11px; font-weight: 700; color: var(--accent); margin-bottom: 6px;">
-                  🔑 ${isAr ? 'بيانات الاستلام والتفعيل:' : 'Delivered Credentials:'}
-                </div>
-                ${goods.map(g => `
-                  <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; background: var(--bg); padding: 6px 10px; border-radius: 8px;">
-                    <code style="font-size: 12px; font-family: monospace; word-break: break-all; color: var(--text); user-select: all;">${escapeAttr(g)}</code>
-                    <button class="btn-copy-mini" onclick="copyCredFromBtn(this)" data-copy="${escapeAttr(g)}" style="padding: 4px 8px; font-size: 11px; flex-shrink: 0;">
-                      📋 ${isAr ? 'نسخ' : 'Copy'}
-                    </button>
-                  </div>
-                `).join('')}
+              <div class="order-delivery-credentials-wrap" style="margin-top: 10px;">
+                ${renderFn ? renderFn(goods) : ''}
               </div>
             ` : ''}
+            <div style="display: flex; justify-content: flex-end; margin-top: 6px;">
+              <span style="font-size: 11px; font-weight: 700; color: var(--accent);">${isAr ? 'عرض التفاصيل والبيانات الكاملة ›' : 'View full details & keys ›'}</span>
+            </div>
           </div>
         `;
       } else {
@@ -813,6 +871,9 @@
 
         // 6. User Activity & Orders if activeTab === 'orders'
         if (state().activeTab === 'orders') renderUserActivity();
+
+        // 7. Check continuous insufficient balance recovery
+        checkPendingBuyResume();
       } else {
         console.warn('Failed to load user data: HTTP', res.status);
       }
@@ -855,9 +916,14 @@
       sse.onmessage = (e) => {
         try {
           const ev = JSON.parse(e.data);
-          if (ev.type === 'order_updated') loadUserOrders();
-          else if (ev.type === 'balance_updated') loadUserData();
-          else if (ev.type === 'catalog_synced') loadStorefrontData();
+          const eventType = ev.event || ev.type;
+          if (eventType === 'order_updated') loadUserOrders();
+          else if (eventType === 'balance_updated') loadUserData();
+          else if (['catalog_synced', 'stock_update'].includes(eventType)) loadStorefrontData();
+          else if (eventType === 'rate_update') {
+            state().sypRate = Number(ev.syp_rate) > 0 ? Number(ev.syp_rate) : null;
+            loadUserData();
+          }
         } catch (_) {}
       };
     } catch (_) {}
@@ -876,7 +942,10 @@
     // 3. Initialize Keyboard navigation behavior
     api().initKeyboardBehavior?.();
 
-    // 4. Ensure cryptographic auth session first
+    // Public catalog loading does not depend on the private session handshake.
+    loadStorefrontData();
+
+    // 4. Authenticate private account requests.
     if (api().ensureAuthSession) {
       await api().ensureAuthSession();
     }
@@ -911,8 +980,7 @@
     checkout().initCart?.();
     storefront().initFlashSaleTimer?.();
 
-    // 8. Load Data & Connect SSE
-    loadStorefrontData();
+    // 8. Load private data & connect SSE
     loadUserData();
     initSSE();
 
@@ -929,6 +997,267 @@
       }
     } catch (_) {}
   }
+
+  // --- Continuous Insufficient Balance Recovery ---
+  function checkPendingBuyResume() {
+    try {
+      const raw = root.sessionStorage?.getItem('ghstore_pending_buy_resume');
+      if (!raw) return;
+      const pending = JSON.parse(raw);
+      if (!pending || !pending.productId) return;
+
+      // Intent expires after 2 hours
+      if (Date.now() - (pending.createdAt || 0) > 2 * 3600 * 1000) {
+        root.sessionStorage?.removeItem('ghstore_pending_buy_resume');
+        return;
+      }
+
+      const userBal = Number(state().userData?.balance || 0);
+      const all = state().allProducts || [];
+      const prod = all.find(p => Number(p.id) === Number(pending.productId));
+      if (!prod) return;
+
+      const currentPrice = Number(prod.sell_price_usd ?? prod.price ?? 0) * (Number(pending.quantity) || 1);
+      if (userBal >= currentPrice) {
+        root.sessionStorage?.removeItem('ghstore_pending_buy_resume');
+        const isAr = (state().currentAppLanguage === 'ar');
+        api().showToast?.(isAr ? 'تم شحن الرصيد بنجاح! تفضل بمراجعة وتأكيد طلبك.' : 'Balance topped up! Review and confirm your order.');
+        if (root.openProductDetail) {
+          root.openProductDetail(prod.id);
+          if (pending.quantity && pending.quantity > 1) {
+            state().selectedQty = pending.quantity;
+            const qEl = document.getElementById('prod-qty-val');
+            if (qEl) qEl.innerText = String(pending.quantity);
+            if (storefront().updateDetailPagePrice) storefront().updateDetailPagePrice();
+          }
+          if (pending.customFields && checkout().restoreEnteredCustomFields) {
+            checkout().restoreEnteredCustomFields(pending.customFields);
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  // --- Contextual Order Support & Order Details Management ---
+  let currentOrderDetailId = null;
+  root.currentOrderDetailId = null;
+
+  function openOrderSupport(orderId) {
+    const tg = api().getTg();
+    const isAr = (state().currentAppLanguage === 'ar');
+    const oid = orderId || currentOrderDetailId || '';
+    const msg = encodeURIComponent(isAr ? `مرحباً، أود الاستفسار والمساعدة بخصوص طلبي #${oid}` : `Hello, I need assistance regarding my order #${oid}`);
+    const supportUrl = `https://t.me/ahmedghx?text=${msg}`;
+    if (tg?.openTelegramLink) {
+      tg.openTelegramLink(supportUrl);
+    } else {
+      window.open(supportUrl, '_blank', 'noopener');
+    }
+  }
+
+  function supportCurrentOrderDetail() {
+    openOrderSupport(currentOrderDetailId);
+  }
+
+  function rateCurrentOrderDetail() {
+    const isAr = (state().currentAppLanguage === 'ar');
+    api().showToast?.(isAr ? 'شكراً لتقييمك! نسعد بخدمتكم دائماً ⭐' : 'Thank you for your rating! ⭐');
+  }
+
+  function showOrderReceiptModal(orderId) {
+    const isAr = (state().currentAppLanguage === 'ar');
+    const orders = state().userOrders || [];
+    const order = orders.find(o => String(o.id) === String(orderId || currentOrderDetailId));
+    if (!order) {
+      api().showToast?.(isAr ? 'لم يتم العثور على بيانات الإيصال' : 'Receipt data not found');
+      return;
+    }
+    const receiptText = `
+══════════════════════════
+       GH STORE RECEIPT   
+══════════════════════════
+Order ID: #${order.id}
+Date: ${order.created_at || 'N/A'}
+Service: ${order.products || order.product_name || 'Digital Goods'}
+Status: ${order.status || 'completed'}
+Total Paid: $${Number(order.total || order.total_sell || 0).toFixed(2)} USD
+Payment Method: Wallet Balance (USD)
+══════════════════════════
+    `;
+    api().copyTextToClipboard?.(receiptText.trim());
+    api().showToast?.(isAr ? 'تم نسخ بيانات الإيصال بالكامل!' : 'Receipt copied to clipboard!');
+  }
+
+  function openOrderDetail(orderId) {
+    api().haptic?.('light');
+    currentOrderDetailId = orderId;
+    root.currentOrderDetailId = orderId;
+
+    const isAr = (state().currentAppLanguage === 'ar');
+    const orders = state().userOrders || [];
+    const order = orders.find(o => String(o.id) === String(orderId)) || { id: orderId };
+
+    const detailView = document.getElementById('view-order-detail');
+    if (!detailView) return;
+
+    // Header & Summary
+    const idTitle = document.getElementById('order-detail-id-title');
+    if (idTitle) idTitle.innerText = `${isAr ? 'طلب' : 'Order'} #${order.id || orderId}`;
+
+    const dateEl = document.getElementById('order-detail-date');
+    if (dateEl) dateEl.innerText = order.created_at || new Date().toISOString().split('T')[0];
+
+    const prodTitle = document.getElementById('order-detail-products-title');
+    if (prodTitle) prodTitle.innerText = order.products || order.product_name || (isAr ? 'منتج رقمي' : 'Digital Service');
+
+    const totalEl = document.getElementById('order-detail-total-amount');
+    if (totalEl) totalEl.innerText = `$${Number(order.total || order.total_sell || 0).toFixed(2)} USD`;
+
+    // Status & Stepper
+    const status = order.status || (order.goods && order.goods.length ? 'completed' : 'pending');
+    const isCompleted = (status === 'completed');
+    const isRefunded = (status === 'refunded' || status === 'failed');
+    const isReview = (status === 'requires_manual_review' || status === 'received');
+
+    const badgeEl = document.getElementById('order-detail-status-badge');
+    const fillEl = document.getElementById('order-detail-stepper-fill');
+    const node1 = document.getElementById('order-step-node-1');
+    const node2 = document.getElementById('order-step-node-2');
+    const node3 = document.getElementById('order-step-node-3');
+
+    if (isCompleted) {
+      if (badgeEl) {
+        badgeEl.className = 'pill-badge in-stock';
+        badgeEl.innerText = isAr ? 'مكتمل ✅' : 'Completed ✅';
+      }
+      if (fillEl) fillEl.style.width = '100%';
+      if (node1) node1.className = 'order-step-node completed';
+      if (node2) node2.className = 'order-step-node completed';
+      if (node3) node3.className = 'order-step-node completed';
+    } else if (isRefunded) {
+      if (badgeEl) {
+        badgeEl.className = 'pill-badge stock-out';
+        badgeEl.innerText = isAr ? 'ملغى ومسترد ↩️' : 'Refunded ↩️';
+      }
+      if (fillEl) fillEl.style.width = '33%';
+      if (node1) node1.className = 'order-step-node completed';
+      if (node2) node2.className = 'order-step-node';
+      if (node3) node3.className = 'order-step-node';
+    } else if (isReview) {
+      if (badgeEl) {
+        badgeEl.className = 'pill-badge spec-pill';
+        badgeEl.innerText = isAr ? 'بانتظار المراجعة ⏳' : 'Manual Review ⏳';
+      }
+      if (fillEl) fillEl.style.width = '50%';
+      if (node1) node1.className = 'order-step-node completed';
+      if (node2) node2.className = 'order-step-node active';
+      if (node3) node3.className = 'order-step-node';
+    } else {
+      // Processing
+      if (badgeEl) {
+        badgeEl.className = 'pill-badge spec-pill';
+        badgeEl.innerText = isAr ? 'قيد التجهيز والتفعيل ⏳' : 'Processing ⏳';
+      }
+      if (fillEl) fillEl.style.width = '66%';
+      if (node1) node1.className = 'order-step-node completed';
+      if (node2) node2.className = 'order-step-node completed';
+      if (node3) node3.className = 'order-step-node active';
+    }
+
+    // Credentials Box
+    const goods = order.goods || order.delivery_goods || [];
+    const credBox = document.getElementById('order-detail-credentials-box');
+    const renderFn = root.renderStructuredCredentials || api().renderStructuredCredentials;
+    if (credBox) {
+      if (goods && goods.length > 0) {
+        credBox.innerHTML = renderFn ? renderFn(goods) : '';
+      } else if (isRefunded) {
+        credBox.innerHTML = `
+          <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 12px; padding: 16px; text-align: center;">
+            <div style="font-weight: 800; font-size: 13px; color: #ef4444; margin-bottom: 4px;">
+              ${isAr ? 'تم استرداد المبلغ بالكامل إلى محفظتك' : 'Order amount was fully refunded to your wallet'}
+            </div>
+            <div style="font-size: 12px; color: var(--hint); margin-bottom: 12px;">
+              ${isAr ? 'إذا كنت بحاجة للمساعدة، يرجى التواصل مع فريق الدعم.' : 'If you need further help, please reach out to support.'}
+            </div>
+            <button type="button" class="btn-action-secondary" onclick="openOrderSupport('${order.id || orderId}')" style="height: 38px; font-size: 12px; font-weight: 700; width: auto; padding: 0 16px; margin: 0 auto;">
+              💬 ${isAr ? 'محادثة الدعم' : 'Contact Support'}
+            </button>
+          </div>
+        `;
+      } else {
+        credBox.innerHTML = `
+          <div style="background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 12px; padding: 16px; text-align: center;">
+            <div style="font-size: 28px; margin-bottom: 6px;">⏳</div>
+            <div style="font-weight: 800; font-size: 13px; color: var(--accent); margin-bottom: 4px;">
+              ${isAr ? 'جاري تجهيز وتفعيل طلبك الآن' : 'Your order is currently being fulfilled'}
+            </div>
+            <div style="font-size: 12px; color: var(--hint); line-height: 1.5; margin-bottom: 12px;">
+              ${isAr ? 'تم استلام الدفعة وتأكيد الطلب. سيتم إرسال بيانات الاشتراك فور اكتمال التجهيز والتفعيل.' : 'Payment confirmed. Credentials and account details will appear here shortly.'}
+            </div>
+            <button type="button" class="btn-action-secondary" onclick="openOrderSupport('${order.id || orderId}')" style="height: 38px; font-size: 12px; font-weight: 700; width: auto; padding: 0 16px; margin: 0 auto;">
+              💬 ${isAr ? 'استفسار من الدعم' : 'Contact Support'}
+            </button>
+          </div>
+        `;
+      }
+    }
+
+    // Hide all views, show order-detail
+    document.querySelectorAll('.tab-view').forEach(el => {
+      el.classList.remove('active');
+      el.style.display = 'none';
+    });
+    detailView.classList.add('active');
+    detailView.style.display = 'block';
+    window.scrollTo({ top: 0, behavior: 'instant' });
+
+    api().pushNav?.('order_detail', closeOrderDetailView);
+  }
+
+  let _closingOrderDetail = false;
+  function closeOrderDetailView() {
+    if (_closingOrderDetail) return;
+    _closingOrderDetail = true;
+    try {
+      api().haptic?.('light');
+      currentOrderDetailId = null;
+      root.currentOrderDetailId = null;
+
+      document.querySelectorAll('.tab-view').forEach(el => {
+        el.classList.remove('active');
+        el.style.display = 'none';
+      });
+
+      const detailView = document.getElementById('view-order-detail');
+      if (detailView) {
+        detailView.classList.remove('active');
+        detailView.style.display = 'none';
+      }
+
+      const ordersView = document.getElementById('view-orders');
+      if (ordersView) {
+        ordersView.classList.add('active');
+        ordersView.style.display = 'block';
+      }
+
+      window.scrollTo({ top: 0, behavior: 'instant' });
+
+      if (api().navStack?.length > 0 && api().navStack[api().navStack.length - 1].name === 'order_detail') {
+        api().popNav?.();
+      }
+    } finally {
+      _closingOrderDetail = false;
+    }
+  }
+
+  root.openOrderDetail = openOrderDetail;
+  root.closeOrderDetailView = closeOrderDetailView;
+  root.openOrderSupport = openOrderSupport;
+  root.supportCurrentOrderDetail = supportCurrentOrderDetail;
+  root.rateCurrentOrderDetail = rateCurrentOrderDetail;
+  root.showOrderReceiptModal = showOrderReceiptModal;
+  root.checkPendingBuyResume = checkPendingBuyResume;
 
   // Attach all functions to window for backward compatibility with inline HTML attributes
   root.formatRichDescription = formatRichDescription;

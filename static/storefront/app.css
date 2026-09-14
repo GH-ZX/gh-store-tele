@@ -1608,6 +1608,10 @@
       color: var(--hint);
       cursor: pointer;
       border-radius: 24px;
+      border: 0;
+      background: transparent;
+      font: inherit;
+      outline: none;
       transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
       position: relative;
     }
@@ -2778,3 +2782,125 @@
     .catalog-info {
       min-width: 0;
     }
+/* Store browsing: readable controls, quiet artwork, and keyboard access. */
+.store-search-entry {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px;
+  padding: 12px 16px; margin-block: 8px 16px; border: 1px solid var(--border);
+  border-radius: 14px; background: var(--input-bg); color: var(--hint);
+  font: inherit; font-size: 16px; text-align: start; cursor: pointer;
+}
+.store-search-entry svg { flex: none; }
+.catalog-cover { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.catalog-list-card { position: relative; }
+.catalog-visual-card { background-color: #0b1220; box-shadow: 0 3px 12px rgba(0,0,0,.18); }
+.catalog-open { position: absolute; inset: 0; z-index: 3; width: 100%; height: 100%; border: 0; border-radius: inherit; background: transparent; cursor: pointer; }
+.catalog-visual-card .admin-edit-badge-btn, .catalog-list-card .admin-edit-badge-btn { position: relative; z-index: 4; pointer-events: auto; }
+.catalog-visual-top { z-index: 4; pointer-events: none; }
+.catalog-visual-pill, .catalog-visual-sub { font-size: 13px; }
+.catalog-visual-title { overflow-wrap: anywhere; }
+.store-search-entry:focus-visible, .catalog-open:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
+#catalog-load-status { padding: 16px; margin-block-end: 16px; border: 1px solid var(--border); border-radius: 14px; color: var(--text); }
+#catalog-load-status p { margin-block-end: 12px; }
+.catalogs-grid.grid-layout .skeleton-card-item {
+  aspect-ratio: 16 / 11.5;
+  min-height: 132px;
+  height: auto;
+  border-radius: 20px;
+  padding: 14px 13px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.catalogs-grid.grid-layout .skeleton-pill-bar {
+  width: 52px;
+  height: 20px;
+  border-radius: 99px;
+  background: var(--input-bg);
+}
+.catalogs-grid.grid-layout .skeleton-text-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.catalogs-grid.grid-layout .skeleton-bar.title-bar {
+  width: 70%;
+  height: 14px;
+}
+.catalogs-grid.grid-layout .skeleton-bar.sub-bar {
+  width: 45%;
+  height: 11px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .liquid-bottom-bar, .modal-sheet, .admin-modal-sheet, .inset-card, .header-container, .catalog-visual-card {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+body.keyboard-open .liquid-bottom-bar {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(100%);
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+/* Calm UI: 16px page gutters, 12-16px component gaps, standardized text hierarchy & tap targets */
+.tab-view {
+  padding-inline: 16px;
+}
+.inset-card {
+  margin-block-end: 12px;
+}
+.page-hero .hero-name, h2.hero-name {
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.rich-desc-container, .voucher-steps-list, #game-fields-notes {
+  font-size: 14px;
+  line-height: 1.6;
+}
+input, select, textarea {
+  font-size: 16px !important;
+}
+.prod-meta {
+  font-size: 12px;
+  color: var(--hint);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.prod-meta .sep {
+  opacity: 0.5;
+  margin-inline: 2px;
+}
+.prod-type-label {
+  font-weight: 700;
+  color: var(--text);
+}
+.prod-price {
+  direction: ltr;
+  unicode-bidi: embed;
+  display: inline-block;
+  font-weight: 800;
+}
+.code-box, .cred-val-text, [data-copy], #referral-link-display {
+  direction: ltr;
+  unicode-bidi: embed;
+}
+button:focus-visible, .liquid-tab-item:focus-visible, .filter-chip:focus-visible, .header-balance-pill:focus-visible, .header-user-badge:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* Touch target comfort: aim for 44px on interactive controls */
+.btn-action-primary, .btn-action-secondary, .btn-action-warning, .btn-back-catalog, .store-search-entry {
+  min-height: 44px;
+}
+

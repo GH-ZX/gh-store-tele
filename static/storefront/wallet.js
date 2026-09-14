@@ -37,11 +37,14 @@
     const num = Number(amountUsd || 0);
 
     if (curr === 'SYP') {
-      const rate = state().sypRate || 14500;
+      const rate = Number(state().sypRate);
+      if (!Number.isFinite(rate) || rate <= 0) return `$${num.toFixed(2)} USD`;
       const sypVal = Math.round(num * rate);
       return `${sypVal.toLocaleString('en-US')} ل.س`;
     } else if (curr === 'STARS') {
-      const starsVal = Math.round(num * 100);
+      const rate = Number(state().starsUsdRate);
+      if (!Number.isFinite(rate) || rate <= 0) return `$${num.toFixed(2)} USD`;
+      const starsVal = Math.round(num / rate);
       return `${starsVal} ⭐`;
     }
     return `$${num.toFixed(2)}`;
@@ -58,10 +61,11 @@
       : (data.balance !== undefined
           ? Number(data.balance)
           : (Number(data.top_up_amount || 0) - Number(data.consume_records || 0)));
-    const sypRate = Number(data.syp_rate || state().sypRate || 14500);
-    state().sypRate = sypRate;
-    const balanceSyp = Math.round(balanceUsd * sypRate);
-    const balanceStars = Math.round(balanceUsd * 100);
+    const sypRate = Number(data.syp_rate);
+    state().sypRate = Number.isFinite(sypRate) && sypRate > 0 ? sypRate : null;
+    const balanceSyp = state().sypRate ? Math.round(balanceUsd * state().sypRate) : null;
+    state().starsUsdRate = Number(data.stars_usd_rate) > 0 ? Number(data.stars_usd_rate) : null;
+    const balanceStars = state().starsUsdRate ? Math.round(balanceUsd / state().starsUsdRate) : null;
     const isAr = (state().currentAppLanguage === 'ar');
     const balDisplay = `$${balanceUsd.toFixed(2)}`;
 
@@ -76,7 +80,8 @@
     if (heroBalEl) heroBalEl.textContent = balDisplay;
     const approxEl = document.getElementById('wallet-balance-approx');
     if (approxEl) {
-      approxEl.textContent = isAr
+      approxEl.hidden = balanceSyp === null;
+      approxEl.textContent = balanceSyp === null ? '' : isAr
         ? `≈ ${balanceSyp.toLocaleString('en-US')} ل.س · جاهز للشراء`
         : `≈ ${balanceSyp.toLocaleString('en-US')} SYP · Ready`;
     }
@@ -109,58 +114,19 @@
     const usdEl = document.getElementById('wallet-balance-usd');
     if (usdEl) usdEl.textContent = balDisplay;
     const sypEl = document.getElementById('wallet-balance-syp');
-    if (sypEl) sypEl.textContent = `${balanceSyp.toLocaleString('en-US')} ل.س`;
+    if (sypEl) sypEl.textContent = balanceSyp === null ? '—' : `${balanceSyp.toLocaleString('en-US')} ل.س`;
     const starsEl = document.getElementById('wallet-balance-stars');
-    if (starsEl) starsEl.textContent = `${balanceStars} ⭐`;
+    if (starsEl) starsEl.textContent = balanceStars === null ? '—' : `${balanceStars} ⭐`;
 
     // Render VIP Tier & Gamified Progress
     renderVipTier(data, balanceUsd);
   }
 
   function renderVipTier(data, balanceUsd) {
-    const isAr = (state().currentAppLanguage === 'ar');
-    const spent = Number(data.total_spent || data.consume_records || 0);
-    let tier = data.vip_tier || 'Standard';
-    let discount = Number(data.vip_discount || 0);
-    let nextTarget = 100.0;
-    let nextLabel = isAr ? "Silver VIP (خصم 3%)" : "Silver VIP (3% off)";
-
-    if (spent >= 500) {
-      nextTarget = 1000.0;
-      nextLabel = isAr ? "Platinum VIP (خصم 10%)" : "Platinum VIP (10% off)";
-    } else if (spent >= 100) {
-      nextTarget = 500.0;
-      nextLabel = isAr ? "Gold VIP (خصم 7%)" : "Gold VIP (7% off)";
-    }
-
-    const pct = Math.min(100, Math.round((spent / nextTarget) * 100));
-    const remainingSpend = Math.max(0, nextTarget - spent);
-    const promptText = (remainingSpend > 0)
-      ? (isAr ? `أنفق $${remainingSpend.toFixed(0)} إضافية للترقية إلى ${nextLabel}!` : `Spend $${remainingSpend.toFixed(0)} more to unlock ${nextLabel}!`)
-      : (isAr ? 'تم الوصول لأعلى رتبة VIP! 🏆' : 'Top VIP Rank Reached! 🏆');
-
-    const rankEl = document.getElementById('next-vip-rank');
-    if (rankEl) rankEl.textContent = nextLabel;
-    const progNumEl = document.getElementById('vip-progress-num');
-    if (progNumEl) progNumEl.textContent = `${pct}% ($${spent.toFixed(0)} / $${nextTarget.toFixed(0)})`;
-    const fillEl = document.getElementById('vip-progress-fill');
-    if (fillEl) fillEl.style.width = `${pct}%`;
-
-    const vipPromptEl = document.getElementById('vip-gamify-prompt');
-    if (vipPromptEl) {
-      vipPromptEl.textContent = promptText;
-      vipPromptEl.style.display = 'block';
-    }
-
-    const setNode = (id, reached) => {
-      const el = document.getElementById(id);
-      if (el) el.classList.toggle('reached', reached);
-    };
-    setNode('vip-node-std', true);
-    setNode('vip-node-sil', spent >= 100);
-    setNode('vip-node-gld', spent >= 500);
-    setNode('vip-node-plt', spent >= 1000);
-
+    // Current tier comes from the server. Do not invent future discount thresholds.
+    const tier = data.vip_tier || '';
+    const progress = document.getElementById('wallet-vip-progress-card');
+    if (progress) progress.hidden = true;
     const tierBadge = document.getElementById('user-vip-badge');
     if (tierBadge) tierBadge.textContent = `VIP: ${tier}`;
   }

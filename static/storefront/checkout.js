@@ -233,8 +233,71 @@
     return custom;
   }
 
-  // Global helper to prevent errors if called by HTML event attributes
-  root.onPlayerInputChanged = function () {};
+  function restoreEnteredCustomFields(fields) {
+    if (!fields || typeof fields !== 'object') return;
+    if (fields.player_id) {
+      const pInp = document.getElementById('game-player-id-input');
+      if (pInp) pInp.value = fields.player_id;
+    }
+    if (fields.server_id) {
+      const sInp = document.getElementById('game-server-id-input');
+      if (sInp) sInp.value = fields.server_id;
+      const sSel = document.getElementById('game-server-id-select');
+      if (sSel) sSel.value = fields.server_id;
+    }
+    if (fields.charname) {
+      const cInp = document.getElementById('game-charname-input');
+      if (cInp) cInp.value = fields.charname;
+    }
+    for (const [k, v] of Object.entries(fields)) {
+      const el = document.getElementById('custom-field-' + k);
+      if (el) el.value = v;
+    }
+  }
+
+  function proceedToTopupForProduct(productId, qty, shortfall) {
+    api().haptic?.('medium');
+    const customFields = getEnteredCustomFields();
+    const product = (state().allProducts || []).find(p => Number(p.id) === Number(productId));
+    const prodTitle = product ? (product.name_ar || product.name || '') : '';
+    const unitPrice = product ? Number(product.sell_price_usd ?? product.price ?? 0) : 0;
+    const totalDue = unitPrice * qty;
+
+    const pendingIntent = {
+      productId: Number(productId),
+      quantity: Number(qty),
+      customFields: customFields,
+      productTitle: prodTitle,
+      requiredTotal: totalDue,
+      shortfall: shortfall,
+      createdAt: Date.now()
+    };
+    try {
+      root.sessionStorage?.setItem('ghstore_pending_buy_resume', JSON.stringify(pendingIntent));
+    } catch (_) {}
+
+    if (root.switchTab) {
+      root.switchTab('wallet');
+    }
+  }
+  root.proceedToTopupForProduct = proceedToTopupForProduct;
+  root.restoreEnteredCustomFields = restoreEnteredCustomFields;
+
+  function clearInlineFormErrors() {
+    document.querySelectorAll('.inline-field-error').forEach(el => el.remove());
+    const pInp = document.getElementById('game-player-id-input');
+    if (pInp) pInp.style.borderColor = '';
+    const sInp = document.getElementById('game-server-id-input');
+    if (sInp) sInp.style.borderColor = '';
+    const sSel = document.getElementById('game-server-id-select');
+    if (sSel) sSel.style.borderColor = '';
+  }
+  root.clearInlineFormErrors = clearInlineFormErrors;
+
+  // Global helper for input changes on dynamic fields
+  root.onPlayerInputChanged = function () {
+    clearInlineFormErrors();
+  };
   root.triggerPlayerVerification = function () {
     const pInp = document.getElementById('game-player-id-input');
     const statusEl = document.getElementById('player-verify-status');
@@ -379,6 +442,50 @@
       return;
     }
 
+    const isAr = ((state().currentAppLanguage || window.currentAppLanguage || root.localStorage?.getItem('ghstore_lang') || 'ar') === 'ar');
+
+    // Inline validation for dynamic custom / game fields (preserves input)
+    const fieldsContainer = document.getElementById('detail-game-fields-container') || document.getElementById('product-game-fields-container');
+    if (fieldsContainer && fieldsContainer.style.display !== 'none') {
+      clearInlineFormErrors();
+      const pInp = document.getElementById('game-player-id-input');
+      const sInp = document.getElementById('game-server-id-input');
+      const sSel = document.getElementById('game-server-id-select');
+      const groupServer = document.getElementById('group-server-id');
+
+      let hasFormError = false;
+      if (pInp && (!pInp.value || !pInp.value.trim())) {
+        hasFormError = true;
+        pInp.style.borderColor = '#ef4444';
+        const errEl = document.createElement('div');
+        errEl.className = 'inline-field-error';
+        errEl.style.cssText = 'color: #ef4444; font-size: 11px; margin-top: 4px; font-weight: 700;';
+        errEl.textContent = isAr ? 'يرجى إدخال معرف اللاعب أو الحساب للمتابعة' : 'Please enter player or account ID to continue';
+        const targetContainer = pInp.closest('.game-input-group') || pInp.parentNode;
+        targetContainer.appendChild(errEl);
+        try { pInp.focus(); pInp.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {}
+      } else if (groupServer && groupServer.style.display !== 'none') {
+        const sVal = (sInp && sInp.style.display !== 'none') ? sInp.value : (sSel ? sSel.value : '');
+        if (!sVal || !sVal.trim()) {
+          hasFormError = true;
+          const targetInp = (sInp && sInp.style.display !== 'none') ? sInp : sSel;
+          if (targetInp) targetInp.style.borderColor = '#ef4444';
+          const errEl = document.createElement('div');
+          errEl.className = 'inline-field-error';
+          errEl.style.cssText = 'color: #ef4444; font-size: 11px; margin-top: 4px; font-weight: 700;';
+          errEl.textContent = isAr ? 'يرجى تحديد أو إدخال معرف السيرفر / المنطقة' : 'Please enter or select server / zone ID';
+          const targetContainer = (targetInp && targetInp.closest('.game-input-group')) || groupServer || (targetInp && targetInp.parentNode);
+          if (targetContainer) targetContainer.appendChild(errEl);
+          try { if (targetInp) { targetInp.focus(); targetInp.scrollIntoView({ behavior: 'smooth', block: 'center' }); } } catch (_) {}
+        }
+      }
+
+      if (hasFormError) {
+        api().haptic?.('error');
+        return;
+      }
+    }
+
     const qty = Math.max(1, Number(quantity) || 1);
     const customFields = extraFields || getEnteredCustomFields();
 
@@ -408,7 +515,7 @@
     if (buyBtn) {
       buyBtn.disabled = true;
       buyBtn.style.opacity = '0.7';
-      buyBtn.innerHTML = '<span>جاري الشراء... ⏳</span>';
+      buyBtn.innerHTML = `<span>${isAr ? 'جاري تأكيد وتجهيز الطلب... ⏳' : 'Confirming order... ⏳'}</span>`;
     }
 
     try {
@@ -438,8 +545,25 @@
         const msg = formatCheckoutError(data.error);
         api().showToast(msg, 3500);
         if (data.error === 'insufficient_balance') {
+          const userBal = Number(state().userData?.balance || 0);
+          const unitPrice = Number(product.sell_price_usd ?? product.price ?? 0);
+          const totalDue = unitPrice * qty;
+          const shortfall = Math.max(0.01, +(totalDue - userBal).toFixed(2));
+
           const fundAlert = document.getElementById('insufficient-funds-alert');
           if (fundAlert) {
+            fundAlert.innerHTML = `
+              <div style="font-weight: 800; font-size: 14px; margin-bottom: 6px; color: #ef4444;">
+                ${isAr ? 'الرصيد المتاح غير كافٍ لإتمام الشراء ⚠️' : 'Insufficient balance to complete purchase ⚠️'}
+              </div>
+              <div style="font-size: 12px; margin-bottom: 10px; color: var(--hint);">
+                ${isAr ? `رصيدك الحالي: $${userBal.toFixed(2)} · إجمالي الطلب: $${totalDue.toFixed(2)} · ينقصك: $${shortfall.toFixed(2)}` : `Current balance: $${userBal.toFixed(2)} · Total: $${totalDue.toFixed(2)} · Shortfall: $${shortfall.toFixed(2)}`}
+              </div>
+              <button type="button" class="btn-action-primary" onclick="proceedToTopupForProduct(${Number(product.id)}, ${qty}, ${shortfall})" style="width: 100%; height: 44px; font-size: 13px; font-weight: 800; background: linear-gradient(135deg, #f59e0b, #d97706); display: flex; align-items: center; justify-content: center; gap: 6px;">
+                <span>⚡</span>
+                <span>${isAr ? `شحن $${shortfall.toFixed(2)} ومتابعة الشراء` : `Top up $${shortfall.toFixed(2)} & Continue`}</span>
+              </button>
+            `;
             fundAlert.style.display = 'block';
           }
         }
@@ -574,21 +698,43 @@
     const orderId = order.id || order.order_id || '';
     const goods = order.delivery_goods || order.goods || [];
     const isAr = ((state().currentAppLanguage || window.currentAppLanguage || root.localStorage?.getItem('ghstore_lang') || 'ar') === 'ar');
+    const status = order.status || (goods.length > 0 ? 'completed' : 'pending');
+    const isDelivered = (status === 'completed' || goods.length > 0);
+    const isRefunded = (status === 'refunded' || status === 'failed');
+    const isReview = (status === 'requires_manual_review' || status === 'received');
 
     // 1. In-App Dedicated View (#view-order-success)
     const viewSuccess = document.getElementById('view-order-success');
     if (viewSuccess) {
       const titleEl = document.getElementById('success-view-title');
       if (titleEl) {
-        titleEl.textContent = isAr ? 'تم الطلب بنجاح!' : 'Order Placed Successfully!';
+        if (isDelivered) {
+          titleEl.textContent = isAr ? 'تم الطلب والتسليم بنجاح! 🎉' : 'Order Delivered Successfully! 🎉';
+        } else if (isRefunded) {
+          titleEl.textContent = isAr ? 'طلب ملغى ومسترد ↩️' : 'Order Refunded ↩️';
+        } else if (isReview) {
+          titleEl.textContent = isAr ? 'تم استلام الطلب وبانتظار المراجعة ⏳' : 'Order Received - In Review ⏳';
+        } else {
+          titleEl.textContent = isAr ? 'تم استلام وتأكيد الطلب ⏳' : 'Order Confirmed - Processing ⏳';
+        }
       }
 
       const metaSub = document.getElementById('success-meta-sub');
       if (metaSub) {
         const prodName = order.product_name ? ` · ${order.product_name}` : '';
-        metaSub.textContent = isAr
-          ? `طلب #${orderId}${prodName} · ${goods.length > 0 ? 'تم التسليم بنجاح ✅' : 'قيد المعالجة ⏳'}`
-          : `Order #${orderId}${prodName} · ${goods.length > 0 ? 'Delivered Successfully ✅' : 'Processing ⏳'}`;
+        if (isDelivered) {
+          metaSub.textContent = isAr
+            ? `طلب #${orderId}${prodName} · تم التسليم بنجاح ✅`
+            : `Order #${orderId}${prodName} · Delivered Successfully ✅`;
+        } else if (isRefunded) {
+          metaSub.textContent = isAr
+            ? `طلب #${orderId}${prodName} · تم استرداد المبلغ للمحفظة ↩️`
+            : `Order #${orderId}${prodName} · Refunded to wallet ↩️`;
+        } else {
+          metaSub.textContent = isAr
+            ? `طلب #${orderId}${prodName} · جاري التجهيز والتفعيل ⏳`
+            : `Order #${orderId}${prodName} · Processing & Activation ⏳`;
+        }
       }
 
       const keysContainer = document.getElementById('success-delivered-keys');
@@ -597,7 +743,7 @@
       const copyHint = document.getElementById('success-copy-hint');
 
       if (keysContainer) {
-        if (goods.length > 0) {
+        if (isDelivered && goods.length > 0) {
           const renderFn = root.renderStructuredCredentials || api().renderStructuredCredentials;
           keysContainer.innerHTML = renderFn ? renderFn(goods) : '';
 
@@ -631,8 +777,40 @@
               keysCard.style.boxShadow = '';
             }
           }
+        } else if (isRefunded) {
+          if (keysTitle) keysTitle.style.display = 'none';
+          if (copyHint) copyHint.style.display = 'none';
+          keysContainer.innerHTML = `
+            <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 12px; padding: 16px; text-align: center;">
+              <div style="font-weight: 800; font-size: 14px; color: #ef4444; margin-bottom: 6px;">
+                ${isAr ? 'تم استرداد كامل المبلغ إلى رصيد محفظتك' : 'Order amount was refunded to your wallet'}
+              </div>
+              <div style="font-size: 12px; color: var(--hint); margin-bottom: 14px;">
+                ${isAr ? 'إذا كنت بحاجة للمساعدة أو ترغب بالاستفسار، تواصل مع فريق الدعم.' : 'For assistance or inquiries, please contact our support team.'}
+              </div>
+              <button type="button" class="btn-action-secondary" onclick="openOrderSupport('${orderId}')" style="height: 38px; font-size: 12px; font-weight: 700; width: auto; padding: 0 18px; margin: 0 auto;">
+                💬 ${isAr ? 'محادثة الدعم الفني' : 'Contact Support'}
+              </button>
+            </div>
+          `;
         } else {
-          keysContainer.innerHTML = `<div style="background:rgba(56,189,248,0.1); border:1px solid rgba(56,189,248,0.3); border-radius:10px; padding:12px; font-size:13px; text-align:center; color:var(--accent);">${isAr ? 'طلبك قيد المعالجة، سيتم تسليم البيانات فوراً خلال دقائق.' : 'Your order is being processed, credentials will arrive shortly.'}</div>`;
+          // Processing / Review
+          if (keysTitle) keysTitle.style.display = 'none';
+          if (copyHint) copyHint.style.display = 'none';
+          keysContainer.innerHTML = `
+            <div style="background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 14px; padding: 16px; text-align: center;">
+              <div style="font-size: 32px; margin-bottom: 8px;">⏳</div>
+              <div style="font-weight: 800; font-size: 14px; color: var(--accent); margin-bottom: 6px;">
+                ${isAr ? 'تم تأكيد الدفع وجاري التجهيز والتفعيل' : 'Payment Confirmed - Fulfilling Service'}
+              </div>
+              <div style="font-size: 12px; color: var(--hint); line-height: 1.5; margin-bottom: 14px; max-width: 320px; margin-inline: auto;">
+                ${isAr ? 'نقوم بتوليد وتفعيل بياناتك فوراً. ستظهر البيانات في هذه الشاشة وفي رسائل البوت خلال دقائق.' : 'We are activating your service now. Credentials will be delivered here and via bot message shortly.'}
+              </div>
+              <button type="button" class="btn-action-secondary" onclick="openOrderSupport('${orderId}')" style="height: 38px; font-size: 12px; font-weight: 700; width: auto; padding: 0 18px; margin: 0 auto;">
+                💬 ${isAr ? `استفسار عن الطلب #${orderId}` : `Inquire about Order #${orderId}`}
+              </button>
+            </div>
+          `;
         }
       }
 
