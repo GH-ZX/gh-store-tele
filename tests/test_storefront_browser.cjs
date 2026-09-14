@@ -448,6 +448,59 @@ function runBrowserTests() {
   closeAdminFolderModal();
   check(folderModal.style.display === 'none', 'admin-folder-modal closes');
 
+  // Test 9d. Product Modal Pre-filled Names without overrides
+  openAdminProductModal(101);
+  const prodNameEn = document.getElementById('admin-edit-prod-name');
+  const prodNameAr = document.getElementById('admin-edit-prod-name-ar');
+  check(prodNameEn && prodNameEn.value === 'ChatGPT Plus 1 Month', 'product 101 English name is pre-filled');
+  check(prodNameAr && prodNameAr.value === 'ChatGPT Plus 1 Month', 'product 101 Arabic name falls back to clean name');
+  closeAdminProductModal();
+
+  // Test 9e. Product Modal Pre-filled Names with custom overrides
+  StoreAPI.AppState.allProducts.push({
+    id: 103,
+    name: 'Zoom Pro Annual',
+    clean_name: 'Zoom Pro',
+    custom_name: 'Zoom Pro Enterprise',
+    custom_name_ar: 'زووم برو للشركات',
+    category: 'Productivity',
+    sell_price_usd: 49.99,
+    stock: 20
+  });
+  openAdminProductModal(103);
+  check(document.getElementById('admin-edit-prod-name')?.value === 'Zoom Pro Enterprise', 'product 103 custom English name pre-filled');
+  check(document.getElementById('admin-edit-prod-name-ar')?.value === 'زووم برو للشركات', 'product 103 custom Arabic name pre-filled');
+  closeAdminProductModal();
+
+  // Test 9f. Folder Modal Pre-filled Titles with folder data
+  openAdminFolderModal('zoom', testFolder);
+  const folderTitleEn = document.getElementById('admin-edit-folder-title-en');
+  const folderTitleAr = document.getElementById('admin-edit-folder-title-ar');
+  check(folderTitleEn && folderTitleEn.value === 'Zoom', 'folder title_en pre-filled');
+  check(folderTitleAr && folderTitleAr.value === 'زووم', 'folder title_ar pre-filled');
+  closeAdminFolderModal();
+
+  // Test 9g. Folder Modal Pre-filled Titles from primary product when folder not in DB
+  StoreAPI.AppState.allProducts.push({
+    id: 104,
+    name: 'Netflix 4K UHD 1 Month',
+    folder_key: 'netflix',
+    folder_title_en: 'Netflix 4K UHD',
+    folder_title_ar: 'نتفلكس بدقة 4K',
+    category: 'Streaming',
+    sell_price_usd: 4.99
+  });
+  openAdminFolderModal('netflix');
+  check(document.getElementById('admin-edit-folder-title-en')?.value === 'Netflix 4K UHD', 'virtual folder title_en pre-filled from primary product');
+  check(document.getElementById('admin-edit-folder-title-ar')?.value === 'نتفلكس بدقة 4K', 'virtual folder title_ar pre-filled from primary product');
+  closeAdminFolderModal();
+
+  // Test 9h. Create New Folder modal leaves titles empty for input
+  openAdminCreateFolderModal();
+  check(document.getElementById('admin-edit-folder-title-en')?.value === '', 'new folder title_en starts empty');
+  check(document.getElementById('admin-edit-folder-title-ar')?.value === '', 'new folder title_ar starts empty');
+  closeAdminFolderModal();
+
   // ==========================================
   // 10. GAME & VOUCHER PACK SELECTION AND DROPDOWN TESTS
   // ==========================================

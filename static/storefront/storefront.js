@@ -560,6 +560,7 @@
       if (sCats) sCats.style.display = 'block';
 
       activeVariantFamilyKey = null;
+      try { root.activeVariantFamilyKey = null; } catch (_) {}
       window.scrollTo({ top: 0, behavior: 'instant' });
 
       if (api().navStack?.length > 0 && api().navStack[api().navStack.length - 1].name === 'collection') {
@@ -790,6 +791,7 @@
     const entry = _serviceFamilyRegistry[idx];
     if (!entry) return;
     activeVariantFamilyKey = entry.famKey;
+    try { root.activeVariantFamilyKey = entry.famKey; } catch (_) {}
 
     const isAr = (state().currentAppLanguage === 'ar');
     const _fPrimary = entry.items[0] || {};
@@ -863,6 +865,7 @@
     try {
       api().haptic?.('light');
       activeVariantFamilyKey = null;
+      try { root.activeVariantFamilyKey = null; } catch (_) {}
       const sVariants = document.getElementById('service-variants-mode');
       if (sVariants) sVariants.style.display = 'none';
 

@@ -139,9 +139,12 @@
     const folderHiddenCheck = document.getElementById('admin-edit-folder-hidden');
     const catSelect = document.getElementById('admin-edit-prod-cat');
 
+    const defaultNameEn = p.custom_name || p.variant_title_en || p.clean_name || p.name || '';
+    const defaultNameAr = p.custom_name_ar || p.variant_title_ar || p.name_ar || defaultNameEn || '';
+
     if (idInput) idInput.value = p.id;
-    if (nameInput) nameInput.value = p.custom_name || p.clean_name || p.name || '';
-    if (nameArInput) nameArInput.value = p.custom_name_ar || p.name_ar || '';
+    if (nameInput) nameInput.value = defaultNameEn;
+    if (nameArInput) nameArInput.value = defaultNameAr;
     if (priceInput) priceInput.value = p.sell_price_usd ?? p.price ?? '';
     if (resellerPriceInput) resellerPriceInput.value = p.reseller_price_usd ?? '';
     if (stockDisplay) {
@@ -238,27 +241,44 @@
 
     if (!folder && folderKey) {
       const matchKey = String(folderKey).toLowerCase().trim();
-      folder = allFolders.find(f => (f.key && f.key.toLowerCase() === matchKey) || String(f.id) === matchKey || (f.title_en && f.title_en.toLowerCase() === matchKey));
+      folder = allFolders.find(f => {
+        const k = (f.key || '').toLowerCase().trim();
+        const te = (f.title_en || '').toLowerCase().trim();
+        const ta = (f.title_ar || '').toLowerCase().trim();
+        const fid = String(f.id || '').trim();
+        return k === matchKey || fid === matchKey || te === matchKey || ta === matchKey;
+      });
     }
 
     let primaryProd = null;
     if (folderKey) {
       const matchKey = String(folderKey).toLowerCase().trim();
-      primaryProd = allProds.find(p =>
-        (p.folder_key && p.folder_key.toLowerCase() === matchKey) ||
-        (p.custom_group && p.custom_group.toLowerCase() === matchKey) ||
-        (p.name && p.name.toLowerCase().includes(matchKey))
-      );
+      primaryProd = allProds.find(p => {
+        const fk = (p.folder_key || '').toLowerCase().trim();
+        const cg = (p.custom_group || '').toLowerCase().trim();
+        const fte = (p.folder_title_en || '').toLowerCase().trim();
+        const fta = (p.folder_title_ar || '').toLowerCase().trim();
+        return fk === matchKey || cg === matchKey || fte === matchKey || fta === matchKey;
+      }) || allProds.find(p => {
+        const pn = (p.name || '').toLowerCase().trim();
+        const cn = (p.clean_name || '').toLowerCase().trim();
+        return pn.includes(matchKey) || cn.includes(matchKey);
+      });
     }
 
-    const key = folder?.key || primaryProd?.folder_key || folderKey || '';
-    const id = folder?.id || '';
-    const titleEn = folder?.title_en || primaryProd?.folder_title_en || primaryProd?.custom_group || key || '';
-    const titleAr = folder?.title_ar || primaryProd?.folder_title_ar || primaryProd?.custom_group_ar || titleEn;
-    const category = folder?.category || primaryProd?.category || state().activeCatalog || '';
-    const icon = folder?.icon || primaryProd?.folder_icon || primaryProd?.emoji || '📁';
-    const sort = folder?.sort_order ?? folder?.priority ?? 50;
-    const isHidden = !!(folder?.hidden || primaryProd?.folder_hidden || primaryProd?.hidden);
+    const isNewCreation = (folderData && folderData.id === '' && folderData.key === '' && !folderKey);
+    const key = isNewCreation ? '' : (folder?.key || folderData?.key || primaryProd?.folder_key || folderKey || '');
+    const id = folder?.id || folderData?.id || '';
+    const titleEn = isNewCreation
+      ? (folderData?.title_en || '')
+      : (folder?.title_en || folder?.folder_title_en || folder?.title || folderData?.title_en || folderData?.folder_title_en || folderData?.title || primaryProd?.folder_title_en || primaryProd?.custom_group || primaryProd?.clean_name || primaryProd?.name || key || '');
+    const titleAr = isNewCreation
+      ? (folderData?.title_ar || '')
+      : (folder?.title_ar || folder?.folder_title_ar || folderData?.title_ar || folderData?.folder_title_ar || primaryProd?.folder_title_ar || primaryProd?.custom_group_ar || primaryProd?.variant_title_ar || primaryProd?.custom_name_ar || titleEn || '');
+    const category = folder?.category || folderData?.category || primaryProd?.category || state().activeCatalog || '';
+    const icon = folder?.icon || folderData?.icon || primaryProd?.folder_icon || primaryProd?.emoji || '📁';
+    const sort = folder?.sort_order ?? folder?.priority ?? folderData?.sort_order ?? folderData?.priority ?? 50;
+    const isHidden = !!(folder?.hidden || folderData?.hidden || primaryProd?.folder_hidden || primaryProd?.hidden);
 
     const idInput = document.getElementById('admin-edit-folder-id');
     const keyInput = document.getElementById('admin-edit-folder-key');
@@ -290,7 +310,9 @@
   }
 
   function openAdminCurrentFolderEditor() {
-    const key = (typeof activeVariantFamilyKey !== 'undefined') ? activeVariantFamilyKey : '';
+    const key = (typeof activeVariantFamilyKey !== 'undefined' && activeVariantFamilyKey)
+      ? activeVariantFamilyKey
+      : (root.activeVariantFamilyKey || window.activeVariantFamilyKey || '');
     openAdminFolderModal(key);
   }
 
