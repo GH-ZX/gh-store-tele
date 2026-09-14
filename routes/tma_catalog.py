@@ -269,6 +269,8 @@ async def get_tma_catalog():
         flash_enabled = (await ConfigService.get(session, "FLASH_SALE_ENABLED", default="false")).lower() in ("true", "1", "yes")
         flash_pct = float(await ConfigService.get(session, "FLASH_SALE_PERCENT", default="15") or 15)
         flash_end = int(await ConfigService.get(session, "FLASH_SALE_END_TIMESTAMP", default="0") or 0)
+        if flash_end <= int(time.time()):
+            flash_enabled = False
         flash_sale = {
             "enabled": flash_enabled,
             "percent": flash_pct,

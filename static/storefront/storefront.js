@@ -1409,22 +1409,38 @@
     const timerEl = document.getElementById('flash-countdown-timer');
     if (!banner || !timerEl) return;
 
+    if (flashSaleInterval) {
+      clearInterval(flashSaleInterval);
+      flashSaleInterval = null;
+    }
+
     if (!saleData || !saleData.enabled) {
       banner.style.display = 'none';
       return;
     }
 
-    banner.style.display = 'flex';
     const endTs = Number(saleData.end_timestamp || 0) * 1000;
-    if (flashSaleInterval) clearInterval(flashSaleInterval);
+    if (!endTs || endTs <= Date.now()) {
+      banner.style.display = 'none';
+      return;
+    }
+
+    banner.style.display = 'flex';
 
     const update = () => {
       const diff = Math.max(0, Math.floor((endTs - Date.now()) / 1000));
+      if (diff <= 0) {
+        banner.style.display = 'none';
+        if (flashSaleInterval) {
+          clearInterval(flashSaleInterval);
+          flashSaleInterval = null;
+        }
+        return;
+      }
       const h = Math.floor(diff / 3600);
       const m = Math.floor((diff % 3600) / 60);
       const s = diff % 60;
       timerEl.textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-      if (diff <= 0 && flashSaleInterval) clearInterval(flashSaleInterval);
     };
     update();
     flashSaleInterval = setInterval(update, 1000);

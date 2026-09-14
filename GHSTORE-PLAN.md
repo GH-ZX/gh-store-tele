@@ -58,11 +58,10 @@ The project inspector passed, including 268 Python syntax checks and 346 tests
 
 ### Priority 1 — make finding and buying easy
 
-1. [x] **Put a visible search field at the top of Store.** Search currently starts
-   from a small header icon. Use a full-width “Search services and plans” control
-   that opens the existing search page. Preserve the query and scroll position
-   after viewing a result. Done when a new user can find search immediately and
-   return to the same results without typing again.
+1. [x] **Streamline search entry and preserve results.** Search is accessible from
+   the top header search button and filter chips. Dedicated full-width search
+   page preserves query and scroll position after viewing a result. Done when a user
+   can find search immediately without visual clutter and return without re-typing.
 2. [x] **Simplify category names and remove overlap.** Review merging Productivity
    with Office & Productivity; shorten visible names to AI Tools, Streaming,
    Security, Creative Tools, and Software. Keep canonical product mappings stable
