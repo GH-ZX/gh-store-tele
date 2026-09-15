@@ -109,6 +109,10 @@ async def inventory_management_navigation(callback: CallbackQuery,
                                           callback_data: UserManagementCallback,
                                           session: AsyncSession,
                                           language: Language):
+    try:
+        await callback.answer()
+    except Exception:
+        pass
     current_level = callback_data.level
 
     levels = {

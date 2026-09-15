@@ -561,37 +561,55 @@
 
   // --- Admin Balance Adjustments ---
   function setAdminBalanceAction(action) {
-    adminBalAction = action;
-    const btnAdd = document.getElementById('btn-admin-bal-add');
-    const btnDeduct = document.getElementById('btn-admin-bal-deduct');
-    if (btnAdd) btnAdd.classList.toggle('active', action === 'add');
-    if (btnDeduct) btnDeduct.classList.toggle('active', action === 'deduct');
+    adminBalAction = action || 'add';
+    const btnAdd = document.getElementById('admin-bal-btn-add') || document.getElementById('btn-admin-bal-add');
+    const btnDeduct = document.getElementById('admin-bal-btn-deduct') || document.getElementById('btn-admin-bal-deduct');
+    if (btnAdd) btnAdd.classList.toggle('active', adminBalAction === 'add');
+    if (btnDeduct) btnDeduct.classList.toggle('active', adminBalAction === 'deduct');
+
+    const submitBtn = document.getElementById('btn-submit-adjust-balance');
+    const isAr = ((state().currentAppLanguage || root.localStorage?.getItem('ghstore_lang') || 'ar') === 'ar');
+    if (submitBtn) {
+      if (adminBalAction === 'add') {
+        submitBtn.textContent = isAr ? 'تأكيد إضافة الرصيد (+)' : 'Confirm Add Balance (+)';
+      } else {
+        submitBtn.textContent = isAr ? 'تأكيد خصم الرصيد (-)' : 'Confirm Deduct Balance (-)';
+      }
+    }
   }
 
   function setAdminBalAmount(amt) {
     adminBalAmount = Number(amt) || 10;
     const input = document.getElementById('admin-bal-amount-input');
     if (input) input.value = adminBalAmount;
+    [5, 10, 25, 50, 100, 250].forEach(a => {
+      const chip = document.getElementById('admin-bal-chip-' + a);
+      if (chip) chip.classList.toggle('active', a === adminBalAmount);
+    });
+    api().haptic?.('selection');
   }
 
   async function submitAdminAdjustBalance() {
-    const tgIdInput = document.getElementById('admin-bal-user-id');
-    const targetTgId = tgIdInput?.value?.trim();
+    const hiddenInp = document.getElementById('admin-bal-target-tgid');
+    const targetTgId = hiddenInp?.value?.trim() || document.getElementById('admin-bal-user-id')?.textContent?.replace(/\D/g, '');
     const amt = parseFloat(document.getElementById('admin-bal-amount-input')?.value || adminBalAmount);
 
     if (!targetTgId || !amt || amt <= 0) {
-      api().showToast('يرجى إدخال معرف المستخدم والمبلغ');
+      api().showToast('يرجى إدخال معرف المستخدم ومبلغ صحيح');
       return;
     }
 
+    const btn = document.getElementById('btn-submit-adjust-balance');
+    if (btn) btn.disabled = true;
     api().haptic?.('medium');
+    const adminId = state().userId || state().userData?.telegram_id || state().userData?.tg_id;
     try {
-      const res = await fetch('/api/admin/user/balance/adjust', {
+      const res = await fetch('/api/admin/users/adjust-balance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          admin_tg_id: state().userId,
-          target_tg_id: targetTgId,
+          admin_tg_id: adminId,
+          target_tg_id: Number(targetTgId),
           amount: amt,
           action: adminBalAction
         })
@@ -599,12 +617,18 @@
       const data = await res.json();
       if (data.status === 'ok') {
         api().haptic?.('success');
-        api().showToast(`تم ${adminBalAction === 'add' ? 'إيداع' : 'خصم'} $${amt} بنجاح!`);
+        api().showToast(`تم ${adminBalAction === 'add' ? 'إيداع' : 'خصم'} $${amt.toFixed(2)} بنجاح!`);
+        closeAdminBalanceModal();
+        if (typeof loadAdminUsers === 'function') loadAdminUsers();
       } else {
+        api().haptic?.('error');
         api().showToast(data.error || 'فشل تعديل رصيد المستخدم');
       }
     } catch (_) {
+      api().haptic?.('error');
       api().showToast('خطأ في إرسال طلب الرصيد');
+    } finally {
+      if (btn) btn.disabled = false;
     }
   }
 
@@ -1066,7 +1090,12 @@
     }
   }
 
-  function openAdminUsersPage() {
+  // --- Admin User Management Suite ---
+  let currentAdminUserFilter = 'all';
+  let currentAdminUsersList = [];
+  let adminUserSearchDebounceTimer = null;
+
+  function openAdminUsersPage(initialFilter) {
     api().haptic?.('pop');
     document.querySelectorAll('.tab-view').forEach(el => {
       el.classList.remove('active');
@@ -1079,6 +1108,12 @@
     }
     window.scrollTo({ top: 0, behavior: 'instant' });
     api().pushNav?.('admin_users', closeAdminUsersPage);
+
+    if (initialFilter && ['all', 'balance', 'vip', 'reseller', 'banned'].includes(initialFilter)) {
+      setAdminUserFilter(initialFilter);
+    } else {
+      loadAdminUsers(currentAdminUserFilter);
+    }
   }
 
   function closeAdminUsersPage() {
@@ -1095,6 +1130,361 @@
     window.scrollTo({ top: 0, behavior: 'instant' });
   }
 
+  function setAdminUserFilter(filterName) {
+    currentAdminUserFilter = filterName || 'all';
+    api().haptic?.('selection');
+    ['all', 'balance', 'vip', 'reseller', 'banned'].forEach(f => {
+      const chip = document.getElementById('admin-ufilter-' + f);
+      if (chip) chip.classList.toggle('active', f === currentAdminUserFilter);
+    });
+    const query = document.getElementById('admin-user-search-input')?.value?.trim() || '';
+    loadAdminUsers(currentAdminUserFilter, query);
+  }
+
+  function debounceAdminUserSearch() {
+    clearTimeout(adminUserSearchDebounceTimer);
+    const input = document.getElementById('admin-user-search-input');
+    const clearBtn = document.getElementById('admin-user-clear-btn');
+    const val = input?.value?.trim() || '';
+    if (clearBtn) clearBtn.style.display = val ? 'inline' : 'none';
+
+    adminUserSearchDebounceTimer = setTimeout(() => {
+      loadAdminUsers(currentAdminUserFilter, val);
+    }, 300);
+  }
+
+  function clearAdminUserSearch() {
+    const input = document.getElementById('admin-user-search-input');
+    const clearBtn = document.getElementById('admin-user-clear-btn');
+    if (input) input.value = '';
+    if (clearBtn) clearBtn.style.display = 'none';
+    api().haptic?.('light');
+    loadAdminUsers(currentAdminUserFilter, '');
+  }
+
+  async function loadAdminUsers(filter, query) {
+    const container = document.getElementById('admin-users-results-list');
+    if (!container) return;
+
+    const isAr = ((state().currentAppLanguage || root.localStorage?.getItem('ghstore_lang') || 'ar') === 'ar');
+    container.innerHTML = `<div style="text-align: center; padding: 30px; color: var(--hint);" id="admin-users-loading-placeholder">${isAr ? 'جاري جلب قائمة المستخدمين...' : 'Loading users list...'}</div>`;
+
+    const tgId = state().userId || state().userData?.telegram_id || state().userData?.tg_id;
+    const f = filter || currentAdminUserFilter || 'all';
+    const q = (query !== undefined) ? query : (document.getElementById('admin-user-search-input')?.value?.trim() || '');
+
+    try {
+      const res = await fetch(`/api/admin/users?tg_id=${tgId}&query=${encodeURIComponent(q)}&filter=${encodeURIComponent(f)}`);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      currentAdminUsersList = data.users || [];
+      renderAdminUsers(currentAdminUsersList);
+    } catch (err) {
+      container.innerHTML = `
+        <div style="text-align: center; padding: 30px; color: var(--danger);">
+          <div style="margin-bottom: 8px;">⚠️ ${isAr ? 'حدث خطأ أثناء تحميل المستخدمين' : 'Error loading users list'}</div>
+          <button class="btn-action-secondary" onclick="loadAdminUsers()" style="height: 36px; font-size: 12px; margin: 0 auto; display: inline-block; padding: 0 16px;">
+            🔄 ${isAr ? 'إعادة المحاولة' : 'Retry'}
+          </button>
+        </div>
+      `;
+    }
+  }
+
+  function renderAdminUsers(users) {
+    const container = document.getElementById('admin-users-results-list');
+    if (!container) return;
+
+    const isAr = ((state().currentAppLanguage || root.localStorage?.getItem('ghstore_lang') || 'ar') === 'ar');
+    if (!users || !users.length) {
+      container.innerHTML = `
+        <div style="text-align: center; padding: 30px; color: var(--hint);">
+          ${isAr ? 'لا يوجد مستخدمون مطابقون لبحثك' : 'No users match your search/filter'}
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = users.map(u => {
+      const rawUname = (u.username || '').replace(/^@/, '');
+      const uname = rawUname ? '@' + api().escapeAttr(rawUname) : (isAr ? 'مستخدم بدون معرف' : 'No Username');
+      const bal = Number(u.balance || 0).toFixed(2);
+      const spent = Number(u.total_spent || 0).toFixed(2);
+      const isBanned = Boolean(u.is_banned);
+      const isReseller = Boolean(u.is_reseller);
+      const vipTier = u.vip_tier || 'Standard';
+      const customDisc = (u.custom_discount_pct !== null && u.custom_discount_pct !== undefined) ? u.custom_discount_pct : null;
+
+      return `
+        <div class="user-admin-card" id="user-card-${u.telegram_id}" style="background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
+          <!-- Top Row: User identifier + Badges -->
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
+            <div>
+              <div style="font-weight: 800; font-size: 13.5px; color: var(--text); display: flex; align-items: center; gap: 6px;">
+                <span>${uname}</span>
+                ${isBanned ? `<span style="font-size: 10px; background: rgba(239, 68, 68, 0.15); color: var(--danger); padding: 1px 6px; border-radius: 4px; font-weight: 700;">${isAr ? 'محظور ⛔' : 'Banned ⛔'}</span>` : ''}
+                ${isReseller ? `<span style="font-size: 10px; background: rgba(147, 51, 234, 0.15); color: #a855f7; padding: 1px 6px; border-radius: 4px; font-weight: 700;">${isAr ? 'موزع 🏷️' : 'Reseller 🏷️'}</span>` : ''}
+              </div>
+              <div style="font-size: 11px; color: var(--hint); font-family: monospace; margin-top: 2px;">
+                ID: ${u.telegram_id} ${u.registered_at ? `· <span style="font-family: inherit;">${u.registered_at}</span>` : ''}
+              </div>
+            </div>
+            <div style="text-align: right;">
+              <span style="font-size: 10.5px; font-weight: 700; color: var(--accent); background: var(--input-bg); padding: 2px 8px; border-radius: 6px; border: 1px solid var(--border);">
+                ${api().escapeAttr(vipTier)}
+              </span>
+            </div>
+          </div>
+
+          <!-- Stats Grid: Balance / Spent / Referrals -->
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; background: var(--input-bg); padding: 8px; border-radius: 8px; border: 1px solid var(--border); font-size: 11px; text-align: center;">
+            <div>
+              <div style="color: var(--hint); font-size: 9.5px; margin-bottom: 2px;">${isAr ? 'الرصيد' : 'Balance'}</div>
+              <div style="font-weight: 800; font-size: 13px; color: var(--success);">$${bal}</div>
+            </div>
+            <div>
+              <div style="color: var(--hint); font-size: 9.5px; margin-bottom: 2px;">${isAr ? 'إجمالي المشتريات' : 'Total Spent'}</div>
+              <div style="font-weight: 700; color: var(--text);">$${spent}</div>
+            </div>
+            <div>
+              <div style="color: var(--hint); font-size: 9.5px; margin-bottom: 2px;">${isAr ? 'الإحالات' : 'Referrals'}</div>
+              <div style="font-weight: 700; color: var(--text);">${u.referrals_count || 0}</div>
+            </div>
+          </div>
+
+          ${customDisc !== null ? `
+            <div style="font-size: 11px; color: var(--accent); background: rgba(56, 189, 248, 0.08); padding: 4px 8px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center;">
+              <span>🏷️ ${isAr ? 'خصم مخصص:' : 'Custom discount:'} <strong>${customDisc}%</strong></span>
+              <button onclick="submitAdminQuickClearDiscount(${u.telegram_id})" style="background: none; border: none; color: var(--danger); font-size: 11px; cursor: pointer; padding: 0;">✕ ${isAr ? 'إزالة' : 'Remove'}</button>
+            </div>
+          ` : ''}
+
+          <!-- Quick Action Buttons -->
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 4px;">
+            <button class="btn-action-primary" onclick="openAdminBalanceModal(${u.telegram_id}, '${api().escapeAttr(rawUname)}', ${bal})" style="height: 34px; font-size: 11px; padding: 0;">
+              💰 ${isAr ? 'تعديل الرصيد' : 'Balance'}
+            </button>
+            <button class="btn-action-secondary" onclick="openAdminDiscountModal(${u.telegram_id}, '${api().escapeAttr(rawUname)}', ${customDisc !== null ? customDisc : "''"})" style="height: 34px; font-size: 11px; padding: 0;">
+              🏷️ ${isAr ? 'خصم VIP' : 'Discount'}
+            </button>
+            <button class="btn-action-secondary" onclick="openAdminMessageModal(${u.telegram_id}, '${api().escapeAttr(rawUname)}')" style="height: 34px; font-size: 11px; padding: 0;">
+              💬 ${isAr ? 'رسالة' : 'Message'}
+            </button>
+          </div>
+
+          <!-- Secondary Action Buttons -->
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;">
+            <button class="btn-action-secondary" onclick="toggleAdminUserReseller(${u.telegram_id})" style="height: 30px; font-size: 10px; padding: 0; color: ${isReseller ? '#a855f7' : 'var(--hint)'};">
+              🏷️ ${isReseller ? (isAr ? 'إلغاء الموزع' : 'Demote') : (isAr ? 'ترقية لموزع' : 'Make Reseller')}
+            </button>
+            <button class="btn-action-secondary" onclick="toggleAdminUserBan(${u.telegram_id})" style="height: 30px; font-size: 10px; padding: 0; color: ${isBanned ? 'var(--success)' : 'var(--danger)'};">
+              ${isBanned ? (isAr ? '✅ فك الحظر' : '✅ Unban') : (isAr ? '⛔ حظر' : '⛔ Ban')}
+            </button>
+            <button class="btn-action-secondary" onclick="submitAdminRevokeSessions(${u.telegram_id})" style="height: 30px; font-size: 10px; padding: 0; color: var(--warning);">
+              🔒 ${isAr ? 'طرد الجلسات' : 'Revoke'}
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  async function toggleAdminUserBan(targetTgId) {
+    if (!targetTgId) return;
+    const tgId = state().userId || state().userData?.telegram_id || state().userData?.tg_id;
+    api().haptic?.('warning');
+    try {
+      const res = await fetch('/api/admin/users/toggle-ban', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          admin_tg_id: tgId,
+          target_tg_id: Number(targetTgId)
+        })
+      });
+      const data = await res.json();
+      if (data.status === 'ok') {
+        api().haptic?.('success');
+        api().showToast(data.is_banned ? 'تم حظر المستخدم ⛔' : 'تم فك حظر المستخدم ✅');
+        loadAdminUsers();
+      } else {
+        api().showToast(data.error || 'فشلت العملية');
+      }
+    } catch (_) {
+      api().showToast('خطأ في الاتصال بالخادم');
+    }
+  }
+
+  async function toggleAdminUserReseller(targetTgId) {
+    if (!targetTgId) return;
+    const tgId = state().userId || state().userData?.telegram_id || state().userData?.tg_id;
+    api().haptic?.('medium');
+    try {
+      const res = await fetch('/api/admin/users/toggle-reseller', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          admin_tg_id: tgId,
+          target_tg_id: Number(targetTgId)
+        })
+      });
+      const data = await res.json();
+      if (data.status === 'ok') {
+        api().haptic?.('success');
+        api().showToast(data.is_reseller ? 'تمت ترقية المستخدم إلى موزع 🏷️' : 'تم إلغاء صفة الموزع');
+        loadAdminUsers();
+      } else {
+        api().showToast(data.error || 'فشلت العملية');
+      }
+    } catch (_) {
+      api().showToast('خطأ في الاتصال بالخادم');
+    }
+  }
+
+  function setAdminDiscVal(val) {
+    const input = document.getElementById('admin-disc-input');
+    if (input) input.value = val;
+    api().haptic?.('selection');
+  }
+
+  async function submitAdminDiscount() {
+    const hiddenInp = document.getElementById('admin-disc-target-tgid');
+    const targetTgId = hiddenInp?.value?.trim();
+    const discInp = document.getElementById('admin-disc-input');
+    const discVal = discInp?.value?.trim();
+
+    if (!targetTgId) {
+      api().showToast('المستخدم غير محدد');
+      return;
+    }
+
+    const valNum = (discVal === '' || discVal === null) ? null : parseFloat(discVal);
+    if (valNum !== null && (isNaN(valNum) || valNum < 0 || valNum > 100)) {
+      api().showToast('يرجى إدخال نسبة بين 0 و 100%');
+      return;
+    }
+
+    const tgId = state().userId || state().userData?.telegram_id || state().userData?.tg_id;
+    api().haptic?.('medium');
+    try {
+      const res = await fetch('/api/admin/users/set-discount', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          admin_tg_id: tgId,
+          target_tg_id: Number(targetTgId),
+          discount_pct: valNum
+        })
+      });
+      const data = await res.json();
+      if (data.status === 'ok') {
+        api().haptic?.('success');
+        api().showToast('تم تحديث نسبة الخصم بنجاح');
+        closeAdminDiscountModal();
+        loadAdminUsers();
+      } else {
+        api().showToast(data.error || 'فشل تحديث الخصم');
+      }
+    } catch (_) {
+      api().showToast('خطأ في الاتصال بالخادم');
+    }
+  }
+
+  async function clearAdminDiscount() {
+    const hiddenInp = document.getElementById('admin-disc-target-tgid');
+    const targetTgId = hiddenInp?.value?.trim();
+    if (!targetTgId) return;
+
+    const tgId = state().userId || state().userData?.telegram_id || state().userData?.tg_id;
+    api().haptic?.('medium');
+    try {
+      const res = await fetch('/api/admin/users/set-discount', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          admin_tg_id: tgId,
+          target_tg_id: Number(targetTgId),
+          discount_pct: null
+        })
+      });
+      const data = await res.json();
+      if (data.status === 'ok') {
+        api().haptic?.('success');
+        api().showToast('تم إلغاء الخصم المخصص');
+        closeAdminDiscountModal();
+        loadAdminUsers();
+      } else {
+        api().showToast(data.error || 'فشل إلغاء الخصم');
+      }
+    } catch (_) {
+      api().showToast('خطأ في الاتصال بالخادم');
+    }
+  }
+
+  async function submitAdminQuickClearDiscount(targetTgId) {
+    if (!targetTgId) return;
+    const tgId = state().userId || state().userData?.telegram_id || state().userData?.tg_id;
+    api().haptic?.('medium');
+    try {
+      const res = await fetch('/api/admin/users/set-discount', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          admin_tg_id: tgId,
+          target_tg_id: Number(targetTgId),
+          discount_pct: null
+        })
+      });
+      const data = await res.json();
+      if (data.status === 'ok') {
+        api().showToast('تم حذف الخصم المخصص');
+        loadAdminUsers();
+      }
+    } catch (_) {}
+  }
+
+  async function submitAdminSendMessage() {
+    const hiddenInp = document.getElementById('admin-msg-target-tgid');
+    const targetTgId = hiddenInp?.value?.trim();
+    const txtInp = document.getElementById('admin-msg-text-input');
+    const text = txtInp?.value?.trim();
+
+    if (!targetTgId || !text) {
+      api().showToast('يرجى كتابة نص الرسالة');
+      return;
+    }
+
+    const btn = document.getElementById('btn-submit-send-user-msg');
+    if (btn) btn.disabled = true;
+    api().haptic?.('medium');
+
+    const tgId = state().userId || state().userData?.telegram_id || state().userData?.tg_id;
+    try {
+      const res = await fetch('/api/admin/users/send-message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          admin_tg_id: tgId,
+          target_tg_id: Number(targetTgId),
+          message: text
+        })
+      });
+      const data = await res.json();
+      if (data.status === 'ok') {
+        api().haptic?.('success');
+        api().showToast('تم إرسال الرسالة إلى المستخدم بنجاح! 🚀');
+        closeAdminMessageModal();
+      } else {
+        api().showToast(data.error || 'فشل إرسال الرسالة');
+      }
+    } catch (_) {
+      api().showToast('خطأ في إرسال الرسالة');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  // --- Admin Stuck Orders & Resolution Suite ---
   function openAdminStuckOrdersPage() {
     api().haptic?.('pop');
     document.querySelectorAll('.tab-view').forEach(el => {
@@ -1108,6 +1498,7 @@
     }
     window.scrollTo({ top: 0, behavior: 'instant' });
     api().pushNav?.('admin_stuck', closeAdminStuckOrdersPage);
+    loadAdminStuckOrders();
   }
 
   function closeAdminStuckOrdersPage() {
@@ -1122,6 +1513,78 @@
       setView.style.display = 'block';
     }
     window.scrollTo({ top: 0, behavior: 'instant' });
+  }
+
+  async function loadAdminStuckOrders() {
+    const container = document.getElementById('admin-stuck-orders-list');
+    if (!container) return;
+
+    const isAr = ((state().currentAppLanguage || root.localStorage?.getItem('ghstore_lang') || 'ar') === 'ar');
+    container.innerHTML = `<div style="text-align: center; padding: 30px; color: var(--hint);">${isAr ? 'جاري تحميل العمليات المعلقة...' : 'Loading stuck orders...'}</div>`;
+
+    const tgId = state().userId || state().userData?.telegram_id || state().userData?.tg_id;
+    try {
+      const res = await fetch(`/api/admin/stuck-orders?tg_id=${tgId}`);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const orders = data.orders || [];
+
+      if (!orders.length) {
+        container.innerHTML = `<div style="text-align: center; padding: 30px; color: var(--hint);">${isAr ? 'لا توجد عمليات عالقة حالياً 🎉' : 'No stuck orders currently 🎉'}</div>`;
+        return;
+      }
+
+      container.innerHTML = orders.map(o => `
+        <div class="order-admin-card" style="background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 8px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span style="font-weight: 800; font-size: 13px; color: #f59e0b;">#${o.id} · <span style="font-size: 12px; color: var(--text);">${api().escapeAttr(o.username ? '@' + o.username : 'ID: ' + o.telegram_id)}</span></span>
+            <span style="font-size: 10px; font-weight: 700; background: rgba(245, 158, 11, 0.15); color: #f59e0b; padding: 2px 6px; border-radius: 4px;">
+              ${o.status}
+            </span>
+          </div>
+          <div style="font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 4px;">🛍️ ${api().escapeAttr(o.products)}</div>
+          <div style="font-size: 11px; color: var(--hint); margin-bottom: 8px;">
+            ${isAr ? 'المبلغ:' : 'Amount:'} <strong style="color: var(--text);">$${Number(o.total_sell || 0).toFixed(2)}</strong> · ${o.created_at || ''}
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <button class="btn-action-warning" onclick="adminRefundStuckOrder(${o.id})" style="flex: 1; height: 34px; font-size: 11px; padding: 0;">
+              ↩️ ${isAr ? 'استرداد فوري للعميل' : 'Immediate Refund'}
+            </button>
+          </div>
+        </div>
+      `).join('');
+    } catch (_) {
+      container.innerHTML = `<div style="text-align: center; padding: 30px; color: var(--danger);">${isAr ? 'خطأ في جلب العمليات المعلقة' : 'Error loading stuck orders'}</div>`;
+    }
+  }
+
+  async function adminRefundStuckOrder(orderId) {
+    if (!orderId) return;
+    const isAr = ((state().currentAppLanguage || root.localStorage?.getItem('ghstore_lang') || 'ar') === 'ar');
+    if (!confirm(isAr ? `هل أنت متأكد من استرداد الطلب #${orderId} وإرجاع المبلغ لمحفظة العميل؟` : `Refund order #${orderId} back to user wallet?`)) return;
+
+    const tgId = state().userId || state().userData?.telegram_id || state().userData?.tg_id;
+    api().haptic?.('warning');
+    try {
+      const res = await fetch('/api/admin/stuck-orders/refund', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          admin_tg_id: tgId,
+          order_id: Number(orderId)
+        })
+      });
+      const data = await res.json();
+      if (data.status === 'ok') {
+        api().haptic?.('success');
+        api().showToast(isAr ? 'تم استرداد الطلب وإرجاع الرصيد بنجاح ✅' : 'Order refunded successfully ✅');
+        loadAdminStuckOrders();
+      } else {
+        api().showToast(data.error || 'فشل الاسترداد');
+      }
+    } catch (_) {
+      api().showToast('خطأ في الاتصال بالخادم');
+    }
   }
 
   function openAdminResellerPricingPage() {
@@ -1196,12 +1659,25 @@
     if (m) m.style.display = 'none';
   }
 
-  function openAdminBalanceModal(tgId) {
+  function openAdminBalanceModal(tgId, username, currentBalance) {
     api().haptic?.('pop');
     const m = document.getElementById('admin-balance-modal');
     if (m) m.style.display = 'flex';
-    const inp = document.getElementById('admin-bal-user-id');
-    if (inp && tgId) inp.value = tgId;
+
+    const hiddenInp = document.getElementById('admin-bal-target-tgid');
+    if (hiddenInp && tgId) hiddenInp.value = tgId;
+
+    const nameEl = document.getElementById('admin-bal-user-name');
+    if (nameEl) nameEl.textContent = username ? '@' + username : (tgId ? 'ID: ' + tgId : '@username');
+
+    const idEl = document.getElementById('admin-bal-user-id');
+    if (idEl) idEl.textContent = tgId ? 'ID: ' + tgId : 'ID: 000000';
+
+    const currEl = document.getElementById('admin-bal-user-curr');
+    if (currEl && currentBalance !== undefined) currEl.textContent = '$' + Number(currentBalance || 0).toFixed(2);
+
+    setAdminBalanceAction('add');
+    setAdminBalAmount(10);
     api().pushNav?.('admin_balance', closeAdminBalanceModal);
   }
 
@@ -1211,12 +1687,23 @@
     if (m) m.style.display = 'none';
   }
 
-  function openAdminDiscountModal(tgId) {
+  function openAdminDiscountModal(tgId, username, currentDiscount) {
     api().haptic?.('pop');
     const m = document.getElementById('admin-discount-modal');
     if (m) m.style.display = 'flex';
-    const inp = document.getElementById('admin-disc-user-id');
-    if (inp && tgId) inp.value = tgId;
+
+    const hiddenInp = document.getElementById('admin-disc-target-tgid');
+    if (hiddenInp && tgId) hiddenInp.value = tgId;
+
+    const nameEl = document.getElementById('admin-disc-user-name');
+    if (nameEl) nameEl.textContent = username ? '@' + username : (tgId ? 'ID: ' + tgId : '@username');
+
+    const idEl = document.getElementById('admin-disc-user-id');
+    if (idEl) idEl.textContent = tgId ? 'ID: ' + tgId : 'ID: 000000';
+
+    const discInp = document.getElementById('admin-disc-input');
+    if (discInp) discInp.value = (currentDiscount !== null && currentDiscount !== undefined && currentDiscount !== '') ? currentDiscount : '';
+
     api().pushNav?.('admin_discount', closeAdminDiscountModal);
   }
 
@@ -1239,12 +1726,23 @@
     if (m) m.style.display = 'none';
   }
 
-  function openAdminMessageModal(tgId) {
+  function openAdminMessageModal(tgId, username) {
     api().haptic?.('pop');
     const m = document.getElementById('admin-message-user-modal');
     if (m) m.style.display = 'flex';
-    const inp = document.getElementById('admin-msg-user-id');
-    if (inp && tgId) inp.value = tgId;
+
+    const hiddenInp = document.getElementById('admin-msg-target-tgid');
+    if (hiddenInp && tgId) hiddenInp.value = tgId;
+
+    const nameEl = document.getElementById('admin-msg-target-name');
+    if (nameEl) nameEl.textContent = username ? '@' + username : (tgId ? 'ID: ' + tgId : '@username');
+
+    const idEl = document.getElementById('admin-msg-target-id');
+    if (idEl) idEl.textContent = tgId ? 'ID: ' + tgId : 'ID: 000000';
+
+    const txt = document.getElementById('admin-msg-text-input');
+    if (txt) txt.value = '';
+
     api().pushNav?.('admin_msg', closeAdminMessageModal);
   }
 
@@ -1676,8 +2174,22 @@
     syncAllSupplierCatalogsInSuppliersPage,
     openAdminUsersPage,
     closeAdminUsersPage,
+    loadAdminUsers,
+    renderAdminUsers,
+    setAdminUserFilter,
+    debounceAdminUserSearch,
+    clearAdminUserSearch,
+    toggleAdminUserBan,
+    toggleAdminUserReseller,
+    setAdminDiscVal,
+    submitAdminDiscount,
+    clearAdminDiscount,
+    submitAdminQuickClearDiscount,
+    submitAdminSendMessage,
     openAdminStuckOrdersPage,
     closeAdminStuckOrdersPage,
+    loadAdminStuckOrders,
+    adminRefundStuckOrder,
     openAdminResellerPricingPage,
     closeAdminResellerPricingPage,
     openAdminConfigPage,
@@ -1758,8 +2270,22 @@
   root.syncAllSupplierCatalogsInSuppliersPage = syncAllSupplierCatalogsInSuppliersPage;
   root.openAdminUsersPage = openAdminUsersPage;
   root.closeAdminUsersPage = closeAdminUsersPage;
+  root.loadAdminUsers = loadAdminUsers;
+  root.renderAdminUsers = renderAdminUsers;
+  root.setAdminUserFilter = setAdminUserFilter;
+  root.debounceAdminUserSearch = debounceAdminUserSearch;
+  root.clearAdminUserSearch = clearAdminUserSearch;
+  root.toggleAdminUserBan = toggleAdminUserBan;
+  root.toggleAdminUserReseller = toggleAdminUserReseller;
+  root.setAdminDiscVal = setAdminDiscVal;
+  root.submitAdminDiscount = submitAdminDiscount;
+  root.clearAdminDiscount = clearAdminDiscount;
+  root.submitAdminQuickClearDiscount = submitAdminQuickClearDiscount;
+  root.submitAdminSendMessage = submitAdminSendMessage;
   root.openAdminStuckOrdersPage = openAdminStuckOrdersPage;
   root.closeAdminStuckOrdersPage = closeAdminStuckOrdersPage;
+  root.loadAdminStuckOrders = loadAdminStuckOrders;
+  root.adminRefundStuckOrder = adminRefundStuckOrder;
   root.openAdminResellerPricingPage = openAdminResellerPricingPage;
   root.closeAdminResellerPricingPage = closeAdminResellerPricingPage;
   root.openAdminConfigPage = openAdminConfigPage;

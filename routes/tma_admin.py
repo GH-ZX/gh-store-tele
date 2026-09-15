@@ -12,7 +12,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, or_, select, update
 
 import config
 from db import get_db_session, session_commit, session_execute
@@ -1412,28 +1412,39 @@ async def admin_set_config(request: Request):
 
 
 @router.get("/api/admin/users")
-async def admin_get_users(tg_id: int, request: Request, query: str = ""):
+async def admin_get_users(tg_id: int, request: Request, query: str = "", filter: str = "all"):
     if not verify_admin(tg_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
     async with get_db_session() as session:
         stmt = select(User)
         q = (query or "").strip().lower()
+        f = (filter or "all").strip().lower()
+
+        if f == "balance":
+            stmt = stmt.where((User.top_up_amount - User.consume_records) > 0)
+        elif f == "vip":
+            stmt = stmt.where(or_(User.custom_discount_pct > 0, User.consume_records >= 100))
+        elif f == "reseller":
+            stmt = stmt.where(User.is_reseller == True)  # noqa: E712
+        elif f == "banned":
+            stmt = stmt.where(User.is_banned == True)  # noqa: E712
+
         if q:
-            if q == "reseller" or q == "resellers":
-                stmt = stmt.where(User.is_reseller == True).order_by(User.id.desc()).limit(50)  # noqa: E712
+            if q in ("reseller", "resellers"):
+                stmt = stmt.where(User.is_reseller == True)  # noqa: E712
             elif q.isdigit():
                 stmt = stmt.where((User.telegram_id == int(q)) | (User.id == int(q)))
             else:
                 uname = q.lstrip("@")
                 stmt = stmt.where(User.telegram_username.ilike(f"%{uname}%"))
-        else:
-            stmt = stmt.order_by(User.id.desc()).limit(25)
+
+        stmt = stmt.order_by(User.id.desc()).limit(100)
         rows = await session_execute(stmt, session)
         users = rows.scalars().all()
         result = []
         from services.user import get_vip_tier_info
         for u in users:
-            bal = round((u.top_up_amount or 0.0) - (u.consume_records or 0.0), 2)
+            bal = round(float(u.top_up_amount or 0.0) - float(u.consume_records or 0.0), 2)
             tier_label, disc_pct = get_vip_tier_info(u.consume_records, getattr(u, "custom_discount_pct", None))
             ref_qty = await UserRepository.get_referrals_qty_by_referrer_id(u.id, session)
             result.append({
@@ -1441,7 +1452,7 @@ async def admin_get_users(tg_id: int, request: Request, query: str = ""):
                 "telegram_id": u.telegram_id,
                 "username": u.telegram_username or "",
                 "balance": bal,
-                "total_spent": round(u.consume_records or 0.0, 2),
+                "total_spent": round(float(u.consume_records or 0.0), 2),
                 "vip_tier": tier_label,
                 "vip_discount": disc_pct,
                 "is_banned": bool(u.is_banned),
@@ -1454,6 +1465,7 @@ async def admin_get_users(tg_id: int, request: Request, query: str = ""):
 
 
 @router.post("/api/admin/users/adjust-balance")
+@router.post("/api/admin/user/balance/adjust")
 async def admin_adjust_balance(request: Request):
     try:
         body = await request.json()
@@ -1753,7 +1765,7 @@ async def admin_send_user_message(request: Request):
     if not verify_admin(admin_id, request):
         return JSONResponse({"error": "unauthorized"}, status_code=403)
     target_tg_id = int(body.get("target_tg_id") or 0)
-    msg = str(body.get("message") or "").strip()
+    msg = str(body.get("message") or body.get("text") or "").strip()
     if not target_tg_id or not msg:
         return JSONResponse({"error": "missing_parameters"}, status_code=400)
 
