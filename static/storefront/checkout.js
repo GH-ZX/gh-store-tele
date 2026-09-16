@@ -42,6 +42,32 @@
     updateFloatingCartUI();
   }
 
+  function getCartItemPriceInfo(it) {
+    const p = it.product || {};
+    let selectedPack = null;
+    if (it.options && it.options.pack_price !== undefined) {
+      selectedPack = {
+        price: Number(it.options.pack_price),
+        cost: Number(it.options.pack_cost || 0),
+        reseller_price: it.options.reseller_price
+      };
+    }
+    const calcFn = (root.StorefrontModule?.calculateProductPrices) || root.calculateProductPrices;
+    if (typeof calcFn === 'function') {
+      return calcFn({ ...p, selectedPack });
+    }
+    const origPrice = Number(selectedPack?.price ?? p.sell_price_usd ?? p.price ?? 0);
+    const u = state().userData;
+    const vipDiscount = Number(u?.vip_discount || 0);
+    let finalPrice = origPrice;
+    let hasDiscount = false;
+    if (vipDiscount > 0) {
+      finalPrice = Math.round((origPrice * (1 - vipDiscount / 100)) * 100) / 100;
+      hasDiscount = finalPrice < origPrice;
+    }
+    return { origPrice, finalPrice, hasDiscount, discPct: vipDiscount };
+  }
+
   function updateFloatingCartUI() {
     const floatEl = document.getElementById('floating-cart-bar');
     const countEl = document.getElementById('cart-floating-count');
@@ -55,8 +81,8 @@
       floatEl.style.display = 'flex';
       if (countEl) countEl.textContent = String(count);
       const total = items.reduce((sum, it) => {
-        const pPrice = (it.options && it.options.pack_price !== undefined) ? Number(it.options.pack_price) : Number(it.product?.sell_price_usd || 0);
-        return sum + (pPrice * (Number(it.quantity) || 1));
+        const { finalPrice } = getCartItemPriceInfo(it);
+        return sum + (finalPrice * (Number(it.quantity) || 1));
       }, 0);
       if (totalEl) totalEl.textContent = `$${total.toFixed(2)}`;
     } else {
@@ -75,7 +101,9 @@
       selected_item_id: String(pack.id),
       catalogue_name: String(pack.name || ''),
       pack_name: pack.name,
-      pack_price: Number(pack.price || 0)
+      pack_price: Number(pack.price || 0),
+      pack_cost: Number(pack.cost || 0),
+      reseller_price: pack.reseller_price
     } : {};
     const combinedOptions = { ...packOpts, ...(options || {}) };
 
@@ -152,18 +180,23 @@
       const p = it.product;
       const baseTitle = isAr ? (p.name_ar || p.name) : (p.name || p.name_ar);
       const title = it.options?.pack_name ? `${baseTitle} (${it.options.pack_name})` : baseTitle;
-      const unitPrice = (it.options && it.options.pack_price !== undefined) ? Number(it.options.pack_price) : Number(p.sell_price_usd || 0);
-      const lineTotal = unitPrice * Number(it.quantity || 1);
+      const qty = Number(it.quantity || 1);
+      const { origPrice, finalPrice, hasDiscount, discPct } = getCartItemPriceInfo(it);
+      const lineTotal = finalPrice * qty;
       subtotal += lineTotal;
+
+      const unitPriceHtml = hasDiscount
+        ? `<span class="cart-unit-discounted">$${finalPrice.toFixed(2)}</span> <span class="cart-unit-original" style="text-decoration:line-through;font-size:11px;color:var(--hint);">$${origPrice.toFixed(2)}</span> <span class="cart-unit-badge" style="font-size:10px;font-weight:700;color:#10b981;">-${discPct}%</span>`
+        : `$${origPrice.toFixed(2)}`;
 
       html += `<div class="cart-line-item">
         <div class="cart-line-info">
           <div class="cart-line-title">${api().escapeAttr(title)}</div>
-          <div class="cart-line-unit">$${unitPrice.toFixed(2)} × ${it.quantity}</div>
+          <div class="cart-line-unit">${unitPriceHtml} × ${qty}</div>
         </div>
         <div class="cart-line-stepper">
           <button class="cart-step-btn" onclick="changeCartQty('${it.product?.id}${it.options?.selected_item_id ? `_pack_${it.options.selected_item_id}` : ''}', -1)">-</button>
-          <span class="cart-step-qty">${it.quantity}</span>
+          <span class="cart-step-qty">${qty}</span>
           <button class="cart-step-btn" onclick="changeCartQty('${it.product?.id}${it.options?.selected_item_id ? `_pack_${it.options.selected_item_id}` : ''}', 1)">+</button>
         </div>
         <div class="cart-line-price">$${lineTotal.toFixed(2)}</div>
@@ -565,9 +598,11 @@
         api().showToast(msg, 3500);
         if (data.error === 'insufficient_balance') {
           const userBal = Number(state().userData?.balance || 0);
-          const pack = product.selectedPack;
-          const unitPrice = Number(pack?.price ?? product.sell_price_usd ?? product.price ?? 0);
-          const totalDue = unitPrice * qty;
+          const calcFn = (root.StorefrontModule?.calculateProductPrices) || root.calculateProductPrices;
+          const { finalPrice } = (typeof calcFn === 'function')
+            ? calcFn(product)
+            : { finalPrice: Number(product.selectedPack?.price ?? product.sell_price_usd ?? product.price ?? 0) };
+          const totalDue = finalPrice * qty;
           const shortfall = Math.max(0.01, +(totalDue - userBal).toFixed(2));
 
           const fundAlert = document.getElementById('insufficient-funds-alert');

@@ -122,7 +122,15 @@ class BatStoreStoreService:
                 reseller_price_usd=getattr(product, "reseller_price_usd", None),
                 reseller_margin_pct=getattr(product, "reseller_margin_pct", None),
             )
-        return float(product.sell_price_usd or 0.0)
+        base = float(product.sell_price_usd or 0.0)
+        if user:
+            from services.user import get_vip_tier_info
+            _, discount = get_vip_tier_info(getattr(user, "consume_records", 0.0), getattr(user, "custom_discount_pct", None))
+            if discount > 0:
+                cost = float(product.cost_usd or 0.0)
+                discounted = round(base * (1.0 - discount / 100.0), 2)
+                return max(cost, discounted) if cost > 0 else discounted
+        return base
 
     async def detail(callback: CallbackQuery,
                      callback_data: BatStoreCallback,

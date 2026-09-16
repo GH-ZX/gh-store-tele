@@ -439,7 +439,13 @@ async def _batstore_product_detail(callback, callback_data, state, session, lang
         lines.append(f"<b>{get_text(language, BotEntity.USER, 'product_out_of_stock_badge')}</b>")
     else:
         lines.append(f"{icon_html} <b>{p_title}</b>")
-    lines.append(f"\n💲 Price: <b>{product.sell_price_usd:.2f}{sym}</b>")
+    from services.batstore_store import BatStoreStoreService
+    eff_price = BatStoreStoreService._effective_price(product, user) if product.sell_price_usd is not None else None
+    if eff_price is not None and product.sell_price_usd and eff_price < product.sell_price_usd:
+        disc_pct = round((1 - eff_price / product.sell_price_usd) * 100)
+        lines.append(f"\n💲 Price: <b>{eff_price:.2f}{sym}</b> <s>{product.sell_price_usd:.2f}{sym}</s> (-{disc_pct}%)")
+    elif product.sell_price_usd is not None:
+        lines.append(f"\n💲 Price: <b>{product.sell_price_usd:.2f}{sym}</b>")
     lines.append(f"📦 Delivery: {delivery}")
     if product.warranty_days:
         lines.append(f"🛡️ Warranty: {product.warranty_days} days")
@@ -610,7 +616,19 @@ async def _batstore_confirm(callback, callback_data, state, session, language):
     user = await UserRepository.get_by_tgid(callback.from_user.id, session)
     balance = round((user.top_up_amount or 0) - (user.consume_records or 0), 2)
     qty = callback_data.quantity or 1
-    total = round(qty * (product.sell_price_usd or 0), 2)
+
+    from services.batstore_store import BatStoreStoreService
+    from services.user import get_vip_tier_info
+    tier_label, discount_pct = get_vip_tier_info(getattr(user, "consume_records", 0.0), getattr(user, "custom_discount_pct", None))
+    try:
+        total = await BatStoreStoreService._quoted_total(product, user, qty, session)
+    except Exception:
+        total = round(qty * (product.sell_price_usd or 0), 2)
+    discount_note = ""
+    if discount_pct > 0:
+        disc_val = round(qty * (product.sell_price_usd or 0) - total, 2)
+        if disc_val > 0:
+            discount_note = f"\n🎖️ {tier_label}: -{discount_pct:.0f}% (-{disc_val:.2f}{sym})"
 
     # Store in cart
     data = await state.get_data()
@@ -619,11 +637,11 @@ async def _batstore_confirm(callback, callback_data, state, session, language):
     await state.update_data({BATSTORE_CART_KEY: cart})
 
     caption = get_text(language, BotEntity.USER, "batstore_buy_confirm").format(
-        items=f"{qty} × {product.name} = {total}{sym}",
-        total=f"{total}",
+        items=f"{qty} × {product.name} = {total:.2f}{sym}",
+        total=f"{total:.2f}",
         sym=sym,
-        balance=f"{balance}",
-    )
+        balance=f"{balance:.2f}",
+    ) + discount_note
 
     kb = InlineKeyboardBuilder()
     kb.button(

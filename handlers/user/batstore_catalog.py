@@ -280,7 +280,19 @@ async def batstore_confirm(callback: CallbackQuery,
     user = await UserRepository.get_by_tgid(callback.from_user.id, session)
     balance = round((user.top_up_amount or 0) - (user.consume_records or 0), 2)
     qty = callback_data.quantity or 1
-    total = round(qty * (product.sell_price_usd or 0), 2)
+
+    from services.batstore_store import BatStoreStoreService
+    from services.user import get_vip_tier_info
+    tier_label, discount_pct = get_vip_tier_info(getattr(user, "consume_records", 0.0), getattr(user, "custom_discount_pct", None))
+    try:
+        total = await BatStoreStoreService._quoted_total(product, user, qty, session)
+    except Exception:
+        total = round(qty * (product.sell_price_usd or 0), 2)
+    discount_note = ""
+    if discount_pct > 0:
+        disc_val = round(qty * (product.sell_price_usd or 0) - total, 2)
+        if disc_val > 0:
+            discount_note = f"\n🎖️ {tier_label}: -{discount_pct:.0f}% (-{disc_val:.2f}{sym})"
 
     # Store in cart
     data = await state.get_data()
@@ -289,11 +301,11 @@ async def batstore_confirm(callback: CallbackQuery,
     await state.update_data({CART_KEY: cart})
 
     caption = get_text(language, BotEntity.USER, "batstore_buy_confirm").format(
-        items=f"{qty} × {product.name} = {total}{sym}",
-        total=f"{total}",
+        items=f"{qty} × {product.name} = {total:.2f}{sym}",
+        total=f"{total:.2f}",
         sym=sym,
-        balance=f"{balance}",
-    )
+        balance=f"{balance:.2f}",
+    ) + discount_note
 
     kb = InlineKeyboardBuilder()
     kb.button(

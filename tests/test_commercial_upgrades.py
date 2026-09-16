@@ -155,3 +155,22 @@ def test_one_time_config_definitions():
     assert "SAM_RECEIVING_WALLET" in CONFIG_DEFINITIONS
     assert CONFIG_DEFINITIONS["BATSTORE_API_KEY"]["secret"] is True
     assert "SAM_CURRENCY" not in CONFIG_DEFINITIONS
+
+
+def test_vip_effective_price_calculation():
+    """Verify BatStoreStoreService._effective_price applies VIP discount and protects cost floor."""
+    from types import SimpleNamespace
+    from services.batstore_store import BatStoreStoreService
+
+    prod = SimpleNamespace(cost_usd=5.0, sell_price_usd=10.0, reseller_price_usd=None, reseller_margin_pct=None)
+    normal_user = SimpleNamespace(consume_records=0.0, custom_discount_pct=None, is_reseller=False)
+    assert BatStoreStoreService._effective_price(prod, normal_user) == 10.0
+
+    # User with 10% custom discount
+    vip_user = SimpleNamespace(consume_records=0.0, custom_discount_pct=10.0, is_reseller=False)
+    assert BatStoreStoreService._effective_price(prod, vip_user) == 9.0
+
+    # User with 60% discount on $10 product with $5 supplier cost: floors at $5.00
+    huge_vip = SimpleNamespace(consume_records=0.0, custom_discount_pct=60.0, is_reseller=False)
+    assert BatStoreStoreService._effective_price(prod, huge_vip) == 5.0
+
